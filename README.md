@@ -54,9 +54,15 @@ Content-Type: application/json
 
 ```json
 {
-  "answer": "天气助手的回答"
+  "code": 200,
+  "data": {
+    "answer": "天气助手的回答"
+  },
+  "message": ""
 }
 ```
+
+失败时返回 `{ code: 非200, data: null, message: "错误原因" }`，前端检查 `code === 200` 后使用 `data`，失败直接展示 `message`。
 
 如需修改后端地址，可设置环境变量：
 
