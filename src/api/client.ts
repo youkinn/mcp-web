@@ -1,4 +1,4 @@
-import axios from 'axios'
+﻿import axios from 'axios'
 
 export interface ChatResponse {
   answer: string
@@ -21,7 +21,7 @@ export function getErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
     if (error.response?.data?.message) return error.response.data.message
     if (error.code === 'ECONNABORTED') return '请求超时，请稍后重试。'
-    if (!error.response) return '无法连接到 mcp-client，请确认后端服务已启动。'
+    if (!error.response) return '无法连接到 mcp-orchestrator，请确认后端服务已启动。'
   }
   return '请求失败，请稍后重试。'
 }
