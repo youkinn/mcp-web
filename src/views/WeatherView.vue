@@ -68,7 +68,7 @@
                   @change="onWeatherTagChange">天气</a-checkable-tag>
                 <a-checkable-tag :checked="chatStore.mode === 'sango'" class="mode-select-tag"
                   @change="onSangoTagChange">风云三国</a-checkable-tag>
-                <span class="mode-tags-hint">未选择时默认为普通问答</span>
+                <span class="mode-tags-hint">未选择时由助手自动判断：天气 / 风云三国 / 自由问答</span>
               </div>
               <form class="composer" @submit.prevent="submit">
                 <div class="input-scope">

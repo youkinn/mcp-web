@@ -97,7 +97,6 @@ export const useChatStore = defineStore('chat', () => {
     sangoService,
     sessionId,
     modeLabel,
-    usesSangoRandom,
     sendMessage,
     clearMessages,
     setMode,
