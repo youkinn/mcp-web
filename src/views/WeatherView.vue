@@ -78,7 +78,7 @@
                   </a-tag>
                   <div ref="customInput" class="custom-input" contenteditable="true"
                     data-placeholder="请输入您的问题，Shift+Enter换行" @input="onCustomInput"
-                    @keydown.enter.exact.prevent="onComposerEnter"></div>
+                    @keydown.enter.exact.prevent="onComposerEnter" @paste="onComposerPaste"></div>
                 </div>
                 <a-button html-type="submit" type="primary" :loading="chatStore.loading" :disabled="!draft.trim()"
                   class="send-button">发送</a-button>
@@ -178,6 +178,12 @@ function onModeTagClose(tag: ModeTag) {
 
 function onCustomInput(event: Event) {
   draft.value = (event.target as HTMLElement).innerText
+}
+
+function onComposerPaste(event: ClipboardEvent) {
+  event.preventDefault()
+  const text = event.clipboardData?.getData('text/plain') ?? ''
+  document.execCommand('insertText', false, text)
 }
 
 function onComposerEnter(event: KeyboardEvent) {
