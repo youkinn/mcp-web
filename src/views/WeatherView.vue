@@ -6,7 +6,7 @@
           <span class="brand-mark">M</span>
           <span class="brand-copy">
             <span class="brand-name">MCP WORKSPACE</span>
-            <span class="brand-caption">Weather tool</span>
+            <span class="brand-caption">Chat gateway</span>
           </span>
         </RouterLink>
         <a-tag color="green">服务就绪</a-tag>
@@ -16,17 +16,57 @@
         <section class="chat-card">
           <div class="chat-header">
             <div>
-              <h2>天气助手</h2>
-              <p>由 mcp-orchestrator 编排 MCP 工具调用</p>
+              <h2>{{ pageTitle }}</h2>
+              <p>由 mcp-orchestrator 编排对话与工具调用</p>
             </div>
-            <a-button v-if="hasMessages" type="text" size="small" @click="chatStore.clearMessages">清空</a-button>
+            <div class="header-actions">
+              <a-tag v-if="chatStore.modeLabel" color="orange" class="header-mode-tag">{{ chatStore.modeLabel }}</a-tag>
+              <a-button v-if="hasMessages" type="text" size="small" @click="chatStore.clearMessages">清空</a-button>
+            </div>
           </div>
+
+          <div class="mode-tags">
+            <a-tag
+              :checkable="true"
+              :checked="chatStore.mode === 'weather'"
+              color="blue"
+              class="mode-select-tag"
+              @change="onWeatherTagChange"
+            >天气</a-tag>
+            <a-tag
+              :checkable="true"
+              :checked="chatStore.mode === 'sango'"
+              color="orange"
+              class="mode-select-tag"
+              @change="onSangoTagChange"
+            >风云三国</a-tag>
+            <span class="mode-tags-hint">未选择时默认为普通问答</span>
+          </div>
+
+          <section v-if="chatStore.mode === 'sango' && panelVisible" class="sango-panel">
+            <div class="sango-panel-head">
+              <span class="sango-panel-title">风云三国常见服务</span>
+              <a-button type="text" size="small" class="sango-panel-close" @click="panelVisible = false">✕</a-button>
+            </div>
+            <div class="sango-panel-actions">
+              <a-button
+                class="sango-service-btn"
+                :type="chatStore.sangoService === 'knowledge' ? 'primary' : 'default'"
+                @click="chatStore.setSangoService('knowledge')"
+              >问题查询</a-button>
+              <a-button
+                class="sango-service-btn"
+                :type="chatStore.sangoService === 'random' ? 'primary' : 'default'"
+                @click="chatStore.setSangoService('random')"
+              >随机一题</a-button>
+            </div>
+          </section>
 
           <div class="message-list">
             <div v-if="!hasMessages" class="empty-state">
-              <div class="empty-icon">🌤</div>
-              <p>从一个天气问题开始</p>
-              <span>试试询问纽约、洛杉矶等美国城市的天气</span>
+              <div class="empty-icon">{{ emptyIcon }}</div>
+              <p>{{ emptyTitle }}</p>
+              <span>{{ emptyHint }}</span>
             </div>
             <article v-for="item in chatStore.messages" :key="item.id" class="message-row" :class="{ 'is-user': item.role === 'user' }">
               <div class="message-bubble" :class="item.role === 'user' ? 'user-bubble' : 'assistant-bubble'">
@@ -37,15 +77,15 @@
                 </div>
               </div>
             </article>
-            <div v-if="chatStore.loading" class="loading-state"><a-spin size="small" /> 正在查询天气工具...</div>
+            <div v-if="chatStore.loading" class="loading-state"><a-spin size="small" /> {{ loadingText }}</div>
           </div>
 
           <a-alert v-if="chatStore.error" class="chat-error" type="error" show-icon :message="chatStore.error" />
           <form class="composer" @submit.prevent="submit">
-            <a-textarea ref="composer" v-model:value="draft" :bordered="false" :auto-size="{ minRows: 1, maxRows: 4 }" placeholder="输入美国城市名查询天气，如 New York..." @keydown.enter.exact.prevent="submit" />
+            <a-textarea v-model:value="draft" :bordered="false" :auto-size="{ minRows: 1, maxRows: 4 }" :placeholder="placeholder" @keydown.enter.exact.prevent="submit" />
             <a-button html-type="submit" type="primary" :loading="chatStore.loading" :disabled="!draft.trim()" class="send-button">发送</a-button>
           </form>
-          <p class="composer-hint">当前仅支持美国城市天气查询，请输入英文城市名</p>
+          <p class="composer-hint">{{ composerHint }}</p>
         </section>
       </section>
 
@@ -61,13 +101,99 @@ import { useChatStore } from '../stores/chat'
 
 const chatStore = useChatStore()
 const draft = ref('')
-const composer = ref<HTMLTextAreaElement>()
+const panelVisible = ref(true)
 
 const hasMessages = computed(() => chatStore.messages.length > 0)
+
+const isSangoKnowledge = computed(() => chatStore.mode === 'sango' && chatStore.sangoService === 'knowledge')
+const isSangoRandom = computed(() => chatStore.mode === 'sango' && chatStore.sangoService === 'random')
+const isSangoUnselected = computed(() => chatStore.mode === 'sango' && !chatStore.sangoService)
+
+const pageTitle = computed(() => {
+  if (chatStore.mode === 'sango') return '风云三国助手'
+  if (chatStore.mode === 'weather') return '天气助手'
+  return '智能助手'
+})
+
+const emptyIcon = computed(() => {
+  if (isSangoRandom.value) return '🎲'
+  if (isSangoKnowledge.value) return '📚'
+  if (isSangoUnselected.value) return '⚔️'
+  if (chatStore.mode === 'weather') return '🌤'
+  return '💬'
+})
+
+const emptyTitle = computed(() => {
+  if (isSangoRandom.value) return '发送「随机一题」开始答题'
+  if (isSangoKnowledge.value) return '输入风云三国问题快速查答案'
+  if (isSangoUnselected.value) return '请先选择常用服务子模块'
+  if (chatStore.mode === 'weather') return '从一个天气问题开始'
+  return '从一个问题开始'
+})
+
+const emptyHint = computed(() => {
+  if (isSangoRandom.value) return '作答可输入选项字母（A-D）或选项文本'
+  if (isSangoKnowledge.value) return '试试询问「夏侯惇的字是什么？」'
+  if (isSangoUnselected.value) return '在上方「风云三国常见服务」面板中选择「问题查询」或「随机一题」'
+  if (chatStore.mode === 'weather') return '试试询问纽约、洛杉矶等美国城市的天气'
+  return '试试直接提问，无需选择模式'
+})
+
+const placeholder = computed(() => {
+  if (isSangoRandom.value) return '发送「随机一题」开始，作答或输入「答案」…'
+  if (isSangoKnowledge.value) return '输入风云三国问题，如「夏侯惇的字是什么？」…'
+  if (isSangoUnselected.value) return '先选择「问题查询」或「随机一题」'
+  if (chatStore.mode === 'weather') return '输入美国城市名查询天气，如 New York...'
+  return '输入问题开始对话…'
+})
+
+const loadingText = computed(() => {
+  if (isSangoRandom.value) return '正在处理随机一题...'
+  if (isSangoKnowledge.value) return '正在从题库查找答案...'
+  if (chatStore.mode === 'weather') return '正在查询天气工具...'
+  return '正在思考...'
+})
+
+const composerHint = computed(() => {
+  if (isSangoRandom.value) return '随机一题：先发「随机一题」出题，再作答；支持「答案」查询'
+  if (isSangoKnowledge.value) return '知识问答：答案来自题库原文，未收录时会提示'
+  if (isSangoUnselected.value) return '选中子模块后聊天将切换至对应模式'
+  if (chatStore.mode === 'weather') return '当前仅支持美国城市天气查询，请输入英文城市名'
+  return '普通问答：通用对话，不调用天气与题库'
+})
+
+function onWeatherTagChange(checked: boolean) {
+  if (checked) {
+    chatStore.setMode('weather')
+    panelVisible.value = true
+    return
+  }
+  if (chatStore.mode === 'weather') {
+    chatStore.setMode('general')
+  }
+}
+
+function onSangoTagChange(checked: boolean) {
+  if (checked) {
+    chatStore.setMode('sango')
+    panelVisible.value = true
+    return
+  }
+  if (chatStore.mode !== 'sango') return
+  if (!panelVisible.value) {
+    panelVisible.value = true // 面板已收起时，点击标签重新展开
+    return
+  }
+  chatStore.setMode('general')
+}
 
 async function submit() {
   const content = draft.value.trim()
   if (!content || chatStore.loading) return
+  if (chatStore.mode === 'sango' && !chatStore.sangoService) {
+    message.warning('请先选择「问题查询」或「随机一题」')
+    return
+  }
   draft.value = ''
   await chatStore.sendMessage(content)
 }
@@ -267,6 +393,68 @@ function formatTime(date: Date) {
   color: #a2ada5;
   font-size: 11px;
   text-align: center;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-mode-tag {
+  margin: 0;
+}
+
+.mode-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 0 0;
+}
+
+.mode-select-tag {
+  margin: 0;
+  cursor: pointer;
+}
+
+.mode-tags-hint {
+  margin-left: 6px;
+  color: #a2ada5;
+  font-size: 11px;
+}
+
+.sango-panel {
+  margin-top: 14px;
+  padding: 12px 16px;
+  border: 1px solid #eadfc9;
+  border-radius: 14px;
+  background: #fdf9f0;
+}
+
+.sango-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sango-panel-title {
+  color: #7a5a2e;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sango-panel-close {
+  color: #a2916f;
+}
+
+.sango-panel-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.sango-service-btn {
+  border-radius: 10px;
 }
 
 @media (max-width: 900px) {

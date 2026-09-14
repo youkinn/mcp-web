@@ -10,6 +10,15 @@ export interface ChatData {
   answer: string
 }
 
+export type ChatScenario = 'general' | 'weather' | 'sango'
+export type SangoService = 'knowledge' | 'random'
+
+export interface ChatRequestOptions {
+  scenario?: ChatScenario
+  service?: SangoService
+  sessionId?: string
+}
+
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 30_000,
@@ -18,8 +27,13 @@ const apiClient = axios.create({
   },
 })
 
-export async function sendChatMessage(message: string): Promise<string> {
-  const { data } = await apiClient.post<ApiResponse<ChatData>>('/chat', { message })
+export async function sendChatMessage(message: string, options: ChatRequestOptions = {}): Promise<string> {
+  const payload: Record<string, string> = { message }
+  if (options.scenario) payload.scenario = options.scenario
+  if (options.service) payload.service = options.service
+  if (options.sessionId) payload.sessionId = options.sessionId
+
+  const { data } = await apiClient.post<ApiResponse<ChatData>>('/chat', payload)
 
   if (data.code !== 200 || !data.data) {
     throw new Error(data.message || '请求失败，请稍后重试。')
