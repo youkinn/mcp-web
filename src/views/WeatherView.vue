@@ -16,59 +16,17 @@
         <section class="chat-card">
           <div class="chat-header">
             <div>
-              <h2>{{ pageTitle }}</h2>
+              <h2>智能助手</h2>
               <p>由 mcp-orchestrator 编排对话与工具调用</p>
             </div>
             <div class="header-actions">
-              <a-tag v-if="chatStore.modeLabel" color="orange" class="header-mode-tag">{{ chatStore.modeLabel }}</a-tag>
               <a-button v-if="hasMessages" type="text" size="small" @click="chatStore.clearMessages">清空</a-button>
             </div>
           </div>
 
-          <div class="mode-tags">
-            <a-tag
-              :checkable="true"
-              :checked="chatStore.mode === 'weather'"
-              color="blue"
-              class="mode-select-tag"
-              @change="onWeatherTagChange"
-            >天气</a-tag>
-            <a-tag
-              :checkable="true"
-              :checked="chatStore.mode === 'sango'"
-              color="orange"
-              class="mode-select-tag"
-              @change="onSangoTagChange"
-            >风云三国</a-tag>
-            <span class="mode-tags-hint">未选择时默认为普通问答</span>
-          </div>
-
-          <section v-if="chatStore.mode === 'sango' && panelVisible" class="sango-panel">
-            <div class="sango-panel-head">
-              <span class="sango-panel-title">风云三国常见服务</span>
-              <a-button type="text" size="small" class="sango-panel-close" @click="panelVisible = false">✕</a-button>
-            </div>
-            <div class="sango-panel-actions">
-              <a-button
-                class="sango-service-btn"
-                :type="chatStore.sangoService === 'knowledge' ? 'primary' : 'default'"
-                @click="chatStore.setSangoService('knowledge')"
-              >问题查询</a-button>
-              <a-button
-                class="sango-service-btn"
-                :type="chatStore.sangoService === 'random' ? 'primary' : 'default'"
-                @click="chatStore.setSangoService('random')"
-              >随机一题</a-button>
-            </div>
-          </section>
-
-          <div class="message-list">
-            <div v-if="!hasMessages" class="empty-state">
-              <div class="empty-icon">{{ emptyIcon }}</div>
-              <p>{{ emptyTitle }}</p>
-              <span>{{ emptyHint }}</span>
-            </div>
-            <article v-for="item in chatStore.messages" :key="item.id" class="message-row" :class="{ 'is-user': item.role === 'user' }">
+          <div ref="messageList" class="message-list" :class="{ 'is-panel-open': sangoPanelOpen }">
+            <article v-for="item in chatStore.messages" :key="item.id" class="message-row"
+              :class="{ 'is-user': item.role === 'user' }">
               <div class="message-bubble" :class="item.role === 'user' ? 'user-bubble' : 'assistant-bubble'">
                 <p>{{ item.content }}</p>
                 <div class="message-meta">
@@ -77,89 +35,106 @@
                 </div>
               </div>
             </article>
-            <div v-if="chatStore.loading" class="loading-state"><a-spin size="small" /> {{ loadingText }}</div>
+            <div v-if="chatStore.loading" class="loading-state"><a-spin size="small" />正在思考...</div>
           </div>
 
           <a-alert v-if="chatStore.error" class="chat-error" type="error" show-icon :message="chatStore.error" />
-          <form class="composer" @submit.prevent="submit">
-            <a-textarea v-model:value="draft" :bordered="false" :auto-size="{ minRows: 1, maxRows: 4 }" :placeholder="placeholder" @keydown.enter.exact.prevent="submit" />
-            <a-button html-type="submit" type="primary" :loading="chatStore.loading" :disabled="!draft.trim()" class="send-button">发送</a-button>
-          </form>
-          <p class="composer-hint">{{ composerHint }}</p>
+          <div class="composer-area">
+            <section v-if="sangoPanelOpen" class="sango-panel">
+              <div class="sango-panel-head">
+                <span class="sango-panel-title">风云三国常见服务</span>
+                <button type="button" class="sango-panel-close" @click="panelVisible = false">✕</button>
+              </div>
+              <div class="sango-panel-actions">
+                <button type="button" class="sango-service-card"
+                  :class="{ 'is-active': chatStore.sangoService === 'knowledge' }"
+                  @click="selectSangoService('knowledge')">
+                  <span class="sango-service-icon">📚</span>
+                  <span class="sango-service-name">问题查询</span>
+                  <span class="sango-service-desc">输入问题快速查答案</span>
+                </button>
+                <button type="button" class="sango-service-card"
+                  :class="{ 'is-active': chatStore.sangoService === 'random' }" @click="selectSangoService('random')">
+                  <span class="sango-service-icon">🎲</span>
+                  <span class="sango-service-name">随机一题</span>
+                  <span class="sango-service-desc">随机出题、作答判题，支持「答案」</span>
+                </button>
+              </div>
+            </section>
+
+            <div class="composer-box">
+              <div class="mode-tags">
+                <a-checkable-tag :checked="chatStore.mode === 'weather'" class="mode-select-tag"
+                  @change="onWeatherTagChange">天气</a-checkable-tag>
+                <a-checkable-tag :checked="chatStore.mode === 'sango'" class="mode-select-tag"
+                  @change="onSangoTagChange">风云三国</a-checkable-tag>
+                <span class="mode-tags-hint">未选择时默认为普通问答</span>
+              </div>
+              <form class="composer" @submit.prevent="submit">
+                <div class="input-scope">
+                  <a-tag v-for="tag in activeModeTags" :key="tag.key" closable class="input-mode-tag"
+                    @close="onModeTagClose(tag)">
+                    {{ tag.label }}
+                  </a-tag>
+                  <div ref="customInput" class="custom-input" contenteditable="true"
+                    data-placeholder="请输入您的问题，Shift+Enter换行" @input="onCustomInput"
+                    @keydown.enter.exact.prevent="onComposerEnter"></div>
+                </div>
+                <a-button html-type="submit" type="primary" :loading="chatStore.loading" :disabled="!draft.trim()"
+                  class="send-button">发送</a-button>
+              </form>
+            </div>
+          </div>
         </section>
       </section>
-
-      <footer class="site-footer"><span>Weather MCP Server</span><span>·</span><span>stdio → client → web</span></footer>
     </div>
   </main>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useChatStore } from '../stores/chat'
+import type { SangoService } from '../api/client'
 
 const chatStore = useChatStore()
 const draft = ref('')
 const panelVisible = ref(true)
+const customInput = ref<HTMLElement | null>(null)
+const messageList = ref<HTMLElement | null>(null)
 
 const hasMessages = computed(() => chatStore.messages.length > 0)
+const sangoPanelOpen = computed(() => chatStore.mode === 'sango' && panelVisible.value)
 
-const isSangoKnowledge = computed(() => chatStore.mode === 'sango' && chatStore.sangoService === 'knowledge')
-const isSangoRandom = computed(() => chatStore.mode === 'sango' && chatStore.sangoService === 'random')
-const isSangoUnselected = computed(() => chatStore.mode === 'sango' && !chatStore.sangoService)
+watch(
+  () => chatStore.messages.length,
+  async () => {
+    await nextTick()
+    if (messageList.value) {
+      messageList.value.scrollTop = messageList.value.scrollHeight
+    }
+  },
+)
 
-const pageTitle = computed(() => {
-  if (chatStore.mode === 'sango') return '风云三国助手'
-  if (chatStore.mode === 'weather') return '天气助手'
-  return '智能助手'
-})
+interface ModeTag {
+  key: 'weather' | 'sango' | 'sango-knowledge' | 'sango-random'
+  label: string
+}
 
-const emptyIcon = computed(() => {
-  if (isSangoRandom.value) return '🎲'
-  if (isSangoKnowledge.value) return '📚'
-  if (isSangoUnselected.value) return '⚔️'
-  if (chatStore.mode === 'weather') return '🌤'
-  return '💬'
-})
-
-const emptyTitle = computed(() => {
-  if (isSangoRandom.value) return '发送「随机一题」开始答题'
-  if (isSangoKnowledge.value) return '输入风云三国问题快速查答案'
-  if (isSangoUnselected.value) return '请先选择常用服务子模块'
-  if (chatStore.mode === 'weather') return '从一个天气问题开始'
-  return '从一个问题开始'
-})
-
-const emptyHint = computed(() => {
-  if (isSangoRandom.value) return '作答可输入选项字母（A-D）或选项文本'
-  if (isSangoKnowledge.value) return '试试询问「夏侯惇的字是什么？」'
-  if (isSangoUnselected.value) return '在上方「风云三国常见服务」面板中选择「问题查询」或「随机一题」'
-  if (chatStore.mode === 'weather') return '试试询问纽约、洛杉矶等美国城市的天气'
-  return '试试直接提问，无需选择模式'
-})
-
-const placeholder = computed(() => {
-  if (isSangoRandom.value) return '发送「随机一题」开始，作答或输入「答案」…'
-  if (isSangoKnowledge.value) return '输入风云三国问题，如「夏侯惇的字是什么？」…'
-  if (isSangoUnselected.value) return '先选择「问题查询」或「随机一题」'
-  if (chatStore.mode === 'weather') return '输入美国城市名查询天气，如 New York...'
-  return '输入问题开始对话…'
-})
-
-const loadingText = computed(() => {
-  if (isSangoRandom.value) return '正在处理随机一题...'
-  if (isSangoKnowledge.value) return '正在从题库查找答案...'
-  if (chatStore.mode === 'weather') return '正在查询天气工具...'
-  return '正在思考...'
-})
-
-const composerHint = computed(() => {
-  if (isSangoRandom.value) return '随机一题：先发「随机一题」出题，再作答；支持「答案」查询'
-  if (isSangoKnowledge.value) return '知识问答：答案来自题库原文，未收录时会提示'
-  if (isSangoUnselected.value) return '选中子模块后聊天将切换至对应模式'
-  if (chatStore.mode === 'weather') return '当前仅支持美国城市天气查询，请输入英文城市名'
-  return '普通问答：通用对话，不调用天气与题库'
+const activeModeTags = computed<ModeTag[]>(() => {
+  if (chatStore.mode === 'weather') {
+    return [{ key: 'weather', label: '天气' }]
+  }
+  if (chatStore.mode === 'sango') {
+    const tags: ModeTag[] = [{ key: 'sango', label: '风云三国' }]
+    if (chatStore.sangoService === 'knowledge') {
+      tags.push({ key: 'sango-knowledge', label: '问答模式' })
+    } else if (chatStore.sangoService === 'random') {
+      tags.push({ key: 'sango-random', label: '随便一题' })
+    }
+    return tags
+  }
+  return []
 })
 
 function onWeatherTagChange(checked: boolean) {
@@ -187,6 +162,29 @@ function onSangoTagChange(checked: boolean) {
   chatStore.setMode('general')
 }
 
+function selectSangoService(service: SangoService) {
+  chatStore.setSangoService(service)
+  panelVisible.value = false
+}
+
+function onModeTagClose(tag: ModeTag) {
+  if (tag.key === 'weather' || tag.key === 'sango') {
+    chatStore.setMode('general')
+    return
+  }
+  chatStore.setSangoService(null)
+  panelVisible.value = true
+}
+
+function onCustomInput(event: Event) {
+  draft.value = (event.target as HTMLElement).innerText
+}
+
+function onComposerEnter(event: KeyboardEvent) {
+  if (event.isComposing) return
+  submit()
+}
+
 async function submit() {
   const content = draft.value.trim()
   if (!content || chatStore.loading) return
@@ -195,6 +193,9 @@ async function submit() {
     return
   }
   draft.value = ''
+  if (customInput.value) {
+    customInput.value.innerText = ''
+  }
   await chatStore.sendMessage(content)
 }
 
@@ -210,10 +211,15 @@ function formatTime(date: Date) {
 
 <style scoped>
 .weather-page {
-  min-height: 100vh;
+  height: 100vh;
   overflow: hidden;
   background: #f5f7f2;
   color: #1d2924;
+}
+
+.page-shell {
+  height: 100%;
+  min-height: 0;
 }
 
 .content-grid {
@@ -221,15 +227,26 @@ function formatTime(date: Date) {
   grid-template-columns: minmax(360px, 780px);
   justify-content: center;
   flex: 1;
-  padding: 64px 0;
+  min-height: 0;
+  padding: 20px 0;
 }
 
 .chat-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   padding: 24px;
   border: 1px solid #d9e1d8;
   border-radius: 24px;
   background: rgba(255, 255, 255, .9);
   box-shadow: 0 24px 70px rgba(35, 66, 51, .1);
+}
+
+.chat-header,
+.chat-error,
+.composer-area,
+.composer-hint {
+  flex: 0 0 auto;
 }
 
 .chat-header {
@@ -254,8 +271,14 @@ function formatTime(date: Date) {
 }
 
 .message-list {
-  min-height: 250px;
-  padding: 20px 0 0;
+  flex: 1;
+  min-height: 0;
+  padding: 20px 6px 0 0;
+  overflow-y: auto;
+}
+
+.message-list.is-panel-open {
+  padding-bottom: 186px;
 }
 
 .empty-state {
@@ -358,27 +381,70 @@ function formatTime(date: Date) {
   margin-top: 16px;
 }
 
-.composer {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
+.composer-area {
+  position: relative;
   margin-top: 20px;
-  padding: 8px;
+}
+
+.composer-box {
   border: 1px solid #dce5dc;
   border-radius: 16px;
   background: #fafcf9;
+  min-height: 148px;
+  overflow: hidden;
 }
 
-.composer:focus-within {
+.composer-box:focus-within {
   border-color: #8cab92;
 }
 
-.composer :deep(.ant-input) {
-  background: transparent;
-  resize: none;
+.composer {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px 10px;
+}
+
+.input-scope {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.custom-input {
+  flex: 1;
+  min-width: 120px;
+  min-height: 64px;
+  max-height: 120px;
+  padding: 8px 2px 2px;
+  overflow-y: auto;
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.custom-input:empty::before {
+  content: attr(data-placeholder);
+  color: #a9b4ac;
+  pointer-events: none;
+}
+
+.input-mode-tag {
+  margin: 4px 0 0;
+  border-color: #d9e1d8;
+  border-radius: 8px;
+  background: #f1f5f0;
+  color: #163c32;
+  font-size: 12px;
 }
 
 .send-button {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
   height: 40px;
   border-radius: 12px;
   background: #b17837;
@@ -388,53 +454,72 @@ function formatTime(date: Date) {
   background: #8f5e2c;
 }
 
-.composer-hint {
-  margin: 12px 0 0;
-  color: #a2ada5;
-  font-size: 11px;
-  text-align: center;
-}
-
 .header-actions {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.header-mode-tag {
-  margin: 0;
-}
-
 .mode-tags {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 14px 0 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #eef2ee;
+  background: #f5f8f4;
 }
 
 .mode-select-tag {
   margin: 0;
+  padding: 1px 16px;
+  border: 1px solid #d9e1d8;
+  border-radius: 999px;
+  background: #fff;
+  color: #40544a;
+  font-size: 13px;
+  line-height: 26px;
   cursor: pointer;
+  user-select: none;
+  transition: background .2s, color .2s, border-color .2s;
+}
+
+.mode-select-tag:hover {
+  border-color: #8cab92;
+  color: #163c32;
+}
+
+.mode-select-tag.ant-tag-checkable-checked,
+.mode-select-tag.ant-tag-checkable-checked:hover {
+  border-color: #163c32;
+  background: #163c32;
+  color: #fff;
 }
 
 .mode-tags-hint {
-  margin-left: 6px;
+  margin-left: auto;
   color: #a2ada5;
   font-size: 11px;
 }
 
 .sango-panel {
-  margin-top: 14px;
-  padding: 12px 16px;
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 12px);
+  left: 0;
+  z-index: 20;
+  padding: 14px 16px 16px;
   border: 1px solid #eadfc9;
-  border-radius: 14px;
-  background: #fdf9f0;
+  border-radius: 16px;
+  background: #fffdf7;
+  box-shadow: 0 18px 42px rgba(94, 71, 32, .18);
 }
 
 .sango-panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin-bottom: 4px;
 }
 
 .sango-panel-title {
@@ -444,35 +529,100 @@ function formatTime(date: Date) {
 }
 
 .sango-panel-close {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: #a2916f;
+  cursor: pointer;
+}
+
+.sango-panel-close:hover {
+  background: #f3e9d3;
 }
 
 .sango-panel-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
 }
 
-.sango-service-btn {
-  border-radius: 10px;
+.sango-service-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid #efe4cd;
+  border-radius: 12px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: background .2s, border-color .2s, box-shadow .2s;
+}
+
+.sango-service-card:hover {
+  border-color: #d8bd8a;
+  background: #fbf3e3;
+}
+
+.sango-service-card.is-active {
+  border-color: #b17837;
+  background: #f6e9cf;
+  box-shadow: inset 0 0 0 1px #b17837;
+}
+
+.sango-service-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border-radius: 9px;
+  border: 1px solid #f0e6d2;
+  background: #fbf6ea;
+  font-size: 16px;
+}
+
+.sango-service-name {
+  color: #4a3a20;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sango-service-desc {
+  color: #a2916f;
+  font-size: 12px;
 }
 
 @media (max-width: 900px) {
   .content-grid {
     grid-template-columns: 1fr;
-    padding: 48px 0;
+    padding: 16px 0;
   }
 }
 
 @media (max-width: 560px) {
   .content-grid {
-    padding: 36px 0;
+    padding: 12px 0;
   }
 
   .chat-card {
     padding: 16px;
     border-radius: 18px;
   }
+
+  .message-list.is-panel-open {
+    padding-bottom: 300px;
+  }
+
+  .sango-panel-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>
-
