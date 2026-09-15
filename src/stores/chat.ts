@@ -1,12 +1,10 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import {
-  getErrorMessage,
-  sendChatMessage,
-  type ChatRequestOptions,
-  type ChatScenario,
-  type SangoService,
-} from '../api/client'
+import { getErrorMessage, sendChatMessage, sendSangoRandom } from '../api/client'
+
+// 标签与子服务是纯前端 UX 状态（能力可发现性、后续模板挂靠），不再进请求体
+export type ChatMode = 'weather' | 'sango'
+export type SangoServiceId = 'knowledge' | 'random'
 
 export interface ChatMessage {
   id: number
@@ -23,22 +21,17 @@ export const useChatStore = defineStore('chat', () => {
   const messages = ref<ChatMessage[]>([])
   const loading = ref(false)
   const error = ref('')
-  const mode = ref<ChatScenario>('general')
-  const sangoService = ref<SangoService | null>(null)
-  const sessionId = ref('')
+  const mode = ref<ChatMode | null>(null)
+  const sangoService = ref<SangoServiceId | null>(null)
+  const sessionId = ref(buildSessionId())
 
   const modeLabel = computed<string | null>(() => {
     if (mode.value !== 'sango' || !sangoService.value) return null
     return sangoService.value === 'knowledge' ? '风云三国-知识问答' : '风云三国-随机一题'
   })
 
-  function buildChatOptions(): ChatRequestOptions {
-    if (mode.value === 'weather') return { scenario: 'weather' }
-    if (mode.value === 'sango' && sangoService.value) {
-      return { scenario: 'sango', service: sangoService.value, sessionId: sessionId.value }
-    }
-    return {} // general: 只发 message，缺省 scenario
-  }
+  // 只有「风云三国-随机一题」是确定性本地命令，走独立端点；其余输入一律走统一对话入口
+  const usesSangoRandom = computed(() => mode.value === 'sango' && sangoService.value === 'random')
 
   function resetChatSession() {
     messages.value = []
@@ -46,7 +39,7 @@ export const useChatStore = defineStore('chat', () => {
     sessionId.value = buildSessionId()
   }
 
-  function setMode(next: ChatScenario) {
+  function setMode(next: ChatMode | null) {
     if (mode.value === next) return
     mode.value = next
     if (next !== 'sango') {
@@ -55,7 +48,7 @@ export const useChatStore = defineStore('chat', () => {
     resetChatSession()
   }
 
-  function setSangoService(service: SangoService | null) {
+  function setSangoService(service: SangoServiceId | null) {
     if (sangoService.value === service) return
     sangoService.value = service
     resetChatSession()
@@ -75,7 +68,9 @@ export const useChatStore = defineStore('chat', () => {
     loading.value = true
 
     try {
-      const answer = await sendChatMessage(trimmed, buildChatOptions())
+      const answer = usesSangoRandom.value
+        ? await sendSangoRandom(trimmed, sessionId.value)
+        : await sendChatMessage(trimmed)
       messages.value.push({
         id: Date.now() + 1,
         role: 'assistant',

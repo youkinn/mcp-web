@@ -10,15 +10,6 @@ export interface ChatData {
   answer: string
 }
 
-export type ChatScenario = 'general' | 'weather' | 'sango'
-export type SangoService = 'knowledge' | 'random'
-
-export interface ChatRequestOptions {
-  scenario?: ChatScenario
-  service?: SangoService
-  sessionId?: string
-}
-
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 30_000,
@@ -27,18 +18,23 @@ const apiClient = axios.create({
   },
 })
 
-export async function sendChatMessage(message: string, options: ChatRequestOptions = {}): Promise<string> {
-  const payload: Record<string, string> = { message }
-  if (options.scenario) payload.scenario = options.scenario
-  if (options.service) payload.service = options.service
-  if (options.sessionId) payload.sessionId = options.sessionId
-
-  const { data } = await apiClient.post<ApiResponse<ChatData>>('/chat', payload)
+async function postForAnswer(path: string, payload: Record<string, string>): Promise<string> {
+  const { data } = await apiClient.post<ApiResponse<ChatData>>(path, payload)
 
   if (data.code !== 200 || !data.data) {
     throw new Error(data.message || '请求失败，请稍后重试。')
   }
   return data.data.answer
+}
+
+export function sendChatMessage(message: string): Promise<string> {
+  return postForAnswer('/chat', { message })
+}
+
+export function sendSangoRandom(message: string, sessionId?: string): Promise<string> {
+  const payload: Record<string, string> = { message }
+  if (sessionId) payload.sessionId = sessionId
+  return postForAnswer('/sango/random', payload)
 }
 
 export function getErrorMessage(error: unknown): string {

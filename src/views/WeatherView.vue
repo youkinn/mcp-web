@@ -68,7 +68,7 @@
                   @change="onWeatherTagChange">天气</a-checkable-tag>
                 <a-checkable-tag :checked="chatStore.mode === 'sango'" class="mode-select-tag"
                   @change="onSangoTagChange">风云三国</a-checkable-tag>
-                <span class="mode-tags-hint">未选择时默认为普通问答</span>
+                <span class="mode-tags-hint">未选择时由助手自动判断：天气 / 风云三国 / 自由问答</span>
               </div>
               <form class="composer" @submit.prevent="submit">
                 <div class="input-scope">
@@ -94,8 +94,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { useChatStore } from '../stores/chat'
-import type { SangoService } from '../api/client'
+import { useChatStore, type SangoServiceId } from '../stores/chat'
 
 const chatStore = useChatStore()
 const draft = ref('')
@@ -144,7 +143,7 @@ function onWeatherTagChange(checked: boolean) {
     return
   }
   if (chatStore.mode === 'weather') {
-    chatStore.setMode('general')
+    chatStore.setMode(null)
   }
 }
 
@@ -159,17 +158,17 @@ function onSangoTagChange(checked: boolean) {
     panelVisible.value = true // 面板已收起时，点击标签重新展开
     return
   }
-  chatStore.setMode('general')
+  chatStore.setMode(null)
 }
 
-function selectSangoService(service: SangoService) {
+function selectSangoService(service: SangoServiceId) {
   chatStore.setSangoService(service)
   panelVisible.value = false
 }
 
 function onModeTagClose(tag: ModeTag) {
   if (tag.key === 'weather' || tag.key === 'sango') {
-    chatStore.setMode('general')
+    chatStore.setMode(null)
     return
   }
   chatStore.setSangoService(null)
