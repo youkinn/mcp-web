@@ -68,9 +68,14 @@ export const useChatStore = defineStore('chat', () => {
     loading.value = true
 
     try {
-      const answer = usesSangoRandom.value
-        ? await sendSangoRandom(trimmed, sessionId.value)
-        : await sendChatMessage(trimmed)
+      let answer: string
+      if (usesSangoRandom.value) {
+        answer = await sendSangoRandom(trimmed, sessionId.value)
+      } else if (mode.value === "sango" && sangoService.value === "knowledge") {
+        answer = await sendChatMessage(trimmed, "sango")
+      } else {
+        answer = await sendChatMessage(trimmed)
+      }
       messages.value.push({
         id: Date.now() + 1,
         role: 'assistant',
