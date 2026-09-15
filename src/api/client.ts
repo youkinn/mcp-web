@@ -27,8 +27,10 @@ async function postForAnswer(path: string, payload: Record<string, string>): Pro
   return data.data.answer
 }
 
-export function sendChatMessage(message: string): Promise<string> {
-  return postForAnswer('/chat', { message })
+export function sendChatMessage(message: string, domain?: "sango"): Promise<string> {
+  const payload: Record<string, string> = { message }
+  if (domain) payload.domain = domain
+  return postForAnswer('/chat', payload)
 }
 
 export function sendSangoRandom(message: string, sessionId?: string): Promise<string> {
