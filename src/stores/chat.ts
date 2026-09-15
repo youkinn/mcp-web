@@ -55,7 +55,7 @@ export const useChatStore = defineStore('chat', () => {
     resetChatSession()
   }
 
-  function setSangoService(service: SangoService) {
+  function setSangoService(service: SangoService | null) {
     if (sangoService.value === service) return
     sangoService.value = service
     resetChatSession()
