@@ -111,7 +111,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useChatStore, type SangoServiceId } from '../stores/chat'
 import type { Citation } from '../api/client'
 
@@ -160,6 +160,22 @@ const panelVisible = ref(true)
 const customInput = ref<HTMLElement | null>(null)
 const messageList = ref<HTMLElement | null>(null)
 const route = useRoute()
+const router = useRouter()
+
+// 把当前标签 / 子服务状态写回 URL（replace：不污染历史，刷新 / 分享链接可恢复）。
+// 风云三国未选二级服务时 URL 只带 mode，选中问题查询 / 随机一题后才带 service。
+function syncRoute() {
+  const query: Record<string, string> = {}
+  if (chatStore.mode === 'weather' || chatStore.mode === 'sango-novel') {
+    query.mode = chatStore.mode
+  } else if (chatStore.mode === 'fengyunsanguo') {
+    query.mode = 'fengyunsanguo'
+    if (chatStore.sangoService) {
+      query.service = chatStore.sangoService
+    }
+  }
+  router.replace({ query })
+}
 
 // 主页深链直达：mode / service 参数名与 chatStore 字段一致；无 mode 参数时行为与现状一致（自动判断）。
 // watch immediate：刷新 / 前进后退 / 地址栏改参都会重新应用；显式带 service 时直接进入对应子服务
@@ -233,10 +249,12 @@ function onWeatherTagChange(checked: boolean) {
   if (checked) {
     chatStore.setMode('weather')
     panelVisible.value = true
+    syncRoute()
     return
   }
   if (chatStore.mode === 'weather') {
     chatStore.setMode(null)
+    syncRoute()
   }
 }
 
@@ -244,6 +262,7 @@ function onSangoTagChange(checked: boolean) {
   if (checked) {
     chatStore.setMode('fengyunsanguo')
     panelVisible.value = true
+    syncRoute()
     return
   }
   if (chatStore.mode !== 'fengyunsanguo') return
@@ -252,30 +271,36 @@ function onSangoTagChange(checked: boolean) {
     return
   }
   chatStore.setMode(null)
+  syncRoute()
 }
 
 function onSangoNovelTagChange(checked: boolean) {
   if (checked) {
     chatStore.setMode('sango-novel')
+    syncRoute()
     return
   }
   if (chatStore.mode === 'sango-novel') {
     chatStore.setMode(null)
+    syncRoute()
   }
 }
 
 function selectSangoService(service: SangoServiceId) {
   chatStore.setSangoService(service)
   panelVisible.value = false
+  syncRoute()
 }
 
 function onModeTagClose(tag: ModeTag) {
   if (tag.key === 'weather' || tag.key === 'sango-novel' || tag.key === 'fengyunsanguo') {
     chatStore.setMode(null)
+    syncRoute()
     return
   }
   chatStore.setSangoService(null)
   panelVisible.value = true
+  syncRoute()
 }
 
 function onCustomInput(event: Event) {
