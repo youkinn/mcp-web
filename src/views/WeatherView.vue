@@ -68,7 +68,9 @@
                   @change="onWeatherTagChange">天气</a-checkable-tag>
                 <a-checkable-tag :checked="chatStore.mode === 'fengyunsanguo'" class="mode-select-tag"
                   @change="onSangoTagChange">风云三国</a-checkable-tag>
-                <span class="mode-tags-hint">未选择时由助手自动判断：天气 / 风云三国 / 自由问答</span>
+                <a-checkable-tag :checked="chatStore.mode === 'sango-novel'" class="mode-select-tag"
+                  @change="onSangoNovelTagChange">三国演义</a-checkable-tag>
+                <span class="mode-tags-hint">未选择时由助手自动判断：天气 / 风云三国 / 三国演义 / 自由问答</span>
               </div>
               <form class="composer" @submit.prevent="submit">
                 <div class="input-scope">
@@ -116,13 +118,16 @@ watch(
 )
 
 interface ModeTag {
-  key: 'weather' | 'fengyunsanguo' | 'fengyunsanguo-knowledge' | 'fengyunsanguo-random'
+  key: 'weather' | 'fengyunsanguo' | 'sango-novel' | 'fengyunsanguo-knowledge' | 'fengyunsanguo-random'
   label: string
 }
 
 const activeModeTags = computed<ModeTag[]>(() => {
   if (chatStore.mode === 'weather') {
     return [{ key: 'weather', label: '天气' }]
+  }
+  if (chatStore.mode === 'sango-novel') {
+    return [{ key: 'sango-novel', label: '三国演义' }]
   }
   if (chatStore.mode === 'fengyunsanguo') {
     const tags: ModeTag[] = [{ key: 'fengyunsanguo', label: '风云三国' }]
@@ -161,13 +166,23 @@ function onSangoTagChange(checked: boolean) {
   chatStore.setMode(null)
 }
 
+function onSangoNovelTagChange(checked: boolean) {
+  if (checked) {
+    chatStore.setMode('sango-novel')
+    return
+  }
+  if (chatStore.mode === 'sango-novel') {
+    chatStore.setMode(null)
+  }
+}
+
 function selectSangoService(service: SangoServiceId) {
   chatStore.setSangoService(service)
   panelVisible.value = false
 }
 
 function onModeTagClose(tag: ModeTag) {
-  if (tag.key === 'weather' || tag.key === 'fengyunsanguo') {
+  if (tag.key === 'weather' || tag.key === 'sango-novel' || tag.key === 'fengyunsanguo') {
     chatStore.setMode(null)
     return
   }

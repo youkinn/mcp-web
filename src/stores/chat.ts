@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { getErrorMessage, sendChatMessage, sendSangoRandom } from '../api/client'
 
 // 标签与子服务是纯前端 UX 状态（能力可发现性、后续模板挂靠），不再进请求体
-export type ChatMode = 'weather' | 'fengyunsanguo'
+export type ChatMode = 'weather' | 'fengyunsanguo' | 'sango-novel'
 export type SangoServiceId = 'knowledge' | 'random'
 
 export interface ChatMessage {
@@ -26,6 +26,7 @@ export const useChatStore = defineStore('chat', () => {
   const sessionId = ref(buildSessionId())
 
   const modeLabel = computed<string | null>(() => {
+    if (mode.value === 'sango-novel') return '三国演义-原著解读'
     if (mode.value !== 'fengyunsanguo' || !sangoService.value) return null
     return sangoService.value === 'knowledge' ? '风云三国-知识问答' : '风云三国-随机一题'
   })
@@ -73,6 +74,8 @@ export const useChatStore = defineStore('chat', () => {
         answer = await sendSangoRandom(trimmed, sessionId.value)
       } else if (mode.value === "fengyunsanguo" && sangoService.value === "knowledge") {
         answer = await sendChatMessage(trimmed, "fengyunsanguo")
+      } else if (mode.value === "sango-novel") {
+        answer = await sendChatMessage(trimmed, "sango-novel")
       } else {
         answer = await sendChatMessage(trimmed)
       }
