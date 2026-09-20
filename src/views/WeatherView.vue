@@ -66,7 +66,7 @@
               <div class="mode-tags">
                 <a-checkable-tag :checked="chatStore.mode === 'weather'" class="mode-select-tag"
                   @change="onWeatherTagChange">天气</a-checkable-tag>
-                <a-checkable-tag :checked="chatStore.mode === 'sango'" class="mode-select-tag"
+                <a-checkable-tag :checked="chatStore.mode === 'fengyunsanguo'" class="mode-select-tag"
                   @change="onSangoTagChange">风云三国</a-checkable-tag>
                 <a-checkable-tag :checked="chatStore.mode === 'sango-novel'" class="mode-select-tag"
                   @change="onSangoNovelTagChange">三国演义</a-checkable-tag>
@@ -105,7 +105,7 @@ const customInput = ref<HTMLElement | null>(null)
 const messageList = ref<HTMLElement | null>(null)
 
 const hasMessages = computed(() => chatStore.messages.length > 0)
-const sangoPanelOpen = computed(() => chatStore.mode === 'sango' && panelVisible.value)
+const sangoPanelOpen = computed(() => chatStore.mode === 'fengyunsanguo' && panelVisible.value)
 
 watch(
   () => chatStore.messages.length,
@@ -118,7 +118,7 @@ watch(
 )
 
 interface ModeTag {
-  key: 'weather' | 'sango' | 'sango-novel' | 'sango-knowledge' | 'sango-random'
+  key: 'weather' | 'fengyunsanguo' | 'sango-novel' | 'fengyunsanguo-knowledge' | 'fengyunsanguo-random'
   label: string
 }
 
@@ -129,12 +129,12 @@ const activeModeTags = computed<ModeTag[]>(() => {
   if (chatStore.mode === 'sango-novel') {
     return [{ key: 'sango-novel', label: '三国演义' }]
   }
-  if (chatStore.mode === 'sango') {
-    const tags: ModeTag[] = [{ key: 'sango', label: '风云三国' }]
+  if (chatStore.mode === 'fengyunsanguo') {
+    const tags: ModeTag[] = [{ key: 'fengyunsanguo', label: '风云三国' }]
     if (chatStore.sangoService === 'knowledge') {
-      tags.push({ key: 'sango-knowledge', label: '问答模式' })
+      tags.push({ key: 'fengyunsanguo-knowledge', label: '问答模式' })
     } else if (chatStore.sangoService === 'random') {
-      tags.push({ key: 'sango-random', label: '随便一题' })
+      tags.push({ key: 'fengyunsanguo-random', label: '随便一题' })
     }
     return tags
   }
@@ -154,11 +154,11 @@ function onWeatherTagChange(checked: boolean) {
 
 function onSangoTagChange(checked: boolean) {
   if (checked) {
-    chatStore.setMode('sango')
+    chatStore.setMode('fengyunsanguo')
     panelVisible.value = true
     return
   }
-  if (chatStore.mode !== 'sango') return
+  if (chatStore.mode !== 'fengyunsanguo') return
   if (!panelVisible.value) {
     panelVisible.value = true // 面板已收起时，点击标签重新展开
     return
@@ -182,7 +182,7 @@ function selectSangoService(service: SangoServiceId) {
 }
 
 function onModeTagClose(tag: ModeTag) {
-  if (tag.key === 'weather' || tag.key === 'sango' || tag.key === 'sango-novel') {
+  if (tag.key === 'weather' || tag.key === 'sango-novel' || tag.key === 'fengyunsanguo') {
     chatStore.setMode(null)
     return
   }
@@ -208,7 +208,7 @@ function onComposerEnter(event: KeyboardEvent) {
 async function submit() {
   const content = draft.value.trim()
   if (!content || chatStore.loading) return
-  if (chatStore.mode === 'sango' && !chatStore.sangoService) {
+  if (chatStore.mode === 'fengyunsanguo' && !chatStore.sangoService) {
     message.warning('请先选择「问题查询」或「随机一题」')
     return
   }
