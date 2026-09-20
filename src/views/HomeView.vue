@@ -15,8 +15,8 @@
       <section class="workspace-content">
         <div class="workspace-intro">
           <p class="eyebrow">MCP web workspace</p>
-          <h1>连接工具，<em>让能力逐步长出来。</em></h1>
-          <p class="intro-copy">这里是 MCP 能力的统一入口。每个功能都可以独立接入、独立演进，天气助手只是其中一个开始。</p>
+          <h1>连接工具，让能力逐步长出来。</h1>
+          <p class="intro-copy">这里是 MCP 能力的统一入口。每个功能都可以独立接入、独立演进。</p>
         </div>
 
         <section class="tool-section">
@@ -25,17 +25,41 @@
               <p class="section-kicker">Available tools</p>
               <h2>已接入能力</h2>
             </div>
-            <span class="tool-count">01 个工具</span>
+            <span class="tool-count">03 个工具</span>
           </div>
 
-          <RouterLink to="/weather" class="tool-card">
+          <RouterLink to="/weather?mode=weather" class="tool-card">
             <div class="tool-icon">☼</div>
             <div class="tool-copy">
               <div class="tool-title-row">
                 <h3>天气助手</h3>
                 <span class="tool-status">已连接</span>
               </div>
-              <p>查询天气预报、天气预警，以及结合城市出行场景给出建议。</p>
+              <p>统一对话入口：天气查询、风云三国题库与三国演义原著解读，均在本页标签切换使用。</p>
+            </div>
+            <span class="tool-arrow" aria-hidden="true">→</span>
+          </RouterLink>
+
+          <RouterLink to="/weather?mode=fengyunsanguo&service=knowledge" class="tool-card">
+            <div class="tool-icon">⚔</div>
+            <div class="tool-copy">
+              <div class="tool-title-row">
+                <h3>风云三国题库</h3>
+                <span class="tool-status">已连接</span>
+              </div>
+              <p>知识问答与随机一题：快速查答案、随机出题并作答判题。</p>
+            </div>
+            <span class="tool-arrow" aria-hidden="true">→</span>
+          </RouterLink>
+
+          <RouterLink to="/weather?mode=sango-novel" class="tool-card">
+            <div class="tool-icon">📖</div>
+            <div class="tool-copy">
+              <div class="tool-title-row">
+                <h3>三国演义原著解读</h3>
+                <span class="tool-status">已连接</span>
+              </div>
+              <p>基于原著原文解读情节人物，引用出处以卡片区呈现。</p>
             </div>
             <span class="tool-arrow" aria-hidden="true">→</span>
           </RouterLink>
