@@ -9,7 +9,12 @@
             <span class="brand-caption">Log tracking</span>
           </span>
         </RouterLink>
-        <a-tag color="green">服务就绪</a-tag>
+        <div class="header-actions">
+          <RouterLink to="/weather">
+            <a-button size="small">← 返回聊天</a-button>
+          </RouterLink>
+          <a-tag color="green">服务就绪</a-tag>
+        </div>
       </header>
 
       <a-tabs v-model:activeKey="activeTab" class="logs-tabs" size="large">
@@ -27,7 +32,7 @@
               </div>
               <div class="query-item">
                 <span class="query-label">时间范围</span>
-                <a-range-picker v-model:value="query.dateRange" value-format="YYYY-MM-DD" class="query-control query-range" @change="onListRangeChange" />
+                <a-range-picker v-model:value="query.dateRange" value-format="YYYY-MM-DD" :placeholder="['开始日期', '结束日期']" class="query-control query-range" @change="onListRangeChange" />
               </div>
               <div class="query-item">
                 <span class="query-label">traceId</span>
@@ -35,7 +40,7 @@
               </div>
               <div class="query-item">
                 <span class="query-label">关键字</span>
-                <a-input v-model:value="query.keyword" class="query-control" placeholder="匹配 userInput" allow-clear />
+                <a-input v-model:value="query.keyword" class="query-control" placeholder="匹配用户输入" allow-clear />
               </div>
               <div class="query-item">
                 <span class="query-label">状态</span>
@@ -63,7 +68,7 @@
               :loading="listLoading"
               :row-key="rowKeyTrace"
               :pagination="pagination"
-              :scroll="{ x: 1180 }"
+              :scroll="{ x: 1260 }"
               v-model:expandedRowKeys="expandedRowKeys"
               :expand-row-by-click="false"
               @change="onTableChange"
@@ -76,7 +81,10 @@
                 </template>
 
                 <template v-else-if="column.key === 'userInput'">
-                  <span class="cell-ellipsis" :title="record.userInput">{{ truncateText(record.userInput, 200) }}</span>
+                  <a-tooltip placement="topLeft">
+                    <template #title>{{ record.userInput }}</template>
+                    <span class="cell-ellipsis">{{ truncateText(record.userInput, 200) }}</span>
+                  </a-tooltip>
                 </template>
 
                 <template v-else-if="column.key === 'domain'">{{ record.domain || '—' }}</template>
@@ -87,10 +95,10 @@
                       <a-tag :color="record.status === 'failed' ? 'error' : 'success'">
                         {{ record.status === 'failed' ? '失败' : '成功' }}
                       </a-tag>
-                      <span class="resp-code" :class="{ 'is-failed': record.status === 'failed' }">{{ record.responseCode }}</span>
-                    </div>
-                    <div v-if="record.status === 'failed' && record.errorMessage" class="status-error" :title="record.errorMessage">
-                      {{ record.errorMessage }}
+                      <a-tooltip v-if="record.status === 'failed'" placement="topLeft">
+                        <template #title>{{ record.errorMessage || '响应码 ' + record.responseCode }}</template>
+                        <a-tag color="error">{{ record.responseCode }}</a-tag>
+                      </a-tooltip>
                     </div>
                   </div>
                 </template>
@@ -106,12 +114,7 @@
                         <div>队列等待 {{ formatDuration(record.durations.queueWait) }}</div>
                       </div>
                     </template>
-                    <div class="dur-cell">
-                      <div class="dur-total">{{ formatDuration(record.durations.total) }}</div>
-                      <div class="dur-sub">
-                        前端 {{ formatDuration(record.durations.frontend) }} · 总台 {{ formatDuration(record.durations.server) }} · LLM {{ formatDuration(record.durations.llm) }} · 工具 {{ formatDuration(record.durations.tool) }}
-                      </div>
-                    </div>
+                    <div class="dur-total">{{ formatDuration(record.durations.total) }}</div>
                   </a-tooltip>
                 </template>
 
@@ -119,11 +122,6 @@
                   <span>{{ formatTokens(record.tokens?.input ?? null) }} / {{ formatTokens(record.tokens?.output ?? null) }}</span>
                 </template>
 
-                <template v-else-if="column.key === 'action'">
-                  <a-button type="link" size="small" @click="toggleExpand(record)">
-                    {{ isExpanded(record.traceId) ? '收起' : '明细' }}
-                  </a-button>
-                </template>
               </template>
 
               <template #expandedRowRender="{ record }">
@@ -144,7 +142,16 @@
                         引用（citations）
                         <a-tag v-if="hasTruncation(detailOf(record.traceId)?.data?.log.citations ?? '')" color="warning" size="small">已截断</a-tag>
                       </h4>
-                      <pre class="json-pre" v-html="highlightJson(prettyJson(detailOf(record.traceId)?.data?.log.citations ?? ''))"></pre>
+                      <div v-if="citationsData(record)" class="json-viewer-wrap sub-viewer">
+                        <vue-json-pretty
+                          :data="citationsData(record)"
+                          theme="light"
+                          :deep="2"
+                          show-length
+                          :collapsed-on-click-brackets="true"
+                        />
+                      </div>
+                      <pre v-else class="json-pre">{{ readableText(detailOf(record.traceId)?.data?.log.citations ?? '') }}</pre>
                     </section>
 
                     <section class="detail-section">
@@ -170,8 +177,12 @@
                             {{ formatTokens(call.promptTokens) }} / {{ formatTokens(call.completionTokens) }}
                           </template>
                           <template v-else-if="column.key === 'time'">
-                            <div>{{ formatTime(call.requestAt, true) }}</div>
-                            <div v-if="call.responseAt !== null" class="sub-meta">→ {{ formatTime(call.responseAt, true) }} · 耗时 {{ formatDuration(call.responseAt - call.requestAt) }}</div>
+                            <template v-if="call.responseAt !== null">
+                              <a-tooltip placement="topLeft">
+                                <template #title>开始 {{ formatTime(call.requestAt, true) }} ～ 结束 {{ formatTime(call.responseAt, true) }}</template>
+                                <span class="dur-simple">耗时 {{ formatDuration(call.responseAt - call.requestAt) }}</span>
+                              </a-tooltip>
+                            </template>
                             <div v-else class="sub-meta err-text">未返回</div>
                           </template>
                           <template v-else-if="column.key === 'status'">
@@ -179,33 +190,15 @@
                             <div v-if="call.status === 'failed' && call.errorMessage" class="sub-meta err-text">{{ call.errorMessage }}</div>
                           </template>
                           <template v-else-if="column.key === 'content'">
-                            <template v-if="call.requestSummary">
-                              <div class="content-block">
-                                <div class="content-label">
-                                  请求
-                                  <a-tag v-if="hasTruncation(call.requestSummary)" color="warning" size="small">已截断</a-tag>
-                                </div>
-                                <pre class="json-pre" v-html="highlightJson(prettyJson(call.requestSummary))"></pre>
-                              </div>
-                            </template>
-                            <template v-if="call.responseSummary">
-                              <div class="content-block">
-                                <div class="content-label">
-                                  响应
-                                  <a-tag v-if="hasTruncation(call.responseSummary)" color="warning" size="small">已截断</a-tag>
-                                </div>
-                                <pre class="json-pre" v-html="highlightJson(prettyJson(call.responseSummary))"></pre>
-                              </div>
-                            </template>
-                            <template v-if="call.toolCalls && call.toolCalls.trim() && call.toolCalls.trim() !== '[]'">
-                              <div class="content-block">
-                                <div class="content-label">
-                                  工具声明
-                                  <a-tag v-if="hasTruncation(call.toolCalls)" color="warning" size="small">已截断</a-tag>
-                                </div>
-                                <pre class="json-pre" v-html="highlightJson(prettyJson(call.toolCalls))"></pre>
-                              </div>
-                            </template>
+                            <div class="content-actions">
+                              <a-button v-if="call.requestSummary" size="small" @click="openJsonModal('LLM 入参 #' + call.seq, call.requestSummary)">入参</a-button>
+                              <a-button v-if="call.responseSummary" size="small" @click="openJsonModal('LLM 出参 #' + call.seq, call.responseSummary)">出参</a-button>
+                              <a-button
+                                v-if="call.toolCalls && call.toolCalls.trim() && call.toolCalls.trim() !== '[]'"
+                                size="small"
+                                @click="openJsonModal('LLM 工具声明 #' + call.seq, call.toolCalls)"
+                              >工具声明</a-button>
+                            </div>
                           </template>
                         </template>
                       </a-table>
@@ -223,12 +216,19 @@
                         class="sub-table"
                       >
                         <template #bodyCell="{ column, record: call }">
-                          <template v-if="column.key === 'tool'">
-                            {{ call.mcpServer }}.{{ call.toolName }}
+                          <template v-if="column.key === 'mcpServer'">
+                            {{ call.mcpServer }}
+                          </template>
+                          <template v-else-if="column.key === 'toolName'">
+                            <span class="tool-name">{{ call.toolName }}</span>
                           </template>
                           <template v-else-if="column.key === 'time'">
-                            <div>{{ formatTime(call.callSentAt, true) }}</div>
-                            <div v-if="call.callReturnedAt !== null" class="sub-meta">→ {{ formatTime(call.callReturnedAt, true) }} · 耗时 {{ formatDuration(call.callReturnedAt - call.callSentAt) }}</div>
+                            <template v-if="call.callReturnedAt !== null">
+                              <a-tooltip placement="topLeft">
+                                <template #title>开始 {{ formatTime(call.callSentAt, true) }} ～ 结束 {{ formatTime(call.callReturnedAt, true) }}</template>
+                                <span class="dur-simple">耗时 {{ formatDuration(call.callReturnedAt - call.callSentAt) }}</span>
+                              </a-tooltip>
+                            </template>
                             <div v-else class="sub-meta err-text">未返回</div>
                           </template>
                           <template v-else-if="column.key === 'status'">
@@ -236,24 +236,10 @@
                             <div v-if="call.status === 'failed' && call.errorMessage" class="sub-meta err-text">{{ call.errorMessage }}</div>
                           </template>
                           <template v-else-if="column.key === 'content'">
-                            <template v-if="call.argsSummary">
-                              <div class="content-block">
-                                <div class="content-label">
-                                  参数
-                                  <a-tag v-if="hasTruncation(call.argsSummary)" color="warning" size="small">已截断</a-tag>
-                                </div>
-                                <pre class="json-pre" v-html="highlightJson(prettyJson(call.argsSummary))"></pre>
-                              </div>
-                            </template>
-                            <template v-if="call.resultSummary">
-                              <div class="content-block">
-                                <div class="content-label">
-                                  返回
-                                  <a-tag v-if="hasTruncation(call.resultSummary)" color="warning" size="small">已截断</a-tag>
-                                </div>
-                                <pre class="json-pre" v-html="highlightJson(prettyJson(call.resultSummary))"></pre>
-                              </div>
-                            </template>
+                            <div class="content-actions">
+                              <a-button v-if="call.argsSummary" size="small" @click="openJsonModal('工具入参 #' + call.seq, call.argsSummary)">入参</a-button>
+                              <a-button v-if="call.resultSummary" size="small" @click="openJsonModal('工具出参 #' + call.seq, call.resultSummary)">出参</a-button>
+                            </div>
                           </template>
                         </template>
                       </a-table>
@@ -279,7 +265,7 @@
                   <a-radio-button value="30d">近 30 天</a-radio-button>
                   <a-radio-button value="custom">自定义</a-radio-button>
                 </a-radio-group>
-                <a-range-picker v-model:value="customRange" value-format="YYYY-MM-DD" class="query-range" @change="onCustomRangeChange" />
+                <a-range-picker v-model:value="customRange" value-format="YYYY-MM-DD" :placeholder="['开始日期', '结束日期']" class="query-range" @change="onCustomRangeChange" />
               </div>
               <div class="query-item">
                 <span class="query-label">粒度</span>
@@ -310,6 +296,26 @@
           </div>
         </a-tab-pane>
       </a-tabs>
+
+      <a-modal
+        v-model:open="contentModalOpen"
+        :title="contentModal?.title"
+        :footer="null"
+        width="min(900px, 94vw)"
+        @cancel="closeContentModal"
+      >
+        <div v-if="jsonViewData" class="json-viewer-wrap modal-json">
+          <vue-json-pretty
+            :key="contentModal?.title"
+            :data="jsonViewData"
+            theme="light"
+            :deep="2"
+            show-length
+            :collapsed-on-click-brackets="true"
+          />
+        </div>
+        <pre v-else class="json-pre modal-json">{{ readableText(contentModal?.body ?? '') }}</pre>
+      </a-modal>
     </div>
   </main>
 </template>
@@ -322,6 +328,8 @@ import { BarChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import type { EChartsType } from 'echarts/core'
+import VueJsonPretty from 'vue-json-pretty'
+import 'vue-json-pretty/lib/styles.css'
 
 use([BarChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 import {
@@ -375,48 +383,148 @@ function truncateText(text: string, max: number): string {
 function hasTruncation(text: string): boolean {
   return text.includes(TRUNCATION_MARK)
 }
-// ── JSON 内容展示：格式化 + 轻量语法高亮（不引额外库）──
+// ── JSON 内容展示：vue-json-pretty 树形查看 ──
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
+// 展示优化：字符串值若是内嵌 JSON（如工具返回里再序列化一层的数组/对象），
+// 递归展开成真实层级，避免出现大量 \" 转义；纯文本里的 \n 还原为换行便于阅读
+function readableText(value: string): string {
+  return value
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\r/g, '')
+    .replace(/\\"/g, '"')
 }
 
-const JSON_TOKEN_RE = /("(?:\\.|[^"\\])*")(\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g
-
-function highlightJson(raw: string): string {
-  let html = ''
-  let lastIndex = 0
-  JSON_TOKEN_RE.lastIndex = 0
-  let match: RegExpExecArray | null
-  while ((match = JSON_TOKEN_RE.exec(raw)) !== null) {
-    html += escapeHtml(raw.slice(lastIndex, match.index))
-    const token = match[0]
-    const isKey = match[2] !== undefined
-    const cls = isKey
-      ? 'json-key'
-      : match[1] !== undefined
-        ? 'json-string'
-        : /true|false|null/.test(token)
-          ? 'json-literal'
-          : 'json-number'
-    html += `<span class="${cls}">${escapeHtml(token)}</span>`
-    lastIndex = match.index + token.length
+function expandNestedJson(value: unknown): unknown {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        return expandNestedJson(JSON.parse(value))
+      } catch {
+        return readableText(value)
+      }
+    }
+    return readableText(value)
   }
-  html += escapeHtml(raw.slice(lastIndex))
-  return html
+  if (Array.isArray(value)) return value.map((item) => expandNestedJson(item))
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    Object.entries(value).forEach(([key, item]) => {
+      out[key] = expandNestedJson(item)
+    })
+    return out
+  }
+  return value
 }
 
-function prettyJson(raw: string): string {
-  if (!raw) return ''
+// 服务端 8000 截断会从任意位置切断 JSON 导致解析失败。
+// 尽力修复：优先在截断处补全未闭合的字符串与括号，失败则回到最后一个完整 token 处截断再补闭合。
+function repairTruncatedJson(raw: string): unknown | null {
+  const body = raw.replace(TRUNCATION_MARK, '').trimEnd()
+  if (!body) return null
+
+  const stack: string[] = []
+  let inString = false
+  let escaped = false
+  let lastCut = -1
+  let lastCutStack: string[] = []
+  let tokenStart = -1
+
+  const endToken = (endIndex: number) => {
+    const token = body.slice(tokenStart, endIndex + 1)
+    if (/^(?:true|false|null|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)$/.test(token)) {
+      lastCut = endIndex + 1
+      lastCutStack = stack.slice()
+    }
+    tokenStart = -1
+  }
+
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]
+    if (inString) {
+      if (escaped) {
+        escaped = false
+      } else if (ch === '\\') {
+        escaped = true
+      } else if (ch === '"') {
+        inString = false
+        // 键后紧跟冒号，不当作安全截断点
+        if (body[i + 1] !== ':') {
+          lastCut = i + 1
+          lastCutStack = stack.slice()
+        }
+      }
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+    } else if (ch === '{') {
+      stack.push('object')
+    } else if (ch === '[') {
+      stack.push('array')
+    } else if (ch === '}') {
+      stack.pop()
+      lastCut = i + 1
+      lastCutStack = stack.slice()
+    } else if (ch === ']') {
+      stack.pop()
+      lastCut = i + 1
+      lastCutStack = stack.slice()
+    } else if (/[A-Za-z0-9]/.test(ch)) {
+      if (tokenStart < 0) tokenStart = i
+    } else if (tokenStart >= 0) {
+      endToken(i - 1)
+    }
+  }
+  if (tokenStart >= 0) endToken(body.length - 1)
+
+  const candidates: string[] = []
+  const seen = new Set<string>()
+  const pushCandidate = (base: string, closers: string) => {
+    for (const prefix of ['', '"', '""']) {
+      const candidate = `${base}${prefix}${closers}`
+      if (!seen.has(candidate)) {
+        seen.add(candidate)
+        candidates.push(candidate)
+      }
+    }
+  }
+
+  // 1) 尽量保留截断处未闭合的字符串：直接在末尾补闭合符号
+  const endDepth = Math.min(stack.length, 5)
+  for (let i = 0; i < 2 ** endDepth; i++) {
+    let closers = ''
+    for (let j = 0; j < endDepth; j++) closers += (i >> j) & 1 ? ']' : '}'
+    pushCandidate(body, closers)
+  }
+
+  // 2) 回到最后一个完整 token 处截断（去掉悬空逗号），再补闭合
+  if (lastCut >= 0) {
+    const base = body.slice(0, lastCut).replace(/[, \t\r\n]+$/, '')
+    let closers = ''
+    for (let j = lastCutStack.length - 1; j >= 0; j--) closers += lastCutStack[j] === 'array' ? ']' : '}'
+    pushCandidate(base, closers)
+    // 截断点可能刚好处在键/冒号后，补一个空值试试
+    candidates.push(`${base}null${closers}`)
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return expandNestedJson(JSON.parse(candidate))
+    } catch {
+      /* 继续尝试下一个候选 */
+    }
+  }
+  return null
+}
+
+function tryParseJson(raw: string): unknown {
+  if (!raw) return null
   try {
-    return JSON.stringify(JSON.parse(raw), null, 2)
+    return expandNestedJson(JSON.parse(raw))
   } catch {
-    return raw
+    return repairTruncatedJson(raw)
   }
 }
 
@@ -425,28 +533,28 @@ function prettyJson(raw: string): string {
 const columns = [
   { key: 'time', title: '时间', width: 165 },
   { key: 'logType', title: '类型', width: 90 },
-  { key: 'userInput', title: '用户输入', minWidth: 220 },
+  { key: 'userInput', title: '用户输入', width: 200, ellipsis: true },
   { key: 'domain', title: '域', width: 110 },
-  { key: 'status', title: '状态', width: 240 },
-  { key: 'durations', title: '耗时', width: 158 },
-  { key: 'tokens', title: 'Token（输入/输出）', width: 130 },
-  { key: 'action', title: '操作', width: 80, fixed: 'right' },
+  { key: 'status', title: '状态', width: 150 },
+  { key: 'durations', title: '耗时', width: 110 },
+  { key: 'tokens', title: 'Token（输入/输出）', width: 220 },
 ]
 
 const llmColumns = [
   { key: 'stage', title: '阶段', width: 120 },
   { key: 'model', title: '模型', width: 170 },
-  { key: 'tokens', title: 'Token（输入/输出）', width: 130 },
-  { key: 'time', title: '时间', width: 240 },
+  { key: 'tokens', title: 'Token（输入/输出）', width: 150 },
+  { key: 'time', title: '耗时', width: 110 },
   { key: 'status', title: '状态', width: 140 },
-  { key: 'content', title: '内容', minWidth: 360 },
+  { key: 'content', title: '内容', width: 200 },
 ]
 
 const toolColumns = [
-  { key: 'tool', title: '工具', width: 210 },
-  { key: 'time', title: '时间', width: 240 },
+  { key: 'mcpServer', title: 'MCP 名称', width: 140 },
+  { key: 'toolName', title: '调用方法', width: 180 },
+  { key: 'time', title: '耗时', width: 110 },
   { key: 'status', title: '状态', width: 140 },
-  { key: 'content', title: '内容', minWidth: 360 },
+  { key: 'content', title: '内容', width: 200 },
 ]
 
 function rowKeyTrace(record: LogListItem): string {
@@ -460,7 +568,7 @@ function rowKeySeq(item: { seq: number }): number {
 const rows = ref<LogListItem[]>([])
 const total = ref(0)
 const pageNo = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(10)
 const listLoading = ref(false)
 
 const query = reactive<{
@@ -482,23 +590,35 @@ const query = reactive<{
 const expandedRowKeys = ref<string[]>([])
 const detailState = reactive<Record<string, { loading: boolean; error: string; data: LogDetail | null }>>({})
 
+const contentModalOpen = ref(false)
+const contentModal = ref<{ title: string; body: string } | null>(null)
+
+function openJsonModal(title: string, body: string) {
+  contentModal.value = { title: hasTruncation(body) ? `${title} (已截断)` : title, body }
+  contentModalOpen.value = true
+}
+
+function closeContentModal() {
+  contentModalOpen.value = false
+  contentModal.value = null
+}
+
+const jsonViewData = computed(() => tryParseJson(contentModal.value?.body ?? ''))
+
+function citationsData(record: LogListItem): unknown {
+  return tryParseJson(detailOf(record.traceId)?.data?.log.citations ?? '')
+}
+
 function detailOf(traceId: string) {
   return detailState[traceId]
 }
 
-function isExpanded(traceId: string): boolean {
-  return expandedRowKeys.value.includes(traceId)
-}
-
-function toggleExpand(record: LogListItem) {
-  const index = expandedRowKeys.value.indexOf(record.traceId)
-  if (index >= 0) {
-    expandedRowKeys.value.splice(index, 1)
-    return
-  }
-  expandedRowKeys.value.push(record.traceId)
-  void ensureDetail(record.traceId)
-}
+// 点击行首「+」展开时同样加载明细（此前只有「明细」按钮会触发，导致先空一行）
+watch(expandedRowKeys, (keys) => {
+  keys.forEach((traceId) => {
+    void ensureDetail(traceId)
+  })
+})
 
 async function ensureDetail(traceId: string) {
   if (detailState[traceId]) return
@@ -571,7 +691,7 @@ function onReset() {
 
 function onTableChange(pagination: { current?: number; pageSize?: number }) {
   pageNo.value = pagination.current ?? 1
-  pageSize.value = pagination.pageSize ?? 20
+  pageSize.value = pagination.pageSize ?? 10
   resetExpansion()
   void loadList()
 }
@@ -582,6 +702,7 @@ const pagination = computed(() => ({
   total: total.value,
   showSizeChanger: true,
   showTotal: (t: number) => `共 ${t} 条`,
+  buildOptionText: (opt: { value: string | number }) => `${opt.value}条/页`,
 }))
 // ── Token 统计（Asia/Shanghai 日界）──
 
@@ -797,7 +918,7 @@ onBeforeUnmount(() => {
 .page-shell {
   display: flex;
   flex-direction: column;
-  max-width: 1280px;
+  max-width: 1400px;
   min-height: 100vh;
   margin: 0 auto;
   padding: 20px 48px;
@@ -809,6 +930,12 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   padding-bottom: 20px;
   border-bottom: 1px solid #d7e0d7;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .brand {
@@ -924,7 +1051,7 @@ onBeforeUnmount(() => {
 
 .cell-ellipsis {
   display: block;
-  max-width: 420px;
+  max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -936,39 +1063,31 @@ onBeforeUnmount(() => {
   gap: 6px;
 }
 
-.resp-code {
-  color: #718078;
-  font-family: 'SFMono-Regular', Consolas, monospace;
-  font-size: 12px;
-}
-
-.resp-code.is-failed {
-  color: #cf1322;
-  font-weight: 700;
-}
-
-.status-error {
-  max-width: 280px;
-  margin-top: 2px;
-  overflow: hidden;
-  color: #cf1322;
-  font-size: 12px;
-  line-height: 1.5;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .dur-total {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
-.dur-sub {
-  margin-top: 2px;
-  color: #8a9990;
-  font-size: 11px;
-  line-height: 1.5;
+.dur-simple {
+  color: #40544a;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.tool-name {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 12px;
+}
+
+.content-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.modal-json {
+  max-height: 62vh;
+  overflow: auto;
 }
 
 /* ── 行展开明细 ── */
@@ -1056,8 +1175,8 @@ onBeforeUnmount(() => {
   overflow: auto;
   border: 1px solid #e3e9e2;
   border-radius: 10px;
-  background: #0f1c17;
-  color: #cfe3d8;
+  background: #fbfdfa;
+  color: #40544a;
   font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
   font-size: 12px;
   line-height: 1.6;
@@ -1065,20 +1184,21 @@ onBeforeUnmount(() => {
   word-break: break-all;
 }
 
-.json-pre :deep(.json-key) {
-  color: #e8b76a;
+.json-viewer-wrap {
+  border: 1px solid #e3e9e2;
+  border-radius: 10px;
+  background: #fbfdfa;
+  color: #40544a;
+  padding: 10px 12px;
+  overflow: auto;
 }
 
-.json-pre :deep(.json-string) {
-  color: #7fd4a8;
+.json-viewer-wrap :deep(.vjs-value-string) {
+  white-space: pre-wrap;
 }
 
-.json-pre :deep(.json-number) {
-  color: #7fb3f5;
-}
-
-.json-pre :deep(.json-literal) {
-  color: #ef8b6f;
+.sub-viewer {
+  max-height: 320px;
 }
 
 /* ── Token 统计 ── */
