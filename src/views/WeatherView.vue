@@ -9,7 +9,12 @@
             <span class="brand-caption">Chat gateway</span>
           </span>
         </RouterLink>
-        <a-tag color="green">服务就绪</a-tag>
+        <div class="header-actions">
+          <RouterLink to="/logs">
+            <a-button size="small">查看日志</a-button>
+          </RouterLink>
+          <a-tag color="green">服务就绪</a-tag>
+        </div>
       </header>
 
       <section class="content-grid">
