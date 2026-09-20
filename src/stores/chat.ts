@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { getErrorMessage, sendChatMessage, sendSangoRandom } from '../api/client'
+import { getErrorMessage, sendChatMessage, sendSangoRandom, type ChatData, type Citation } from '../api/client'
 
 // 标签与子服务是纯前端 UX 状态（能力可发现性、后续模板挂靠），不再进请求体
 export type ChatMode = 'weather' | 'fengyunsanguo' | 'sango-novel'
@@ -10,6 +10,7 @@ export interface ChatMessage {
   id: number
   role: 'user' | 'assistant'
   content: string
+  citations?: Citation[]
   createdAt: Date
 }
 
@@ -69,20 +70,21 @@ export const useChatStore = defineStore('chat', () => {
     loading.value = true
 
     try {
-      let answer: string
+      let result: ChatData
       if (usesSangoRandom.value) {
-        answer = await sendSangoRandom(trimmed, sessionId.value)
+        result = await sendSangoRandom(trimmed, sessionId.value)
       } else if (mode.value === "fengyunsanguo" && sangoService.value === "knowledge") {
-        answer = await sendChatMessage(trimmed, "fengyunsanguo")
+        result = await sendChatMessage(trimmed, "fengyunsanguo")
       } else if (mode.value === "sango-novel") {
-        answer = await sendChatMessage(trimmed, "sango-novel")
+        result = await sendChatMessage(trimmed, "sango-novel")
       } else {
-        answer = await sendChatMessage(trimmed)
+        result = await sendChatMessage(trimmed)
       }
       messages.value.push({
         id: Date.now() + 1,
         role: 'assistant',
-        content: answer,
+        content: result.answer,
+        citations: result.citations,
         createdAt: new Date(),
       })
     } catch (requestError) {

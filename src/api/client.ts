@@ -6,8 +6,15 @@ export interface ApiResponse<T> {
   message: string
 }
 
+export interface Citation {
+  text: string
+  chapter: number
+  title: string
+}
+
 export interface ChatData {
   answer: string
+  citations: Citation[]
 }
 
 const apiClient = axios.create({
@@ -18,22 +25,22 @@ const apiClient = axios.create({
   },
 })
 
-async function postForAnswer(path: string, payload: Record<string, string>): Promise<string> {
+async function postForAnswer(path: string, payload: Record<string, string>): Promise<ChatData> {
   const { data } = await apiClient.post<ApiResponse<ChatData>>(path, payload)
 
   if (data.code !== 200 || !data.data) {
     throw new Error(data.message || '请求失败，请稍后重试。')
   }
-  return data.data.answer
+  return data.data
 }
 
-export function sendChatMessage(message: string, domain?: "fengyunsanguo" | "sango-novel"): Promise<string> {
+export function sendChatMessage(message: string, domain?: "fengyunsanguo" | "sango-novel"): Promise<ChatData> {
   const payload: Record<string, string> = { message }
   if (domain) payload.domain = domain
   return postForAnswer('/chat', payload)
 }
 
-export function sendSangoRandom(message: string, sessionId?: string): Promise<string> {
+export function sendSangoRandom(message: string, sessionId?: string): Promise<ChatData> {
   const payload: Record<string, string> = { message }
   if (sessionId) payload.sessionId = sessionId
   return postForAnswer('/sango/random', payload)

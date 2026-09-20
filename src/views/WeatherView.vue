@@ -34,6 +34,21 @@
                   <button v-if="item.role === 'assistant'" @click="copyMessage(item.content)">复制</button>
                 </div>
               </div>
+              <section v-if="item.role === 'assistant' && item.citations && item.citations.length > 0"
+                class="citation-area">
+                <div class="citation-area-head">
+                  <h3 class="citation-area-title">参考资料</h3>
+                  <span class="citation-area-count">{{ item.citations.length }} 条</span>
+                </div>
+                <div v-for="(group, groupIndex) in buildCitationGroups(item.citations)" :key="groupIndex"
+                  class="citation-group">
+                  <div class="citation-source-header">第{{ group.chapter }}回 {{ group.title }}</div>
+                  <div v-for="entry in group.entries" :key="entry.badge" class="citation-card">
+                    <span class="citation-badge">{{ entry.badge }}</span>
+                    <p class="citation-text">{{ entry.text }}</p>
+                  </div>
+                </div>
+              </section>
             </article>
             <div v-if="chatStore.loading" class="loading-state"><a-spin size="small" />正在思考...</div>
           </div>
@@ -96,13 +111,102 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useChatStore, type SangoServiceId } from '../stores/chat'
+import type { Citation } from '../api/client'
+
+// 引用出处分组：连续同回目（chapter + title 相同）合并为一组，跨回/回目变化另起一组；
+// 分组只影响出处头的出现次数，组内条目保留各自全局角标；顺序恒为 citations 数组顺序。
+interface CitationGroupEntry {
+  text: string
+  badge: string
+}
+
+interface CitationGroup {
+  chapter: number
+  title: string
+  entries: CitationGroupEntry[]
+}
+
+const SUPERSCRIPT_DIGITS = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹']
+
+function toSuperscript(index: number): string {
+  return String(index)
+    .split('')
+    .map((digit) => SUPERSCRIPT_DIGITS[Number(digit)])
+    .join('')
+}
+
+function buildCitationGroups(citations: Citation[]): CitationGroup[] {
+  const groups: CitationGroup[] = []
+  citations.forEach((citation, index) => {
+    const last = groups[groups.length - 1]
+    if (last && last.chapter === citation.chapter && last.title === citation.title) {
+      last.entries.push({ text: citation.text, badge: toSuperscript(index + 1) })
+      return
+    }
+    groups.push({
+      chapter: citation.chapter,
+      title: citation.title,
+      entries: [{ text: citation.text, badge: toSuperscript(index + 1) }],
+    })
+  })
+  return groups
+}
 
 const chatStore = useChatStore()
 const draft = ref('')
 const panelVisible = ref(true)
 const customInput = ref<HTMLElement | null>(null)
 const messageList = ref<HTMLElement | null>(null)
+const route = useRoute()
+const router = useRouter()
+
+// 把当前标签 / 子服务状态写回 URL（replace：不污染历史，刷新 / 分享链接可恢复）。
+// 风云三国未选二级服务时 URL 只带 mode，选中问题查询 / 随机一题后才带 service。
+function syncRoute() {
+  const query: Record<string, string> = {}
+  if (chatStore.mode === 'weather' || chatStore.mode === 'sango-novel') {
+    query.mode = chatStore.mode
+  } else if (chatStore.mode === 'fengyunsanguo') {
+    query.mode = 'fengyunsanguo'
+    if (chatStore.sangoService) {
+      query.service = chatStore.sangoService
+    }
+  }
+  router.replace({ query })
+}
+
+// 主页深链直达：mode / service 参数名与 chatStore 字段一致；无 mode 参数时行为与现状一致（自动判断）。
+// watch immediate：刷新 / 前进后退 / 地址栏改参都会重新应用；显式带 service 时直接进入对应子服务
+// 模式并收起「风云三国常见服务」面板，不再展示服务选择面板。
+watch(
+  () => route.fullPath,
+  () => {
+    const { mode, service } = route.query
+    if (mode === 'weather') {
+      chatStore.setMode('weather')
+      panelVisible.value = false
+      return
+    }
+    if (mode === 'fengyunsanguo') {
+      chatStore.setMode('fengyunsanguo')
+      if (service === 'random' || service === 'knowledge') {
+        chatStore.setSangoService(service)
+        panelVisible.value = false
+      } else {
+        chatStore.setSangoService(null)
+        panelVisible.value = true
+      }
+      return
+    }
+    if (mode === 'sango-novel') {
+      chatStore.setMode('sango-novel')
+      panelVisible.value = false
+    }
+  },
+  { immediate: true },
+)
 
 const hasMessages = computed(() => chatStore.messages.length > 0)
 const sangoPanelOpen = computed(() => chatStore.mode === 'fengyunsanguo' && panelVisible.value)
@@ -145,10 +249,12 @@ function onWeatherTagChange(checked: boolean) {
   if (checked) {
     chatStore.setMode('weather')
     panelVisible.value = true
+    syncRoute()
     return
   }
   if (chatStore.mode === 'weather') {
     chatStore.setMode(null)
+    syncRoute()
   }
 }
 
@@ -156,6 +262,7 @@ function onSangoTagChange(checked: boolean) {
   if (checked) {
     chatStore.setMode('fengyunsanguo')
     panelVisible.value = true
+    syncRoute()
     return
   }
   if (chatStore.mode !== 'fengyunsanguo') return
@@ -164,30 +271,36 @@ function onSangoTagChange(checked: boolean) {
     return
   }
   chatStore.setMode(null)
+  syncRoute()
 }
 
 function onSangoNovelTagChange(checked: boolean) {
   if (checked) {
     chatStore.setMode('sango-novel')
+    syncRoute()
     return
   }
   if (chatStore.mode === 'sango-novel') {
     chatStore.setMode(null)
+    syncRoute()
   }
 }
 
 function selectSangoService(service: SangoServiceId) {
   chatStore.setSangoService(service)
   panelVisible.value = false
+  syncRoute()
 }
 
 function onModeTagClose(tag: ModeTag) {
   if (tag.key === 'weather' || tag.key === 'sango-novel' || tag.key === 'fengyunsanguo') {
     chatStore.setMode(null)
+    syncRoute()
     return
   }
   chatStore.setSangoService(null)
   panelVisible.value = true
+  syncRoute()
 }
 
 function onCustomInput(event: Event) {
@@ -336,11 +449,13 @@ function formatTime(date: Date) {
 
 .message-row {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   margin-bottom: 16px;
 }
 
 .message-row.is-user {
-  justify-content: flex-end;
+  align-items: flex-end;
 }
 
 .message-bubble {
@@ -366,6 +481,75 @@ function formatTime(date: Date) {
   border-bottom-left-radius: 4px;
   background: #f1f5f0;
   color: #40544a;
+}
+
+.citation-area {
+  width: 100%;
+  max-width: 640px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid #e3e9e2;
+  border-radius: 14px;
+  background: #fbfdfa;
+}
+
+.citation-area-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.citation-area-title {
+  margin: 0;
+  color: #163c32;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.citation-area-count {
+  color: #94a099;
+  font-size: 11px;
+}
+
+.citation-group + .citation-group {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #dfe6de;
+}
+
+.citation-source-header {
+  margin-bottom: 6px;
+  color: #8a6b3d;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.citation-card {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f4f8f2;
+}
+
+.citation-card + .citation-card {
+  margin-top: 6px;
+}
+
+.citation-badge {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: #b17837;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.citation-text {
+  margin: 0;
+  color: #40544a;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .message-meta {
