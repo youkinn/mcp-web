@@ -109,7 +109,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useRoute } from 'vue-router'
 import { useChatStore, type SangoServiceId } from '../stores/chat'
@@ -161,22 +161,36 @@ const customInput = ref<HTMLElement | null>(null)
 const messageList = ref<HTMLElement | null>(null)
 const route = useRoute()
 
-// 主页深链直达：mode / service 参数名与 chatStore 字段一致；无 mode 参数时行为与现状一致（自动判断）
-onMounted(() => {
-  const { mode, service } = route.query
-  if (mode === 'weather') {
-    chatStore.setMode('weather')
-    return
-  }
-  if (mode === 'fengyunsanguo') {
-    chatStore.setMode('fengyunsanguo')
-    chatStore.setSangoService(service === 'random' ? 'random' : 'knowledge')
-    return
-  }
-  if (mode === 'sango-novel') {
-    chatStore.setMode('sango-novel')
-  }
-})
+// 主页深链直达：mode / service 参数名与 chatStore 字段一致；无 mode 参数时行为与现状一致（自动判断）。
+// watch immediate：刷新 / 前进后退 / 地址栏改参都会重新应用；显式带 service 时直接进入对应子服务
+// 模式并收起「风云三国常见服务」面板，不再展示服务选择面板。
+watch(
+  () => route.fullPath,
+  () => {
+    const { mode, service } = route.query
+    if (mode === 'weather') {
+      chatStore.setMode('weather')
+      panelVisible.value = false
+      return
+    }
+    if (mode === 'fengyunsanguo') {
+      chatStore.setMode('fengyunsanguo')
+      if (service === 'random' || service === 'knowledge') {
+        chatStore.setSangoService(service)
+        panelVisible.value = false
+      } else {
+        chatStore.setSangoService(null)
+        panelVisible.value = true
+      }
+      return
+    }
+    if (mode === 'sango-novel') {
+      chatStore.setMode('sango-novel')
+      panelVisible.value = false
+    }
+  },
+  { immediate: true },
+)
 
 const hasMessages = computed(() => chatStore.messages.length > 0)
 const sangoPanelOpen = computed(() => chatStore.mode === 'fengyunsanguo' && panelVisible.value)
