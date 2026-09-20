@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { getErrorMessage, sendChatMessage, sendSangoRandom } from '../api/client'
 
 // 标签与子服务是纯前端 UX 状态（能力可发现性、后续模板挂靠），不再进请求体
-export type ChatMode = 'weather' | 'sango'
+export type ChatMode = 'weather' | 'fengyunsanguo'
 export type SangoServiceId = 'knowledge' | 'random'
 
 export interface ChatMessage {
@@ -26,12 +26,12 @@ export const useChatStore = defineStore('chat', () => {
   const sessionId = ref(buildSessionId())
 
   const modeLabel = computed<string | null>(() => {
-    if (mode.value !== 'sango' || !sangoService.value) return null
+    if (mode.value !== 'fengyunsanguo' || !sangoService.value) return null
     return sangoService.value === 'knowledge' ? '风云三国-知识问答' : '风云三国-随机一题'
   })
 
   // 只有「风云三国-随机一题」是确定性本地命令，走独立端点；其余输入一律走统一对话入口
-  const usesSangoRandom = computed(() => mode.value === 'sango' && sangoService.value === 'random')
+  const usesSangoRandom = computed(() => mode.value === 'fengyunsanguo' && sangoService.value === 'random')
 
   function resetChatSession() {
     messages.value = []
@@ -42,7 +42,7 @@ export const useChatStore = defineStore('chat', () => {
   function setMode(next: ChatMode | null) {
     if (mode.value === next) return
     mode.value = next
-    if (next !== 'sango') {
+    if (next !== 'fengyunsanguo') {
       sangoService.value = null
     }
     resetChatSession()
@@ -71,8 +71,8 @@ export const useChatStore = defineStore('chat', () => {
       let answer: string
       if (usesSangoRandom.value) {
         answer = await sendSangoRandom(trimmed, sessionId.value)
-      } else if (mode.value === "sango" && sangoService.value === "knowledge") {
-        answer = await sendChatMessage(trimmed, "sango")
+      } else if (mode.value === "fengyunsanguo" && sangoService.value === "knowledge") {
+        answer = await sendChatMessage(trimmed, "fengyunsanguo")
       } else {
         answer = await sendChatMessage(trimmed)
       }
