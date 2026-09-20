@@ -2,7 +2,7 @@
   <main class="workspace-page">
     <div class="workspace-shell">
       <header class="site-header">
-        <RouterLink to="/" class="brand">
+        <RouterLink to="/logs" class="brand">
           <span class="brand-mark">M</span>
           <span class="brand-copy">
             <span class="brand-name">MCP WORKSPACE</span>
