@@ -266,6 +266,7 @@ export interface LogListQuery {
   pageNo?: number
   pageSize?: number
   logType?: string
+  domain?: string
   traceId?: string
   startAt?: number
   endAt?: number
@@ -286,6 +287,47 @@ export async function fetchLogList(query: LogListQuery = {}): Promise<LogListDat
 export async function fetchLogDetail(traceId: string): Promise<LogDetail> {
   const { data } = await apiClient.get<ApiResponse<LogDetail>>(`/v1/logs/${encodeURIComponent(traceId)}`)
   return unwrapData(data)
+}
+
+// ── 三国演义原文（feat-A010）──
+
+export interface SangoChapterChunk {
+  chunkId: string
+  text: string
+  type: string
+  segFrom: number
+  segTo: number
+}
+
+export interface SangoChapterNav {
+  chapter: number
+  title: string
+}
+
+export interface SangoChapterData {
+  chapter: number
+  title: string
+  prev: SangoChapterNav | null
+  next: SangoChapterNav | null
+  chunks: SangoChapterChunk[]
+}
+
+// 模块级共享按回缓存：Map<chapter, Promise<data>>，聊天页匹配与阅读器渲染共用；
+// 同回重复打开不重复请求，失败结果不写入缓存（接口文档 §5.5）
+const sangoChapterCache = new Map<number, Promise<SangoChapterData>>()
+
+export function fetchSangoChapter(chapter: number): Promise<SangoChapterData> {
+  const cached = sangoChapterCache.get(chapter)
+  if (cached) return cached
+  const pending = apiClient
+    .get<ApiResponse<SangoChapterData>>(`/v1/sango/chapters/${chapter}`)
+    .then(({ data }) => unwrapData(data))
+    .catch((error: unknown) => {
+      sangoChapterCache.delete(chapter)
+      throw error
+    })
+  sangoChapterCache.set(chapter, pending)
+  return pending
 }
 
 export interface TokenStatsQuery {

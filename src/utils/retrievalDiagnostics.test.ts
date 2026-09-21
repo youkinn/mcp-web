@@ -213,6 +213,15 @@ describe('分数整形（buildScoreRow / formatScore / boolText / sourceMeta）'
   })
 })
 
+describe('feat-A010 验收 5：候选行携带原始 chapter / title（阅读器入参，不解析 chunkId 字符串）', () => {
+  it('buildScoreRow 输出原始回号与回目，供打开阅读器直接使用', () => {
+    const row = buildScoreRow(fullDiagnostics.candidates[0], fullDiagnostics.funnel.topN)
+    assert.equal(row.chapter, 73)
+    assert.equal(row.title, '玄德进位汉中王　云长攻拔襄阳郡')
+    assert.equal(row.chunkId, 'sanguo-yanyi:0073:c0007')
+  })
+})
+
 describe('环境与降级（buildEnvView / nextRank 视图）', () => {
   it('降级纯 BM25：degradedBm25Only 为 true，向量 scheme / dim 显示 —', () => {
     const env = buildEnvView({ vectorScheme: null, degradedBm25Only: true, corpusChunks: 2344, aliasCount: 87, vectorDim: null })

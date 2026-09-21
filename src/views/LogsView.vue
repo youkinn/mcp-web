@@ -32,6 +32,15 @@
                 </a-select>
               </div>
               <div class="query-item">
+                <span class="query-label">项目</span>
+                <a-select v-model:value="query.domain" class="query-control query-select">
+                  <a-select-option value="">全部</a-select-option>
+                  <a-select-option value="weather">天气</a-select-option>
+                  <a-select-option value="fengyunsanguo">风云三国</a-select-option>
+                  <a-select-option value="sango-novel">三国演义</a-select-option>
+                </a-select>
+              </div>
+              <div class="query-item">
                 <span class="query-label">时间范围</span>
                 <a-range-picker v-model:value="query.dateRange" value-format="YYYY-MM-DD" :placeholder="['开始日期', '结束日期']" class="query-control query-range" @change="onListRangeChange" />
               </div>
@@ -69,7 +78,7 @@
               :loading="listLoading"
               :row-key="rowKeyTrace"
               :pagination="pagination"
-              :scroll="{ x: 1260 }"
+              :scroll="{ x: 1360 }"
               v-model:expandedRowKeys="expandedRowKeys"
               :expand-row-by-click="false"
               @change="onTableChange"
@@ -121,6 +130,10 @@
 
                 <template v-else-if="column.key === 'tokens'">
                   <span>{{ formatTokens(record.tokens?.input ?? null) }} / {{ formatTokens(record.tokens?.output ?? null) }}</span>
+                </template>
+
+                <template v-else-if="column.key === 'actions'">
+                  <a-button size="small" @click="copyTraceId(record.traceId)">复制</a-button>
                 </template>
 
               </template>
@@ -248,6 +261,7 @@
                           <RetrievalDiagnosticsPanel
                             :diagnostics="call.diagnostics ?? null"
                             :citation-count="citationCountOf(record)"
+                            @open-reader="onOpenReader"
                           />
                         </template>
                       </a-table>
@@ -324,6 +338,14 @@
         </div>
         <pre v-else class="json-pre modal-json">{{ readableText(contentModal?.body ?? '') }}</pre>
       </a-modal>
+
+      <SangoChapterReader
+        v-if="readerTarget"
+        v-model:open="readerOpen"
+        :chapter="readerTarget.chapter"
+        :chapter-title="readerTarget.chapterTitle"
+        :chunk-id="readerTarget.chunkId"
+      />
     </div>
   </main>
 </template>
@@ -351,6 +373,8 @@ import {
   type TokenStatsData,
 } from '../api/client'
 import RetrievalDiagnosticsPanel from '../components/RetrievalDiagnosticsPanel.vue'
+import SangoChapterReader from '../components/SangoChapterReader.vue'
+import { copyText } from '../utils/clipboard'
 
 // ── 通用格式化 ──
 
@@ -548,6 +572,7 @@ const columns = [
   { key: 'status', title: '状态', width: 150 },
   { key: 'durations', title: '耗时', width: 110 },
   { key: 'tokens', title: 'Token（输入/输出）', width: 220 },
+  { key: 'actions', title: '操作', width: 80 },
 ]
 
 const llmColumns = [
@@ -583,6 +608,7 @@ const listLoading = ref(false)
 
 const query = reactive<{
   logType: string
+  domain: string
   dateRange: string[]
   traceId: string
   keyword: string
@@ -590,6 +616,7 @@ const query = reactive<{
   responseCode: number | null
 }>({
   logType: '',
+  domain: '',
   dateRange: [],
   traceId: '',
   keyword: '',
@@ -675,6 +702,7 @@ function onListRangeChange(_dates: unknown, dateStrings: [string, string]) {
 function buildListQuery(): LogListQuery {
   const listQuery: LogListQuery = { pageNo: pageNo.value, pageSize: pageSize.value }
   if (query.logType) listQuery.logType = query.logType
+  if (query.domain) listQuery.domain = query.domain
   if (query.traceId.trim()) listQuery.traceId = query.traceId.trim()
   if (query.keyword.trim()) listQuery.keyword = query.keyword.trim()
   if (query.status) listQuery.status = query.status
@@ -707,6 +735,7 @@ function onSearch() {
 
 function onReset() {
   query.logType = ''
+  query.domain = ''
   query.dateRange = []
   query.traceId = ''
   query.keyword = ''
@@ -732,6 +761,34 @@ const pagination = computed(() => ({
   showTotal: (t: number) => `共 ${t} 条`,
   buildOptionText: (opt: { value: string | number }) => `${opt.value}条/页`,
 }))
+
+// ── 原文阅读器（feat-A010）──
+
+interface ReaderTarget {
+  chapter: number
+  chapterTitle?: string
+  chunkId?: string
+}
+
+const readerOpen = ref(false)
+const readerTarget = ref<ReaderTarget | null>(null)
+
+function onOpenReader(target: ReaderTarget) {
+  readerTarget.value = target
+  readerOpen.value = true
+}
+
+// 「操作」列复制 traceId（feat-A010 验收 3）：剪贴板降级路径，成功反馈
+function copyTraceId(traceId: string) {
+  void copyText(traceId).then((ok) => {
+    if (ok) {
+      message.success('已复制 traceId')
+    } else {
+      message.error('复制失败，请手动选择复制')
+    }
+  })
+}
+
 // ── Token 统计（Asia/Shanghai 日界）──
 
 function shanghaiDateParts(ms: number): { year: number; month: number; day: number } {

@@ -117,6 +117,9 @@ export interface ScoreRowView {
   key: string
   rank: number
   chunkId: string
+  /** 原始回号 / 回目，供原文阅读器入参（feat-A010：直接取 candidates 字段，不解析 chunkId 字符串） */
+  chapter: number
+  title: string
   chapterText: string
   bm25NormText: string
   vectorMapText: string
@@ -141,6 +144,8 @@ export function buildScoreRow(candidate: RetrievalCandidate, topN: number): Scor
     key: candidate.chunkId,
     rank: candidate.rank,
     chunkId: candidate.chunkId,
+    chapter: candidate.chapter,
+    title: candidate.title,
     chapterText: `第 ${candidate.chapter} 回 ${candidate.title}`,
     hitLabelsTitle: (candidate.hitLabels ?? []).join('\n'),
     bm25NormText: formatScore(candidate.bm25Norm),
