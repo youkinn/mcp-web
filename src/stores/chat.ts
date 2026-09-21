@@ -77,6 +77,8 @@ export const useChatStore = defineStore('chat', () => {
         result = await sendChatMessage(trimmed, "fengyunsanguo")
       } else if (mode.value === "sango-novel") {
         result = await sendChatMessage(trimmed, "sango-novel")
+      } else if (mode.value === "weather") {
+        result = await sendChatMessage(trimmed, "weather")
       } else {
         result = await sendChatMessage(trimmed)
       }

@@ -8,8 +8,7 @@
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext .ts,.vue --report-unused-disable-directives --max-warnings 0",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "node --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
