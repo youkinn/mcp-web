@@ -3,6 +3,7 @@
     :open="open"
     title="三国演义 · 原文阅读"
     width="960px"
+    wrap-class-name="reader-modal-wrap"
     :footer="null"
     @update:open="onOpenChange"
   >
@@ -177,12 +178,12 @@ function onOpenChange(next: boolean) {
 </script>
 
 <style scoped>
-/* 弹框正文撑满视口：100vh 减去 modal 顶部 100 + 标题栏 56 + body 内边距 48 + wrap 底部内边距 24，留余量取 240 */
+/* 正文区由弹框 flex 链路分配高度（见文末非 scoped 样式块），不写 magic number */
 .reader-body {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 240px);
-  min-height: 240px;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .reader-scroll {
@@ -290,5 +291,28 @@ function onOpenChange(next: boolean) {
 
 .reader-jump-input {
   width: 96px;
+}
+</style>
+
+<!-- 弹框 teleport 到 body，scoped 选择器够不到 .ant-modal，故用 wrapClassName 挂载的非 scoped 样式块；选择器统一挂在 .reader-modal-wrap 下，不外泄 -->
+<style>
+/* 弹框贴顶撑满视口：覆盖 antd 默认 top: 100px 与 padding-bottom: 24px，上下各留 12px，wrap 自身无内边距故不会出现外层滚动条 */
+.reader-modal-wrap .ant-modal {
+  top: 12px;
+  height: calc(100vh - 24px);
+  padding-bottom: 0;
+}
+
+.reader-modal-wrap .ant-modal-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.reader-modal-wrap .ant-modal-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 </style>
