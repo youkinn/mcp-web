@@ -27,7 +27,8 @@
                 <span class="query-label">类型</span>
                 <a-select v-model:value="query.logType" class="query-control query-select">
                   <a-select-option value="">全部</a-select-option>
-                  <a-select-option value="chat">chat</a-select-option>
+                  <a-select-option value="chat">对话</a-select-option>
+                  <a-select-option value="quiz">答题</a-select-option>
                 </a-select>
               </div>
               <div class="query-item">
@@ -77,7 +78,7 @@
                 <template v-if="column.key === 'time'">{{ formatTime(record.serverReceivedAt) }}</template>
 
                 <template v-else-if="column.key === 'logType'">
-                  <a-tag class="log-type-tag">{{ record.logType }}</a-tag>
+                  <a-tag class="log-type-tag">{{ LOG_TYPE_LABELS[record.logType] ?? record.logType }}</a-tag>
                 </template>
 
                 <template v-else-if="column.key === 'userInput'">
@@ -348,6 +349,7 @@ import {
 const TRUNCATION_MARK = '…（已截断）'
 const DAY_MS = 24 * 60 * 60 * 1000
 const SHANGHAI_UTC_OFFSET_MS = 8 * 60 * 60 * 1000
+const LOG_TYPE_LABELS: Record<string, string> = { chat: '对话', quiz: '答题' }
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0')
