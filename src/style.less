@@ -14,7 +14,10 @@
 }
 
 * { box-sizing: border-box; }
-html { overflow-y: scroll; }
+/* 预留滚动条槽位：滚动条出现 / 消失不再造成横向抖动（bug-00011 修法效果保留），但没有溢出时不绘制滚动条。
+   阅读器弹框打开时页面本就被 antd 滚动锁锁住（vc-util/Dom/scrollLocker.js 对 document.body 设 overflow/overflowX/overflowY: hidden，
+   并在检测到滚动条占位时设 width: calc(100% - scrollBarSize)），故 html 无需常驻绘制那条 inert 滚动条（feat-A010 负责人验收意见）。 */
+html { overflow-y: auto; scrollbar-gutter: stable; }
 body { margin: 0; min-width: 320px; }
 button, textarea { font: inherit; }
 
