@@ -1,20 +1,20 @@
 <template>
   <div class="diag-panel">
-    <template v-if="diagnostics">
+    <template v-if="view">
       <h4 class="detail-section-title diag-panel-title">检索诊断</h4>
 
       <!-- 顶部状态条：截断 -->
       <a-alert
-        v-if="diagnostics.truncated"
+        v-if="view.truncatedText"
         type="warning"
         show-icon
         class="diag-alert"
-        :message="truncatedAlertText"
+        :message="view.truncatedText"
       />
 
       <!-- 环境与降级：降级纯 BM25 红色告警 -->
       <a-alert
-        v-if="diagnostics.env.degradedBm25Only"
+        v-if="view.env.degradedBm25Only"
         type="error"
         show-icon
         class="diag-alert"
@@ -26,46 +26,21 @@
         <h4 class="detail-section-title">召回漏斗</h4>
         <div class="funnel-flow">
           <div class="funnel-stage">
-            <div class="funnel-num">{{ diagnostics.funnel.corpusChunks }}</div>
-            <div class="funnel-label">语料 chunk</div>
+            <div class="funnel-num">{{ view.funnel.lead.value }}</div>
+            <div class="funnel-label">{{ view.funnel.lead.label }}</div>
           </div>
           <span class="funnel-arrow">→</span>
           <div class="funnel-stage funnel-branch">
-            <div class="branch-item">
-              <div class="funnel-num">{{ diagnostics.funnel.lexicalHits }}</div>
-              <div class="funnel-label">词法命中</div>
-            </div>
-            <div class="branch-item">
-              <div class="funnel-num">{{ diagnostics.funnel.vectorTop50 }}</div>
-              <div class="funnel-label">向量 top50</div>
-            </div>
-            <div class="branch-item">
-              <div class="funnel-num">{{ diagnostics.funnel.labelHits }}</div>
-              <div class="funnel-label">标签命中</div>
+            <div v-for="item in view.funnel.branch" :key="item.key" class="branch-item">
+              <div class="funnel-num">{{ item.value }}</div>
+              <div class="funnel-label">{{ item.label }}</div>
             </div>
           </div>
-          <span class="funnel-arrow">→</span>
-          <div class="funnel-stage">
-            <div class="funnel-num">{{ diagnostics.funnel.mergedCandidates }}</div>
-            <div class="funnel-label">合并候选</div>
-          </div>
-          <span class="funnel-arrow">→</span>
-          <div class="funnel-stage funnel-topn">
-            <div class="funnel-num">{{ diagnostics.funnel.topN }}</div>
-            <div class="funnel-label">topN</div>
-          </div>
-          <template v-if="diagnostics.funnel.injected !== null">
+          <template v-for="stage in view.funnel.tail" :key="stage.key">
             <span class="funnel-arrow">→</span>
-            <div class="funnel-stage">
-              <div class="funnel-num">{{ diagnostics.funnel.injected }}</div>
-              <div class="funnel-label">进注入视图</div>
-            </div>
-          </template>
-          <template v-if="diagnostics.funnel.cited !== null">
-            <span class="funnel-arrow">→</span>
-            <div class="funnel-stage">
-              <div class="funnel-num">{{ diagnostics.funnel.cited }}</div>
-              <div class="funnel-label">被引用</div>
+            <div class="funnel-stage" :class="{ 'funnel-topn': stage.topn }">
+              <div class="funnel-num">{{ stage.value }}</div>
+              <div class="funnel-label">{{ stage.label }}</div>
             </div>
           </template>
         </div>
@@ -77,7 +52,7 @@
         <a-table
           :columns="scoreColumns"
           :scroll="{ x: 1280 }"
-          :data-source="diagnostics.candidates"
+          :data-source="view.scoreRows"
           :pagination="false"
           :row-key="scoreRowKey"
           :row-class-name="scoreRowClass"
@@ -86,71 +61,71 @@
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'rank'">
-              <span :class="{ 'diag-rank-topn': record.rank <= diagnostics.funnel.topN }">{{ record.rank }}</span>
-              <a-tag v-if="record.rank <= diagnostics.funnel.topN" color="green" size="small">进 top-N</a-tag>
+              <span :class="{ 'diag-rank-topn': record.inTopN }">{{ record.rank }}</span>
+              <a-tag v-if="record.inTopN" color="green" size="small">进 top-N</a-tag>
             </template>
-            <template v-else-if="column.key === 'chapter'">第 {{ record.chapter }} 回 {{ record.title }}</template>
-            <template v-else-if="column.key === 'bm25'">{{ formatScore(record.bm25) }}</template>
-            <template v-else-if="column.key === 'cosine'">{{ formatScore(record.cosine) }}</template>
+            <template v-else-if="column.key === 'chunkId'">{{ record.chunkId }}</template>
+            <template v-else-if="column.key === 'chapter'">{{ record.chapterText }}</template>
+            <template v-else-if="column.key === 'bm25'">{{ record.bm25Text }}</template>
+            <template v-else-if="column.key === 'cosine'">{{ record.cosineText }}</template>
             <template v-else-if="column.key === 'labelHit'">
               <a-tag :color="record.labelHit ? 'gold' : 'default'" size="small">{{ record.labelHit ? '是' : '否' }}</a-tag>
             </template>
             <template v-else-if="column.key === 'finalScore'">
-              <span class="diag-final-score">{{ formatScore(record.finalScore) }}</span>
+              <span class="diag-final-score">{{ record.finalScoreText }}</span>
             </template>
             <template v-else-if="column.key === 'sources'">
               <a-tag
                 v-for="source in record.sources"
-                :key="source"
-                :color="sourceMeta(source).color"
+                :key="source.text"
+                :color="source.color"
                 size="small"
                 class="diag-source-tag"
               >
-                {{ sourceMeta(source).text }}
+                {{ source.text }}
               </a-tag>
             </template>
-            <template v-else-if="column.key === 'injected'">{{ boolOrDash(record.injected) }}</template>
-            <template v-else-if="column.key === 'cited'">{{ boolOrDash(record.cited) }}</template>
-            <template v-else>{{ record.chunkId }}</template>
+            <template v-else-if="column.key === 'injected'">{{ record.injectedText }}</template>
+            <template v-else-if="column.key === 'cited'">{{ record.citedText }}</template>
           </template>
         </a-table>
       </section>
 
       <!-- 第 N+1 名 -->
-      <section v-if="diagnostics.nextRank" class="detail-section">
+      <section v-if="view.nextRank" class="detail-section">
         <h4 class="detail-section-title">第 N+1 名</h4>
         <div class="next-rank-card">
           <div class="next-rank-head">
-            <a-tag color="orange">rank {{ diagnostics.nextRank.rank }}</a-tag>
-            <span class="next-rank-gap">差 {{ formatScore(diagnostics.nextRank.gapToTopN) }} 分未进 top-N</span>
+            <a-tag color="orange">rank {{ view.nextRank.rank }}</a-tag>
+            <span class="next-rank-gap">差 {{ view.nextRank.gapToTopNText }} 分未进 top-N</span>
           </div>
           <div class="next-rank-meta">
             <div class="meta-row">
               <span class="meta-label">chunkId</span>
-              <span class="meta-value">{{ diagnostics.nextRank.chunkId }}</span>
+              <span class="meta-value">{{ view.nextRank.chunkId }}</span>
             </div>
             <div class="meta-row">
               <span class="meta-label">回目</span>
-              <span class="meta-value">第 {{ diagnostics.nextRank.chapter }} 回 {{ diagnostics.nextRank.title }}</span>
+              <span class="meta-value">{{ view.nextRank.chapterText }}</span>
             </div>
             <div class="meta-row">
               <span class="meta-label">三路分</span>
               <span class="meta-value">
-                BM25 {{ formatScore(diagnostics.nextRank.bm25) }} · 余弦 {{ formatScore(diagnostics.nextRank.cosine) }} · 最终 {{ formatScore(diagnostics.nextRank.finalScore) }}
+                BM25 {{ view.nextRank.bm25Text }} · 余弦 {{ view.nextRank.cosineText }} · 最终 {{ view.nextRank.finalScoreText }}
               </span>
             </div>
             <div class="meta-row">
               <span class="meta-label">来源</span>
               <span class="meta-value">
                 <a-tag
-                  v-for="source in diagnostics.nextRank.sources"
-                  :key="source"
-                  :color="sourceMeta(source).color"
+                  v-for="source in view.nextRank.sources"
+                  :key="source.text"
+                  :color="source.color"
                   size="small"
                 >
-                  {{ sourceMeta(source).text }}
+                  {{ source.text }}
                 </a-tag>
-                <span v-if="diagnostics.nextRank.sources.length === 0">—</span>
+                <span v-if="view.nextRank.sources.length === 0">—</span>
               </span>
             </div>
           </div>
@@ -163,19 +138,19 @@
         <div class="query-chain">
           <div class="chain-step">
             <div class="chain-label">原始 query</div>
-            <div class="chain-value">{{ diagnostics.query.raw }}</div>
+            <div class="chain-value">{{ view.query.raw }}</div>
           </div>
           <span class="funnel-arrow">→</span>
           <div class="chain-step">
             <div class="chain-label">alias 归一化</div>
-            <div class="chain-value">{{ diagnostics.query.normalized }}</div>
+            <div class="chain-value">{{ view.query.normalized }}</div>
           </div>
           <span class="funnel-arrow">→</span>
           <div class="chain-step">
             <div class="chain-label">分词 tokens</div>
             <div class="chain-value">
               <a-tag
-                v-for="token in diagnostics.query.tokens"
+                v-for="token in view.query.tokens"
                 :key="token"
                 color="blue"
                 size="small"
@@ -183,7 +158,7 @@
               >
                 {{ token }}
               </a-tag>
-              <span v-if="diagnostics.query.tokens.length === 0" class="diag-muted">（无）</span>
+              <span v-if="view.query.tokens.length === 0" class="diag-muted">（无）</span>
             </div>
           </div>
         </div>
@@ -195,41 +170,47 @@
         <div class="env-grid">
           <div class="env-item">
             <span class="env-label">向量 scheme</span>
-            <span class="env-value">{{ diagnostics.env.vectorScheme ?? '—' }}</span>
+            <span class="env-value">{{ view.env.vectorSchemeText }}</span>
           </div>
           <div class="env-item">
             <span class="env-label">语料 chunk 数</span>
-            <span class="env-value">{{ diagnostics.env.corpusChunks }}</span>
+            <span class="env-value">{{ view.env.corpusChunks }}</span>
           </div>
           <div class="env-item">
             <span class="env-label">alias 条数</span>
-            <span class="env-value">{{ diagnostics.env.aliasCount }}</span>
+            <span class="env-value">{{ view.env.aliasCount }}</span>
           </div>
           <div class="env-item">
             <span class="env-label">向量维度</span>
-            <span class="env-value">{{ diagnostics.env.vectorDim ?? '—' }}</span>
+            <span class="env-value">{{ view.env.vectorDimText }}</span>
           </div>
         </div>
       </section>
 
       <!-- 死亡意图 -->
-      <section v-if="diagnostics.deathIntent.detected && diagnostics.deathIntent.pinned" class="detail-section">
+      <section v-if="view.deathIntent.detected && view.deathIntent.pinned" class="detail-section">
         <h4 class="detail-section-title">死亡意图</h4>
         <div class="death-intent">
           <a-tag color="error">已判定死亡意图并置顶</a-tag>
           <span class="diag-hint">被置顶候选：</span>
-          <a-tag v-for="chunkId in diagnostics.deathIntent.chunkIds" :key="chunkId" color="orange" size="small">
+          <a-tag v-for="chunkId in view.deathIntent.chunkIds" :key="chunkId" color="orange" size="small">
             {{ chunkId }}
           </a-tag>
         </div>
       </section>
 
       <!-- 自洽检查 -->
-      <section v-if="citationMismatch || citedOutsideTopN" class="detail-section">
+      <section v-if="view.selfConsistency.citationMismatch || view.selfConsistency.citedOutsideTopN" class="detail-section">
         <h4 class="detail-section-title">自洽检查</h4>
-        <a-alert v-if="citationMismatch" type="warning" show-icon class="diag-alert" :message="citationMismatchText" />
         <a-alert
-          v-if="citedOutsideTopN"
+          v-if="view.selfConsistency.citationMismatch"
+          type="warning"
+          show-icon
+          class="diag-alert"
+          :message="view.selfConsistency.citationMismatchText"
+        />
+        <a-alert
+          v-if="view.selfConsistency.citedOutsideTopN"
           type="error"
           show-icon
           class="diag-alert"
@@ -243,34 +224,15 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { RetrievalCandidate, RetrievalDiagnostics } from '../api/client'
+import type { RetrievalDiagnostics } from '../api/client'
+import { buildDiagnosticsView, type ScoreRowView } from '../utils/retrievalDiagnostics'
 
 const props = defineProps<{
   diagnostics: RetrievalDiagnostics | null
   citationCount?: number | null
 }>()
 
-const SOURCE_META: Record<string, { text: string; color: string }> = {
-  lexical: { text: '词法', color: 'blue' },
-  vector: { text: '向量', color: 'purple' },
-  label: { text: '标签', color: 'gold' },
-}
-
-function sourceMeta(source: string): { text: string; color: string } {
-  return SOURCE_META[source] ?? { text: source, color: 'default' }
-}
-
-function formatScore(value: number | null): string {
-  if (value === null || value === undefined) return '—'
-  if (Number.isInteger(value)) return String(value)
-  return String(parseFloat(value.toFixed(4)))
-}
-
-function boolOrDash(value: boolean | null): string {
-  if (value === true) return '是'
-  if (value === false) return '否'
-  return '—'
-}
+const view = computed(() => buildDiagnosticsView(props.diagnostics, props.citationCount ?? null))
 
 const scoreColumns = [
   { key: 'rank', title: '排名', width: 120 },
@@ -285,42 +247,13 @@ const scoreColumns = [
   { key: 'cited', title: '被引用', width: 90 },
 ]
 
-function scoreRowKey(record: RetrievalCandidate): string {
-  return record.chunkId
+function scoreRowKey(record: ScoreRowView): string {
+  return record.key
 }
 
-function scoreRowClass(record: RetrievalCandidate): string {
-  if (props.diagnostics && record.rank <= props.diagnostics.funnel.topN) return 'diag-row-in-topn'
-  return ''
+function scoreRowClass(record: ScoreRowView): string {
+  return record.inTopN ? 'diag-row-in-topn' : ''
 }
-
-const truncatedAlertText = computed(() => {
-  const diagnostics = props.diagnostics
-  if (!diagnostics || !diagnostics.truncated) return ''
-  return diagnostics.truncatedCount > 0
-    ? `诊断已截断（64KB），候选显示不全，已丢弃 ${diagnostics.truncatedCount} 条候选`
-    : '诊断已截断（64KB），候选显示不全'
-})
-
-const citationMismatch = computed(() => {
-  if (props.citationCount === null || props.citationCount === undefined || !props.diagnostics) return false
-  const cited = props.diagnostics.funnel.cited
-  return cited !== null && cited !== props.citationCount
-})
-
-const citationMismatchText = computed(() => {
-  if (!props.diagnostics || props.citationCount === null || props.citationCount === undefined) return ''
-  const cited = props.diagnostics.funnel.cited
-  return `引用与召回不自洽：citations ${props.citationCount} 条 vs funnel.cited ${cited ?? '—'} 条`
-})
-
-const citedOutsideTopN = computed(() => {
-  const diagnostics = props.diagnostics
-  if (!diagnostics) return false
-  return diagnostics.candidates.some(
-    (candidate) => candidate.cited === true && candidate.rank > diagnostics.funnel.topN,
-  )
-})
 </script>
 
 <style scoped>
