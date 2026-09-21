@@ -38,20 +38,21 @@
           </div>
           <template v-for="stage in view.funnel.tail" :key="stage.key">
             <span class="funnel-arrow">→</span>
-            <div class="funnel-stage" :class="{ 'funnel-topn': stage.topn }">
+            <div class="funnel-stage" :class="{ 'funnel-topn': stage.topn }" :title="stage.hint">
               <div class="funnel-num">{{ stage.value }}</div>
               <div class="funnel-label">{{ stage.label }}</div>
             </div>
           </template>
         </div>
+        <div v-for="hint in view.funnel.hints" :key="hint" class="diag-note">{{ hint }}</div>
       </section>
 
       <!-- 候选分数表 -->
       <section class="detail-section">
-        <h4 class="detail-section-title">候选分数</h4>
+        <h4 class="detail-section-title mt-1!">候选分数</h4>
+        <div class="diag-note">{{ view.scoringNote }}</div>
         <a-table
           :columns="scoreColumns"
-          :scroll="{ x: 1280 }"
           :data-source="view.scoreRows"
           :pagination="false"
           :row-key="scoreRowKey"
@@ -62,17 +63,39 @@
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'rank'">
               <span :class="{ 'diag-rank-topn': record.inTopN }">{{ record.rank }}</span>
-              <a-tag v-if="record.inTopN" color="green" size="small">进 top-N</a-tag>
+              <a-tag v-if="record.inTopN" color="green" size="small">top-N</a-tag>
             </template>
             <template v-else-if="column.key === 'chunkId'">{{ record.chunkId }}</template>
             <template v-else-if="column.key === 'chapter'">{{ record.chapterText }}</template>
-            <template v-else-if="column.key === 'bm25'">{{ record.bm25Text }}</template>
-            <template v-else-if="column.key === 'cosine'">{{ record.cosineText }}</template>
+            <template v-else-if="column.key === 'bm25Norm'">
+              <a-tooltip placement="topLeft">
+                <template #title>原始 bm25：{{ record.bm25RawText }}</template>
+                <span>{{ record.bm25NormText }}</span>
+              </a-tooltip>
+            </template>
+            <template v-else-if="column.key === 'vectorMap'">
+              <a-tooltip placement="topLeft">
+                <template #title>原始 cosine：{{ record.cosineRawText }}</template>
+                <span>{{ record.vectorMapText }}</span>
+              </a-tooltip>
+            </template>
             <template v-else-if="column.key === 'labelHit'">
-              <a-tag :color="record.labelHit ? 'gold' : 'default'" size="small">{{ record.labelHit ? '是' : '否' }}</a-tag>
+              <!-- 命中标签可能多个，tooltip 内逐行展示（hitLabelsTitle 为换行拼接）；无命中标签时不弹浮层 -->
+              <a-tooltip :open="record.hitLabelsTitle ? undefined : false" placement="topLeft">
+                <template #title>
+                  <div class="diag-tooltip-lines">{{ record.hitLabelsTitle }}</div>
+                </template>
+                <a-tag :color="record.labelHit ? 'gold' : 'default'" size="small">{{ record.labelHit ? '是' : '否' }}</a-tag>
+              </a-tooltip>
             </template>
             <template v-else-if="column.key === 'finalScore'">
-              <span class="diag-final-score">{{ record.finalScoreText }}</span>
+              <!-- 浮层逐行给出 finalScore 算式代入过程（finalScoreTitle 为换行拼接），免除手算 -->
+              <a-tooltip placement="topLeft">
+                <template #title>
+                  <div class="diag-tooltip-lines">{{ record.finalScoreTitle }}</div>
+                </template>
+                <span class="diag-final-score">{{ record.finalScoreText }}</span>
+              </a-tooltip>
             </template>
             <template v-else-if="column.key === 'sources'">
               <a-tag
@@ -85,8 +108,12 @@
                 {{ source.text }}
               </a-tag>
             </template>
-            <template v-else-if="column.key === 'injected'">{{ record.injectedText }}</template>
-            <template v-else-if="column.key === 'cited'">{{ record.citedText }}</template>
+            <template v-else-if="column.key === 'injected'">
+              <a-tag :color="record.injectedText === '是' ? 'gold' : 'default'" size="small">{{ record.injectedText }}</a-tag>
+            </template>
+            <template v-else-if="column.key === 'cited'">
+              <a-tag :color="record.citedText === '是' ? 'gold' : 'default'" size="small">{{ record.citedText }}</a-tag>
+            </template>
           </template>
         </a-table>
       </section>
@@ -111,8 +138,18 @@
             <div class="meta-row">
               <span class="meta-label">三路分</span>
               <span class="meta-value">
-                BM25 {{ view.nextRank.bm25Text }} · 余弦 {{ view.nextRank.cosineText }} · 最终 {{ view.nextRank.finalScoreText }}
+                BM25归一化 {{ view.nextRank.bm25NormText }} · 向量映射 {{ view.nextRank.vectorMapText }} · 标签 {{ view.nextRank.labelHit ? '是' : '否' }} ·
+                <a-tooltip placement="topLeft">
+                  <template #title>
+                    <div class="diag-tooltip-lines">{{ view.nextRank.finalScoreTitle }}</div>
+                  </template>
+                  <span>最终 {{ view.nextRank.finalScoreText }}</span>
+                </a-tooltip>
               </span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label">原始分</span>
+              <span class="meta-value diag-muted">原始 bm25 {{ view.nextRank.bm25RawText }} · 原始 cosine {{ view.nextRank.cosineRawText }}</span>
             </div>
             <div class="meta-row">
               <span class="meta-label">来源</span>
@@ -225,7 +262,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { RetrievalDiagnostics } from '../api/client'
-import { buildDiagnosticsView, type ScoreRowView } from '../utils/retrievalDiagnostics'
+import { buildDiagnosticsView, scoreRowClass, type ScoreRowView } from '../utils/retrievalDiagnostics'
 
 const props = defineProps<{
   diagnostics: RetrievalDiagnostics | null
@@ -237,22 +274,18 @@ const view = computed(() => buildDiagnosticsView(props.diagnostics, props.citati
 const scoreColumns = [
   { key: 'rank', title: '排名', width: 120 },
   { key: 'chunkId', title: 'chunkId', width: 210 },
-  { key: 'chapter', title: '回目', width: 280 },
-  { key: 'bm25', title: 'BM25', width: 90 },
-  { key: 'cosine', title: '向量余弦', width: 100 },
-  { key: 'labelHit', title: '标签命中', width: 100 },
-  { key: 'finalScore', title: '最终分', width: 90 },
-  { key: 'sources', title: '来源', width: 130 },
-  { key: 'injected', title: '进注入视图', width: 110 },
-  { key: 'cited', title: '被引用', width: 90 },
+  { key: 'chapter', title: '回目', width: 430 },
+  { key: 'bm25Norm', title: 'BM25归一化', width: 130, align: 'center' },
+  { key: 'vectorMap', title: '向量映射', width: 100, align: 'center' },
+  { key: 'labelHit', title: '标签命中', width: 100, align: 'center' },
+  { key: 'finalScore', title: '最终分', width: 80, align: 'center' },
+  { key: 'sources', title: '来源', width: 180, align: 'center' },
+  { key: 'injected', title: '进注入视图', width: 130, align: 'center' },
+  { key: 'cited', title: '被引用', width: 90, align: 'center' },
 ]
 
 function scoreRowKey(record: ScoreRowView): string {
   return record.key
-}
-
-function scoreRowClass(record: ScoreRowView): string {
-  return record.inTopN ? 'diag-row-in-topn' : ''
 }
 </script>
 
@@ -340,8 +373,25 @@ function scoreRowClass(record: ScoreRowView): string {
 }
 
 .diag-rank-topn {
+  margin-right: 4px;
   color: #389e0d;
   font-weight: 700;
+}
+
+.diag-cited-tag {
+  margin-left: 6px;
+}
+
+/* 被引用行高亮：青底，覆盖绿底以便一眼看到被引用的那条 */
+.diag-score-table :deep(.diag-row-cited td) {
+  background: #e6fffb;
+}
+
+.diag-note {
+  margin-top: 6px;
+  color: #9aa69e;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .diag-final-score {
@@ -473,5 +523,13 @@ function scoreRowClass(record: ScoreRowView): string {
 .diag-hint {
   color: #cf1322;
   font-size: 12px;
+}
+</style>
+
+<!-- tooltip 内容渲染在 body 下的浮层，scoped 选择器打不到，故单开非 scoped 块（口径同 LogsView 的 .dur-tooltip） -->
+<style>
+/* 标签命中 tooltip：多标签逐行展示（hitLabelsTitle 为 \n 拼接） */
+.diag-tooltip-lines {
+  white-space: pre-line;
 }
 </style>

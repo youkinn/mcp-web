@@ -124,8 +124,11 @@ export interface RetrievalCandidate {
   chapter: number
   title: string
   bm25: number | null
+  bm25Norm: number | null
   cosine: number | null
   labelHit: boolean
+  // 命中标签原始文本（标签表按 | 拆分后的单个标签，如「人物之死-关羽之死」）；历史 trace 无该字段，故可选
+  hitLabels?: string[]
   finalScore: number
   sources: string[]
   injected: boolean | null
