@@ -49,11 +49,10 @@
 
       <!-- 候选分数表 -->
       <section class="detail-section">
-        <h4 class="detail-section-title">候选分数</h4>
+        <h4 class="detail-section-title mt-1!">候选分数</h4>
         <div class="diag-note">{{ view.scoringNote }}</div>
         <a-table
           :columns="scoreColumns"
-          :scroll="{ x: 1330 }"
           :data-source="view.scoreRows"
           :pagination="false"
           :row-key="scoreRowKey"
@@ -64,26 +63,30 @@
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'rank'">
               <span :class="{ 'diag-rank-topn': record.inTopN }">{{ record.rank }}</span>
-              <a-tag v-if="record.inTopN" color="green" size="small">进 top-N</a-tag>
-              <a-tag
-                v-if="record.citedTag"
-                :color="record.citedTag.color"
-                size="small"
-                class="diag-cited-tag"
-              >
-                {{ record.citedTag.text }}
-              </a-tag>
+              <a-tag v-if="record.inTopN" color="green" size="small">top-N</a-tag>
             </template>
             <template v-else-if="column.key === 'chunkId'">{{ record.chunkId }}</template>
             <template v-else-if="column.key === 'chapter'">{{ record.chapterText }}</template>
             <template v-else-if="column.key === 'bm25Norm'">
-              <span :title="'原始 bm25：' + record.bm25RawText">{{ record.bm25NormText }}</span>
+              <a-tooltip placement="topLeft">
+                <template #title>原始 bm25：{{ record.bm25RawText }}</template>
+                <span>{{ record.bm25NormText }}</span>
+              </a-tooltip>
             </template>
             <template v-else-if="column.key === 'vectorMap'">
-              <span :title="'原始 cosine：' + record.cosineRawText">{{ record.vectorMapText }}</span>
+              <a-tooltip placement="topLeft">
+                <template #title>原始 cosine：{{ record.cosineRawText }}</template>
+                <span>{{ record.vectorMapText }}</span>
+              </a-tooltip>
             </template>
             <template v-else-if="column.key === 'labelHit'">
-              <a-tag :color="record.labelHit ? 'gold' : 'default'" size="small">{{ record.labelHit ? '是' : '否' }}</a-tag>
+              <!-- 命中标签可能多个，tooltip 内逐行展示（hitLabelsTitle 为换行拼接）；无命中标签时不弹浮层 -->
+              <a-tooltip :open="record.hitLabelsTitle ? undefined : false" placement="topLeft">
+                <template #title>
+                  <div class="diag-tooltip-lines">{{ record.hitLabelsTitle }}</div>
+                </template>
+                <a-tag :color="record.labelHit ? 'gold' : 'default'" size="small">{{ record.labelHit ? '是' : '否' }}</a-tag>
+              </a-tooltip>
             </template>
             <template v-else-if="column.key === 'finalScore'">
               <span class="diag-final-score">{{ record.finalScoreText }}</span>
@@ -99,8 +102,12 @@
                 {{ source.text }}
               </a-tag>
             </template>
-            <template v-else-if="column.key === 'injected'">{{ record.injectedText }}</template>
-            <template v-else-if="column.key === 'cited'">{{ record.citedText }}</template>
+            <template v-else-if="column.key === 'injected'">
+              <a-tag :color="record.injectedText === '是' ? 'gold' : 'default'" size="small">{{ record.injectedText }}</a-tag>
+            </template>
+            <template v-else-if="column.key === 'cited'">
+              <a-tag :color="record.citedText === '是' ? 'gold' : 'default'" size="small">{{ record.citedText }}</a-tag>
+            </template>
           </template>
         </a-table>
       </section>
@@ -253,16 +260,16 @@ const props = defineProps<{
 const view = computed(() => buildDiagnosticsView(props.diagnostics, props.citationCount ?? null))
 
 const scoreColumns = [
-  { key: 'rank', title: '排名', width: 170 },
+  { key: 'rank', title: '排名', width: 120 },
   { key: 'chunkId', title: 'chunkId', width: 210 },
-  { key: 'chapter', title: '回目', width: 280 },
-  { key: 'bm25Norm', title: 'BM25归一化', width: 100 },
-  { key: 'vectorMap', title: '向量映射', width: 100 },
-  { key: 'labelHit', title: '标签命中', width: 100 },
-  { key: 'finalScore', title: '最终分', width: 90 },
-  { key: 'sources', title: '来源', width: 130 },
-  { key: 'injected', title: '进注入视图', width: 110 },
-  { key: 'cited', title: '被引用', width: 90 },
+  { key: 'chapter', title: '回目', width: 430 },
+  { key: 'bm25Norm', title: 'BM25归一化', width: 130, align: 'center' },
+  { key: 'vectorMap', title: '向量映射', width: 100, align: 'center' },
+  { key: 'labelHit', title: '标签命中', width: 100, align: 'center' },
+  { key: 'finalScore', title: '最终分', width: 80, align: 'center' },
+  { key: 'sources', title: '来源', width: 180, align: 'center' },
+  { key: 'injected', title: '进注入视图', width: 130, align: 'center' },
+  { key: 'cited', title: '被引用', width: 90, align: 'center' },
 ]
 
 function scoreRowKey(record: ScoreRowView): string {
@@ -354,6 +361,7 @@ function scoreRowKey(record: ScoreRowView): string {
 }
 
 .diag-rank-topn {
+  margin-right: 4px;
   color: #389e0d;
   font-weight: 700;
 }
@@ -503,5 +511,13 @@ function scoreRowKey(record: ScoreRowView): string {
 .diag-hint {
   color: #cf1322;
   font-size: 12px;
+}
+</style>
+
+<!-- tooltip 内容渲染在 body 下的浮层，scoped 选择器打不到，故单开非 scoped 块（口径同 LogsView 的 .dur-tooltip） -->
+<style>
+/* 标签命中 tooltip：多标签逐行展示（hitLabelsTitle 为 \n 拼接） */
+.diag-tooltip-lines {
+  white-space: pre-line;
 }
 </style>

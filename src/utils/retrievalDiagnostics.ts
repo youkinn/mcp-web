@@ -93,6 +93,8 @@ export interface ScoreRowView {
   bm25NormText: string
   vectorMapText: string
   labelHit: boolean
+  /** 标签命中列的 tooltip 文本：命中标签逐行拼接，无标签为空串 */
+  hitLabelsTitle: string
   finalScoreText: string
   bm25RawText: string
   cosineRawText: string
@@ -110,6 +112,7 @@ export function buildScoreRow(candidate: RetrievalCandidate, topN: number): Scor
     rank: candidate.rank,
     chunkId: candidate.chunkId,
     chapterText: `第 ${candidate.chapter} 回 ${candidate.title}`,
+    hitLabelsTitle: (candidate.hitLabels ?? []).join('\n'),
     bm25NormText: formatScore(candidate.bm25Norm),
     vectorMapText: formatScore(vectorMap(candidate.cosine)),
     labelHit: candidate.labelHit,

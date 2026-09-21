@@ -57,6 +57,7 @@ const fullDiagnostics: RetrievalDiagnostics = {
       bm25Norm: 0.66,
       cosine: 0.812,
       labelHit: true,
+      hitLabels: ['人物之死-关羽之死', '人物之死'],
       finalScore: 0.842,
       sources: ['lexical', 'vector'],
       injected: true,
@@ -194,6 +195,20 @@ describe('分数整形（buildScoreRow / formatScore / boolText / sourceMeta）'
     assert.equal(row.citedText, '是')
     assert.equal(row.inTopN, false)
     assert.equal(buildScoreRow(fullDiagnostics.candidates[0], 10).inTopN, true)
+  })
+
+  it('标签命中列 tooltip：命中候选逐行拼接命中标签，未命中 / 历史 trace 无字段为空串', () => {
+    const hit = buildScoreRow(fullDiagnostics.candidates[0], fullDiagnostics.funnel.topN)
+    assert.equal(hit.hitLabelsTitle, '人物之死-关羽之死\n人物之死')
+    assert.equal(hit.labelHit, true)
+    // 历史 trace 落库的诊断没有 hitLabels（undefined），title 必须为空串、不得出现 undefined 字样
+    const legacy = buildScoreRow({ ...fullDiagnostics.candidates[0], hitLabels: undefined }, 10)
+    assert.equal(legacy.hitLabelsTitle, '')
+    assert.doesNotMatch(legacy.hitLabelsTitle, /undefined/)
+    // 未命中候选：labelHit 为 false 且无命中标签
+    const miss = buildScoreRow(fullDiagnostics.candidates[1], fullDiagnostics.funnel.topN)
+    assert.equal(miss.labelHit, false)
+    assert.equal(miss.hitLabelsTitle, '')
   })
 })
 
