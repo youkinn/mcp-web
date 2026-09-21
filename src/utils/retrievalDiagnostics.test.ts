@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert'
 import { describe, it } from 'node:test'
-import type { RetrievalDiagnostics } from '../api/client'
+import type { RetrievalCandidate, RetrievalDiagnostics } from '../api/client'
 import {
   boolText,
   buildDiagnosticsView,
@@ -11,6 +11,7 @@ import {
   buildScoreRows,
   buildSelfConsistency,
   citedTag,
+  finalScoreFormula,
   formatScore,
   MERGED_CANDIDATES_HINT,
   SCORING_FORMULA_NOTE,
@@ -363,5 +364,91 @@ describe('bug-00013：候选分数三路分量肉眼复算 finalScore', () => {
     assert.equal(next.vectorMapText, '0.71')
     assert.equal(next.labelHit, false)
     assert.equal(next.finalScoreText, '0.426')
+  })
+})
+
+describe('feat-A009 验收 6b：finalScore 算式代入 tooltip（finalScoreFormula）', () => {
+  it('浮层首行原样列出算式，三项逐项代入，末行给出全精度求和与 round3 结果', () => {
+    const title = finalScoreFormula({
+      ...fullDiagnostics.candidates[0],
+      bm25Norm: 1,
+      cosine: 0.622,
+      labelHit: true,
+      finalScore: 0.887,
+    })
+    assert.deepEqual(title.split('\n'), [
+      'finalScore = round3( 0.3 × BM25归一化 + 0.6 × 向量映射((cosine+1)/2) + 0.1 × 标签命中 )',
+      '0.3 × 1（BM25归一化）',
+      '0.6 × 0.811（(cosine+1)/2，cosine=0.622）',
+      '0.1 × 1（标签命中）',
+      '= 0.8866 → round3 = 0.887',
+    ])
+  })
+
+  it('乘积与求和按全精度计算，数值展示 4 位小数（整数不带小数点）', () => {
+    const lines = finalScoreFormula({
+      ...fullDiagnostics.candidates[0],
+      bm25Norm: 0.66,
+      cosine: 0.812,
+      labelHit: true,
+      finalScore: 0.842,
+    }).split('\n')
+    assert.equal(lines[1], '0.3 × 0.66（BM25归一化）')
+    assert.equal(lines[2], '0.6 × 0.906（(cosine+1)/2，cosine=0.812）')
+    assert.equal(lines[3], '0.1 × 1（标签命中）')
+    assert.equal(lines[4], '= 0.8416 → round3 = 0.842')
+  })
+
+  it('bm25Norm 为 null 时代入 0 并标注非词法命中', () => {
+    const lines = finalScoreFormula({
+      ...fullDiagnostics.candidates[0],
+      bm25Norm: null,
+      cosine: 0.42,
+      labelHit: false,
+      finalScore: 0.426,
+    }).split('\n')
+    assert.equal(lines[1], '0.3 × 0（非词法命中）')
+    assert.equal(lines[2], '0.6 × 0.71（(cosine+1)/2，cosine=0.42）')
+    assert.equal(lines[3], '0.1 × 0（标签命中）')
+    assert.equal(lines[4], '= 0.426 → round3 = 0.426')
+  })
+
+  it('cosine 为 null 时代入 0 并标注降级纯 BM25', () => {
+    const lines = finalScoreFormula({
+      ...fullDiagnostics.candidates[0],
+      bm25Norm: 0.55,
+      cosine: null,
+      labelHit: false,
+      finalScore: 0.165,
+    }).split('\n')
+    assert.equal(lines[1], '0.3 × 0.55（BM25归一化）')
+    assert.equal(lines[2], '0.6 × 0（降级纯 BM25，无向量分）')
+    assert.equal(lines[4], '= 0.165 → round3 = 0.165')
+  })
+
+  it('字段缺失（历史 trace）时按 null 语义降级，浮层不出现 undefined / NaN', () => {
+    const legacy = {
+      ...fullDiagnostics.candidates[0],
+      bm25Norm: undefined,
+      cosine: undefined,
+      labelHit: undefined,
+      finalScore: undefined,
+    } as unknown as RetrievalCandidate
+    const lines = finalScoreFormula(legacy).split('\n')
+    assert.equal(lines.length, 5)
+    assert.ok(!lines.some((line) => line.includes('undefined') || line.includes('NaN')))
+    assert.equal(lines[1], '0.3 × 0（非词法命中）')
+    assert.equal(lines[2], '0.6 × 0（降级纯 BM25，无向量分）')
+    assert.equal(lines[3], '0.1 × 0（标签命中）')
+    assert.equal(lines[4], '= 0 → round3 = —')
+  })
+
+  it('分数表行与第 N+1 名卡片各自带 finalScoreTitle，内容即算式代入', () => {
+    const row = buildScoreRow(fullDiagnostics.candidates[0], fullDiagnostics.funnel.topN)
+    assert.equal(row.finalScoreTitle, finalScoreFormula(fullDiagnostics.candidates[0]))
+    assert.equal(row.finalScoreTitle.split('\n')[4], '= 0.8416 → round3 = 0.842')
+    const next = buildNextRankView(fullDiagnostics.nextRank!)
+    assert.equal(next.finalScoreTitle, finalScoreFormula(fullDiagnostics.nextRank!))
+    assert.equal(next.finalScoreTitle.split('\n')[1], '0.3 × 0（非词法命中）')
   })
 })

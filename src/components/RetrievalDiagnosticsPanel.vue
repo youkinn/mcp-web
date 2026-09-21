@@ -89,7 +89,13 @@
               </a-tooltip>
             </template>
             <template v-else-if="column.key === 'finalScore'">
-              <span class="diag-final-score">{{ record.finalScoreText }}</span>
+              <!-- 浮层逐行给出 finalScore 算式代入过程（finalScoreTitle 为换行拼接），免除手算 -->
+              <a-tooltip placement="topLeft">
+                <template #title>
+                  <div class="diag-tooltip-lines">{{ record.finalScoreTitle }}</div>
+                </template>
+                <span class="diag-final-score">{{ record.finalScoreText }}</span>
+              </a-tooltip>
             </template>
             <template v-else-if="column.key === 'sources'">
               <a-tag
@@ -132,7 +138,13 @@
             <div class="meta-row">
               <span class="meta-label">三路分</span>
               <span class="meta-value">
-                BM25归一化 {{ view.nextRank.bm25NormText }} · 向量映射 {{ view.nextRank.vectorMapText }} · 标签 {{ view.nextRank.labelHit ? '是' : '否' }} · 最终 {{ view.nextRank.finalScoreText }}
+                BM25归一化 {{ view.nextRank.bm25NormText }} · 向量映射 {{ view.nextRank.vectorMapText }} · 标签 {{ view.nextRank.labelHit ? '是' : '否' }} ·
+                <a-tooltip placement="topLeft">
+                  <template #title>
+                    <div class="diag-tooltip-lines">{{ view.nextRank.finalScoreTitle }}</div>
+                  </template>
+                  <span>最终 {{ view.nextRank.finalScoreText }}</span>
+                </a-tooltip>
               </span>
             </div>
             <div class="meta-row">

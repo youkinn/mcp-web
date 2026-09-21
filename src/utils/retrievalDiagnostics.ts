@@ -48,6 +48,34 @@ export function boolText(value: boolean | null): string {
   return '—'
 }
 
+// finalScore 算式代入（feat-A009 验收 6b）：hover 浮层逐行给出代入过程，免除手算
+const FINAL_SCORE_FORMULA_LINE =
+  'finalScore = round3( 0.3 × BM25归一化 + 0.6 × 向量映射((cosine+1)/2) + 0.1 × 标签命中 )'
+
+export function finalScoreFormula(candidate: RetrievalCandidate): string {
+  // 历史 trace 可能缺字段，一律按 null 语义降级，浮层不出现 undefined / NaN
+  const bm25Norm = candidate.bm25Norm ?? null
+  const cosine = candidate.cosine ?? null
+  const labelHit = candidate.labelHit === true
+  const finalScore = candidate.finalScore ?? null
+  const bm25Line =
+    bm25Norm === null ? '0.3 × 0（非词法命中）' : `0.3 × ${formatScore(bm25Norm)}（BM25归一化）`
+  const vectorLine =
+    cosine === null
+      ? '0.6 × 0（降级纯 BM25，无向量分）'
+      : `0.6 × ${formatScore(vectorMap(cosine))}（(cosine+1)/2，cosine=${formatScore(cosine)}）`
+  const labelLine = `0.1 × ${labelHit ? 1 : 0}（标签命中）`
+  // 乘积与求和用全精度，最后一步 round3 显式写出
+  const sum = 0.3 * (bm25Norm ?? 0) + 0.6 * vectorMap(cosine) + 0.1 * (labelHit ? 1 : 0)
+  return [
+    FINAL_SCORE_FORMULA_LINE,
+    bm25Line,
+    vectorLine,
+    labelLine,
+    `= ${formatScore(sum)} → round3 = ${formatScore(finalScore)}`,
+  ].join('\n')
+}
+
 // ── 召回漏斗 ──
 
 export interface FunnelStage {
@@ -96,6 +124,8 @@ export interface ScoreRowView {
   /** 标签命中列的 tooltip 文本：命中标签逐行拼接，无标签为空串 */
   hitLabelsTitle: string
   finalScoreText: string
+  /** 最终分列的 tooltip 文本：finalScore 算式代入过程（finalScoreFormula），逐行拼接 */
+  finalScoreTitle: string
   bm25RawText: string
   cosineRawText: string
   sources: SourceTag[]
@@ -117,6 +147,7 @@ export function buildScoreRow(candidate: RetrievalCandidate, topN: number): Scor
     vectorMapText: formatScore(vectorMap(candidate.cosine)),
     labelHit: candidate.labelHit,
     finalScoreText: formatScore(candidate.finalScore),
+    finalScoreTitle: finalScoreFormula(candidate),
     bm25RawText: formatScore(candidate.bm25),
     cosineRawText: formatScore(candidate.cosine),
     sources: candidate.sources.map(sourceMeta),
@@ -150,6 +181,8 @@ export interface NextRankView {
   vectorMapText: string
   labelHit: boolean
   finalScoreText: string
+  /** 最终分处的 tooltip 文本：finalScore 算式代入过程（finalScoreFormula），逐行拼接 */
+  finalScoreTitle: string
   bm25RawText: string
   cosineRawText: string
   sources: SourceTag[]
@@ -165,6 +198,7 @@ export function buildNextRankView(nextRank: NonNullable<RetrievalDiagnostics['ne
     vectorMapText: formatScore(vectorMap(nextRank.cosine)),
     labelHit: nextRank.labelHit,
     finalScoreText: formatScore(nextRank.finalScore),
+    finalScoreTitle: finalScoreFormula(nextRank),
     bm25RawText: formatScore(nextRank.bm25),
     cosineRawText: formatScore(nextRank.cosine),
     sources: nextRank.sources.map(sourceMeta),
