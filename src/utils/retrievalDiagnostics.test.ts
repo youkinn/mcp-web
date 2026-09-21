@@ -8,10 +8,16 @@ import {
   buildFunnel,
   buildNextRankView,
   buildScoreRow,
+  buildScoreRows,
   buildSelfConsistency,
+  citedTag,
   formatScore,
+  MERGED_CANDIDATES_HINT,
+  SCORING_FORMULA_NOTE,
+  scoreRowClass,
   sourceMeta,
   truncatedText,
+  vectorMap,
 } from './retrievalDiagnostics.ts'
 
 // ── 检索诊断数据整形 / 自洽检查单测（feat-A009，node:test，跑法：npm test）──
@@ -48,9 +54,10 @@ const fullDiagnostics: RetrievalDiagnostics = {
       chapter: 73,
       title: '玄德进位汉中王　云长攻拔襄阳郡',
       bm25: 12.34,
+      bm25Norm: 0.66,
       cosine: 0.812,
       labelHit: true,
-      finalScore: 0.92,
+      finalScore: 0.842,
       sources: ['lexical', 'vector'],
       injected: true,
       cited: true,
@@ -61,9 +68,10 @@ const fullDiagnostics: RetrievalDiagnostics = {
       chapter: 75,
       title: '关云长刮骨疗毒　吕子明白衣渡江',
       bm25: null,
+      bm25Norm: null,
       cosine: 0.42,
       labelHit: false,
-      finalScore: 0.33,
+      finalScore: 0.426,
       sources: ['vector'],
       injected: false,
       cited: true,
@@ -75,9 +83,10 @@ const fullDiagnostics: RetrievalDiagnostics = {
     chapter: 75,
     title: '关云长刮骨疗毒　吕子明白衣渡江',
     bm25: null,
+    bm25Norm: null,
     cosine: 0.42,
     labelHit: false,
-    finalScore: 0.33,
+    finalScore: 0.426,
     sources: ['vector'],
     injected: false,
     cited: true,
@@ -171,13 +180,16 @@ describe('分数整形（buildScoreRow / formatScore / boolText / sourceMeta）'
     assert.deepEqual(sourceMeta('unknown'), { text: 'unknown', color: 'default' })
   })
 
-  it('分数表行：chunkId / 回目 / BM25 / 余弦 null 显示 —，rank 进 top-N 标记', () => {
+  it('分数表行：chunkId / 回目 / BM25归一化 / 向量映射 null 显示 —，rank 进 top-N 标记', () => {
     const row = buildScoreRow(fullDiagnostics.candidates[1], fullDiagnostics.funnel.topN)
     assert.equal(row.chunkId, 'sanguo-yanyi:0075:c0003')
     assert.equal(row.chapterText, '第 75 回 关云长刮骨疗毒　吕子明白衣渡江')
-    assert.equal(row.bm25Text, '—')
-    assert.equal(row.cosineText, '0.42')
-    assert.equal(row.finalScoreText, '0.33')
+    assert.equal(row.bm25NormText, '—')
+    assert.equal(row.vectorMapText, '0.71')
+    assert.equal(row.labelHit, false)
+    assert.equal(row.finalScoreText, '0.426')
+    assert.equal(row.bm25RawText, '—')
+    assert.equal(row.cosineRawText, '0.42')
     assert.equal(row.injectedText, '否')
     assert.equal(row.citedText, '是')
     assert.equal(row.inTopN, false)
@@ -202,13 +214,16 @@ describe('环境与降级（buildEnvView / nextRank 视图）', () => {
     assert.equal(view.env.degradedBm25Only, true)
   })
 
-  it('第 N+1 名视图：chunkId / 回目 / 三路分 / gapToTopN 文本', () => {
+  it('第 N+1 名视图：chunkId / 回目 / 三路分（bm25归一化 + 向量映射 + 标签）/ gapToTopN 文本', () => {
     const next = buildNextRankView(fullDiagnostics.nextRank!)
     assert.equal(next.chunkId, 'sanguo-yanyi:0075:c0003')
     assert.equal(next.chapterText, '第 75 回 关云长刮骨疗毒　吕子明白衣渡江')
-    assert.equal(next.bm25Text, '—')
-    assert.equal(next.cosineText, '0.42')
-    assert.equal(next.finalScoreText, '0.33')
+    assert.equal(next.bm25NormText, '—')
+    assert.equal(next.vectorMapText, '0.71')
+    assert.equal(next.labelHit, false)
+    assert.equal(next.finalScoreText, '0.426')
+    assert.equal(next.bm25RawText, '—')
+    assert.equal(next.cosineRawText, '0.42')
     assert.equal(next.gapToTopNText, '0.19')
   })
 })
@@ -240,5 +255,98 @@ describe('自洽检查（buildSelfConsistency）', () => {
     const candidates = fullDiagnostics.candidates.map((candidate) => ({ ...candidate, cited: false }))
     const result = buildSelfConsistency(fullDiagnostics.funnel, candidates, 0)
     assert.equal(result.citedOutsideTopN, false)
+  })
+})
+
+describe('验收修复：被引用标记与口径说明（feat-A009 / story-A009-04）', () => {
+  it('cited=true 的行带「被引用」cyan 标记，未引用行标记为 null', () => {
+    assert.deepEqual(citedTag(true), { text: '被引用', color: 'cyan' })
+    assert.equal(citedTag(false), null)
+    assert.equal(citedTag(null), null)
+    const citedRow = buildScoreRow(fullDiagnostics.candidates[0], fullDiagnostics.funnel.topN)
+    assert.equal(citedRow.cited, true)
+    assert.deepEqual(citedRow.citedTag, { text: '被引用', color: 'cyan' })
+    const uncitedRow = buildScoreRow({ ...fullDiagnostics.candidates[0], cited: null }, 10)
+    assert.equal(uncitedRow.cited, false)
+    assert.equal(uncitedRow.citedTag, null)
+  })
+
+  it('行高亮 class：进 top-N 绿标与被引用高亮可叠加，普通行无 class', () => {
+    const [citedTopN, citedOutsideTopN, plain] = buildScoreRows(
+      [
+        fullDiagnostics.candidates[0],
+        fullDiagnostics.candidates[1],
+        { ...fullDiagnostics.candidates[0], rank: 20, cited: false },
+      ],
+      fullDiagnostics.funnel.topN,
+    )
+    assert.equal(scoreRowClass(citedTopN), 'diag-row-in-topn diag-row-cited')
+    assert.equal(scoreRowClass(citedOutsideTopN), 'diag-row-cited')
+    assert.equal(scoreRowClass(plain), '')
+  })
+
+  it('漏斗给出合并候选口径说明：三路并集去重、非相加', () => {
+    const funnel = buildFunnel(fullDiagnostics.funnel)
+    assert.equal(funnel.hints.length, 1)
+    assert.equal(funnel.hints[0], MERGED_CANDIDATES_HINT)
+    assert.match(funnel.hints[0], /并集去重/)
+    assert.match(funnel.hints[0], /非相加/)
+    assert.equal(
+      funnel.tail.find((stage) => stage.key === 'merged')?.hint,
+      MERGED_CANDIDATES_HINT,
+    )
+    const partial = buildFunnel({ ...fullDiagnostics.funnel, injected: null, cited: null })
+    assert.equal(partial.hints.length, 1)
+  })
+
+  it('计分口径说明非空、含三路权重与取值区间，并随汇总视图下发', () => {
+    assert.ok(SCORING_FORMULA_NOTE.length > 0)
+    assert.match(SCORING_FORMULA_NOTE, /0\.6/)
+    assert.match(SCORING_FORMULA_NOTE, /0\.3/)
+    assert.match(SCORING_FORMULA_NOTE, /0\.1/)
+    assert.match(SCORING_FORMULA_NOTE, /\[0,1\]/)
+    const view = buildDiagnosticsView(fullDiagnostics, 3)
+    assert.ok(view)
+    assert.equal(view.scoringNote, SCORING_FORMULA_NOTE)
+  })
+})
+
+describe('bug-00013：候选分数三路分量肉眼复算 finalScore', () => {
+  it('向量映射 helper：cosine 有值时 (cosine+1)/2，null（降级纯 BM25）按 0', () => {
+    assert.equal(formatScore(vectorMap(0.812)), '0.906')
+    assert.equal(formatScore(vectorMap(0.42)), '0.71')
+    assert.equal(vectorMap(null), 0)
+  })
+
+  it('分数表行直接给出 bm25 归一化 / 向量映射 / 标签命中 / 最终分，按公式可复算', () => {
+    const row = buildScoreRow(fullDiagnostics.candidates[0], fullDiagnostics.funnel.topN)
+    assert.equal(row.bm25NormText, '0.66')
+    assert.equal(row.vectorMapText, '0.906')
+    assert.equal(row.labelHit, true)
+    assert.equal(row.finalScoreText, '0.842')
+    // 复算：0.3 × 0.66 + 0.6 × 0.906 + 0.1 × 1 = 0.8416 → round3 = 0.842
+    const recomputed = 0.3 * 0.66 + 0.6 * 0.906 + 0.1 * 1
+    assert.equal(Number(row.finalScoreText), Number(recomputed.toFixed(3)))
+  })
+
+  it('cosine 为 null（降级纯 BM25）时向量映射按 0，仍可复算', () => {
+    const degraded = buildScoreRow(
+      { ...fullDiagnostics.candidates[0], cosine: null, bm25Norm: 0.55, labelHit: false, finalScore: 0.165 },
+      fullDiagnostics.funnel.topN,
+    )
+    assert.equal(degraded.bm25NormText, '0.55')
+    assert.equal(degraded.vectorMapText, '0')
+    assert.equal(degraded.cosineRawText, '—')
+    assert.equal(degraded.labelHit, false)
+    assert.equal(degraded.finalScoreText, '0.165')
+    assert.equal(Number(degraded.finalScoreText), Number((0.3 * 0.55).toFixed(3)))
+  })
+
+  it('第 N+1 名卡片三路分含 bm25 归一化 / 向量映射 / 标签命中 / 最终分', () => {
+    const next = buildNextRankView(fullDiagnostics.nextRank!)
+    assert.equal(next.bm25NormText, '—')
+    assert.equal(next.vectorMapText, '0.71')
+    assert.equal(next.labelHit, false)
+    assert.equal(next.finalScoreText, '0.426')
   })
 })

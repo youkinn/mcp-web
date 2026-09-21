@@ -124,6 +124,7 @@ export interface RetrievalCandidate {
   chapter: number
   title: string
   bm25: number | null
+  bm25Norm: number | null
   cosine: number | null
   labelHit: boolean
   finalScore: number
