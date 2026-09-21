@@ -214,6 +214,7 @@
                         :row-key="rowKeySeq"
                         size="small"
                         class="sub-table"
+                        :expandable="toolExpandableOf(record)"
                       >
                         <template #bodyCell="{ column, record: call }">
                           <template v-if="column.key === 'mcpServer'">
@@ -241,6 +242,12 @@
                               <a-button v-if="call.resultSummary" size="small" @click="openJsonModal('工具出参 #' + call.seq, call.resultSummary)">出参</a-button>
                             </div>
                           </template>
+                        </template>
+                        <template #expandedRowRender="{ record: call }">
+                          <RetrievalDiagnosticsPanel
+                            :diagnostics="call.diagnostics ?? null"
+                            :citation-count="citationCountOf(record)"
+                          />
                         </template>
                       </a-table>
                       <div v-else class="sub-empty">无工具调用</div>
@@ -342,6 +349,7 @@ import {
   type LogListQuery,
   type TokenStatsData,
 } from '../api/client'
+import RetrievalDiagnosticsPanel from '../components/RetrievalDiagnosticsPanel.vue'
 
 // ── 通用格式化 ──
 
@@ -607,6 +615,24 @@ const jsonViewData = computed(() => tryParseJson(contentModal.value?.body ?? '')
 
 function citationsData(record: LogListItem): unknown {
   return tryParseJson(detailOf(record.traceId)?.data?.log.citations ?? '')
+}
+
+// ── 工具调用行展开：检索诊断（feat-A009）──
+
+const toolExpandKeys = reactive<Record<string, (string | number)[]>>({})
+
+function toolExpandableOf(record: LogListItem) {
+  return {
+    expandedRowKeys: toolExpandKeys[record.traceId] ?? [],
+    onExpandedRowsChange: (keys: (string | number)[]) => {
+      toolExpandKeys[record.traceId] = keys
+    },
+  }
+}
+
+function citationCountOf(record: LogListItem): number | null {
+  const parsed = citationsData(record)
+  return Array.isArray(parsed) ? parsed.length : null
 }
 
 function detailOf(traceId: string) {

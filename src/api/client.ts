@@ -82,6 +82,60 @@ export interface LlmCallRecord {
   errorMessage: string
 }
 
+// ── 检索诊断（feat-A009）类型 ──
+
+export interface RetrievalDiagnostics {
+  truncated: boolean
+  truncatedCount: number
+  query: {
+    raw: string
+    normalized: string
+    tokens: string[]
+  }
+  env: {
+    vectorScheme: string | null
+    degradedBm25Only: boolean
+    corpusChunks: number
+    aliasCount: number
+    vectorDim: number | null
+  }
+  funnel: {
+    corpusChunks: number
+    lexicalHits: number
+    vectorTop50: number
+    labelHits: number
+    mergedCandidates: number
+    topN: number
+    injected: number | null
+    cited: number | null
+  }
+  candidates: RetrievalCandidate[]
+  nextRank: RetrievalNextRank | null
+  deathIntent: {
+    detected: boolean
+    pinned: boolean
+    chunkIds: string[]
+  }
+}
+
+export interface RetrievalCandidate {
+  rank: number
+  chunkId: string
+  chapter: number
+  title: string
+  bm25: number | null
+  cosine: number | null
+  labelHit: boolean
+  finalScore: number
+  sources: string[]
+  injected: boolean | null
+  cited: boolean | null
+}
+
+export interface RetrievalNextRank extends RetrievalCandidate {
+  gapToTopN: number
+}
+
 export interface ToolCallRecord {
   seq: number
   mcpServer: string
@@ -92,6 +146,7 @@ export interface ToolCallRecord {
   resultSummary: string
   status: 'success' | 'failed'
   errorMessage: string
+  diagnostics: RetrievalDiagnostics | null
 }
 
 export interface LogDetail {
