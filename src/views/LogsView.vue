@@ -28,6 +28,7 @@
                 <a-select v-model:value="query.logType" class="query-control query-select">
                   <a-select-option value="">全部</a-select-option>
                   <a-select-option value="chat">chat</a-select-option>
+                  <a-select-option value="quiz">quiz</a-select-option>
                 </a-select>
               </div>
               <div class="query-item">

@@ -114,8 +114,9 @@ export interface TokenStatsData {
   buckets: TokenBucket[]
 }
 
-const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+// 导出供 node:test 单测以 mock.method 打桩；Node 测试环境无 import.meta.env，回退 /api（Vite 构建仍按 token 替换）
+export const apiClient = axios.create({
+  baseURL: import.meta.env?.VITE_API_BASE_URL || '/api',
   timeout: 30_000,
   headers: {
     'Content-Type': 'application/json',
@@ -134,6 +135,9 @@ function unwrapData<T>(body: ApiResponse<T>): T {
 // 会话级变量承载当前 /api/chat 请求的链路 ID：一次逻辑请求生成一次，
 // 同一请求重试沿用同一值（服务端按 trace_id 幂等去重）。
 let chatTraceId: string | null = null
+
+// 会话级变量承载当前 /api/sango/random 请求的链路 ID，口径与 chat 一致（feat-A008）
+let sangoRandomTraceId: string | null = null
 
 /** 收到 /api/chat 响应后补报前端接收时刻 t6；fire-and-forget，失败静默不影响主流程。 */
 function reportFrontendEnd(traceId: string, clientReceivedAt: number): void {
@@ -163,7 +167,10 @@ async function postChatForAnswer(
   return data.data
 }
 
-export function sendChatMessage(message: string, domain?: 'fengyunsanguo' | 'sango-novel'): Promise<ChatData> {
+export function sendChatMessage(
+  message: string,
+  domain?: 'fengyunsanguo' | 'sango-novel' | 'weather',
+): Promise<ChatData> {
   const payload: Record<string, string> = { message }
   if (domain) payload.domain = domain
   chatTraceId = crypto.randomUUID()
@@ -176,7 +183,23 @@ export function sendChatMessage(message: string, domain?: 'fengyunsanguo' | 'san
 export function sendSangoRandom(message: string, sessionId?: string): Promise<ChatData> {
   const payload: Record<string, string> = { message }
   if (sessionId) payload.sessionId = sessionId
-  return apiClient.post<ApiResponse<ChatData>>('/sango/random', payload).then(({ data }) => unwrapData(data))
+  sangoRandomTraceId = crypto.randomUUID()
+  const traceId = sangoRandomTraceId
+  return apiClient
+    .post<ApiResponse<ChatData>>('/sango/random', payload, {
+      headers: {
+        'X-Trace-Id': traceId,
+        'X-Client-Sent-At': String(Date.now()),
+      },
+    })
+    .then(({ data, headers }) => {
+      // 兜底场景（请求头缺失由服务端生成）以响应头 X-Trace-Id 为准
+      reportFrontendEnd(String(headers['x-trace-id'] ?? traceId), Date.now())
+      return unwrapData(data)
+    })
+    .finally(() => {
+      if (sangoRandomTraceId === traceId) sangoRandomTraceId = null
+    })
 }
 
 // ── 日志查询（feat-A007）──
