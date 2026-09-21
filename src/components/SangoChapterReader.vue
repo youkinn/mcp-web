@@ -6,50 +6,52 @@
     :footer="null"
     @update:open="onOpenChange"
   >
-    <div ref="scrollRef" class="reader-scroll">
-      <div class="reader-paper">
-        <h1 class="reader-chapter-title">{{ displayTitle }}</h1>
+    <div class="reader-body">
+      <div ref="scrollRef" class="reader-scroll">
+        <div class="reader-paper">
+          <h1 class="reader-chapter-title">{{ displayTitle }}</h1>
 
-        <div v-if="loading" class="reader-state">
-          <a-spin size="small" />
-          <span class="reader-state-text">原文加载中…</span>
-        </div>
+          <div v-if="loading" class="reader-state">
+            <a-spin size="small" />
+            <span class="reader-state-text">原文加载中…</span>
+          </div>
 
-        <a-alert v-else-if="error" type="error" show-icon :message="error" />
+          <a-alert v-else-if="error" type="error" show-icon :message="error" />
 
-        <div v-else class="chunk-list">
-          <div
-            v-for="chunk in data?.chunks ?? []"
-            :key="chunk.chunkId"
-            class="chunk-row"
-            :class="{ 'is-target': chunk.chunkId === targetChunkId }"
-            :data-chunk-id="chunk.chunkId"
-          >
-            <span class="chunk-no">{{ shortChunkId(chunk.chunkId) }}</span>
-            <p class="chunk-text">{{ chunk.text }}</p>
+          <div v-else class="chunk-list">
+            <div
+              v-for="chunk in data?.chunks ?? []"
+              :key="chunk.chunkId"
+              class="chunk-row"
+              :class="{ 'is-target': chunk.chunkId === targetChunkId }"
+              :data-chunk-id="chunk.chunkId"
+            >
+              <span class="chunk-no">{{ shortChunkId(chunk.chunkId) }}</span>
+              <p class="chunk-text">{{ chunk.text }}</p>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <div class="reader-nav">
-      <a-button :disabled="!data?.prev" @click="goToPrev">
-        上一回{{ data?.prev ? ` ${data.prev.title}` : '' }}
-      </a-button>
-      <div class="reader-jump">
-        <span class="reader-jump-label">回号</span>
-        <a-input-number
-          v-model:value="jumpChapter"
-          :controls="false"
-          class="reader-jump-input"
-          placeholder="1~120"
-          @press-enter="onJump"
-        />
-        <a-button @click="onJump">跳转</a-button>
+      <div class="reader-nav">
+        <a-button :disabled="!data?.prev" @click="goToPrev">
+          上一回{{ data?.prev ? ` ${data.prev.title}` : '' }}
+        </a-button>
+        <div class="reader-jump">
+          <span class="reader-jump-label">回号</span>
+          <a-input-number
+            v-model:value="jumpChapter"
+            :controls="false"
+            class="reader-jump-input"
+            placeholder="1~120"
+            @press-enter="onJump"
+          />
+          <a-button @click="onJump">跳转</a-button>
+        </div>
+        <a-button :disabled="!data?.next" @click="goToNext">
+          下一回{{ data?.next ? ` ${data.next.title}` : '' }}
+        </a-button>
       </div>
-      <a-button :disabled="!data?.next" @click="goToNext">
-        下一回{{ data?.next ? ` ${data.next.title}` : '' }}
-      </a-button>
     </div>
   </a-modal>
 </template>
@@ -58,7 +60,13 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { fetchSangoChapter, getErrorMessage, type SangoChapterData } from '../api/client'
-import { isValidChapter, SANGO_CHAPTER_MAX, SANGO_CHAPTER_MIN, shortChunkId } from '../utils/sangoChapter'
+import {
+  centeredScrollTop,
+  isValidChapter,
+  SANGO_CHAPTER_MAX,
+  SANGO_CHAPTER_MIN,
+  shortChunkId,
+} from '../utils/sangoChapter'
 
 // 入参契约严格按需求「组件入参契约」表：chapter 必填 / chapterTitle 选填占位 / chunkId 选填定位高亮。
 // 打开方式与关闭回调自定为 v-model:open，无额外业务入参。
@@ -77,7 +85,7 @@ const currentChapter = ref(props.chapter)
 const data = ref<SangoChapterData | null>(null)
 const loading = ref(false)
 const error = ref('')
-// 定位目标：命中则 scrollIntoView + 高亮；未命中（不属于当前回）/ 未传 → 停正文顶部，不报错
+// 定位目标：命中则容器内滚动居中 + 高亮；未命中（不属于当前回）/ 未传 → 停正文顶部，不报错
 const targetChunkId = ref<string | undefined>(props.chunkId)
 // 仅用于接口返回前占位（避免标题闪烁）；翻回 / 跳转后无占位，等接口返回
 const pendingTitle = ref<string | undefined>(props.chapterTitle)
@@ -110,6 +118,8 @@ async function load(chapter: number) {
     const result = await fetchSangoChapter(chapter)
     if (currentChapter.value !== chapter) return // 已切回，丢弃过期结果
     data.value = result
+    // 先卸载 spinner 让 chunk 行真正挂载，再定位；否则 querySelector 命中不到已渲染行
+    loading.value = false
     await scrollToTarget()
   } catch (err) {
     if (currentChapter.value !== chapter) return
@@ -119,20 +129,20 @@ async function load(chapter: number) {
   }
 }
 
+// 容器内偏移滚动居中：不用 scrollIntoView，避免连带滚动弹框外层 / 页面造成跳位
 async function scrollToTarget() {
   await nextTick()
   const container = scrollRef.value
   if (!container) return
   const targetId = targetChunkId.value
-  const target = targetId ? (data.value?.chunks.find((chunk) => chunk.chunkId === targetId) ?? null) : null
-  if (target) {
-    const el = container.querySelector(`[data-chunk-id="${target.chunkId}"]`)
-    if (el) {
-      el.scrollIntoView({ block: 'center' })
-      return
-    }
+  const el = targetId ? container.querySelector<HTMLElement>(`[data-chunk-id="${targetId}"]`) : null
+  if (!el) {
+    container.scrollTop = 0
+    return
   }
-  container.scrollTop = 0
+  // 只用布局量（offsetTop / offsetHeight / clientHeight）：antd 弹框 zoom 动画的祖先 transform
+  // 会等比缩放 rect，getBoundingClientRect 差值算出的偏移会被乘上当时的 scale，导致定位偏上
+  container.scrollTop = centeredScrollTop(el.offsetTop, el.offsetHeight, container.clientHeight)
 }
 
 function goTo(chapter: number) {
@@ -167,8 +177,19 @@ function onOpenChange(next: boolean) {
 </script>
 
 <style scoped>
+/* 弹框正文撑满视口：100vh 减去 modal 顶部 100 + 标题栏 56 + body 内边距 48 + wrap 底部内边距 24，留余量取 240 */
+.reader-body {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 240px);
+  min-height: 240px;
+}
+
 .reader-scroll {
-  max-height: 70vh;
+  /* 定位为 offsetParent：chunk-row 的 offsetTop 才是相对本容器的布局量（与祖先 transform 无关） */
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   padding: 10px;
   border-radius: 12px;
@@ -178,6 +199,7 @@ function onOpenChange(next: boolean) {
 .reader-paper {
   width: 210mm;
   max-width: 100%;
+  min-height: 100%;
   margin: 0 auto;
   padding: 16mm 18mm 24mm;
   background: #fffdf8;
@@ -206,7 +228,6 @@ function onOpenChange(next: boolean) {
   gap: 14px;
   padding: 8px 10px;
   border-radius: 8px;
-  scroll-margin-block: 24px;
 }
 
 .chunk-row.is-target {
@@ -246,6 +267,7 @@ function onOpenChange(next: boolean) {
 }
 
 .reader-nav {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;

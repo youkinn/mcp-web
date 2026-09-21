@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import type { SangoChapterData } from '../api/client'
 import {
   buildCitationReaderTarget,
+  centeredScrollTop,
   findChunkByText,
   isValidChapter,
   SANGO_CHAPTER_MAX,
@@ -47,6 +48,21 @@ describe('验收 10：回号跳转范围校验 1~120', () => {
     assert.equal(isValidChapter(1.5), false)
     assert.equal(isValidChapter(null), false)
     assert.equal(isValidChapter(undefined), false)
+  })
+})
+
+describe('验收 4：目标片段定位（容器内居中偏移，不滚弹框外层）', () => {
+  it('目标在正文中部：偏移使目标行垂直居中', () => {
+    // 行距容器顶 2000px、行高 40px、视口 800px → 2000 - 400 + 20
+    assert.equal(centeredScrollTop(2000, 40, 800), 1620)
+  })
+
+  it('目标靠近顶部：归 0，不产生负 scrollTop', () => {
+    assert.equal(centeredScrollTop(100, 40, 800), 0)
+  })
+
+  it('目标即正文第一行：偏移 0，正文停顶部', () => {
+    assert.equal(centeredScrollTop(0, 40, 800), 0)
   })
 })
 

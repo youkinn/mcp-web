@@ -22,6 +22,11 @@ export function findChunkByText(chunks: SangoChapterChunk[], text: string): Sang
   return chunks.find((chunk) => chunk.text.includes(text)) ?? null
 }
 
+/** 阅读器定位：目标行在滚动容器内垂直居中所需的 scrollTop（越界归 0，不产生负值） */
+export function centeredScrollTop(itemOffsetTop: number, itemHeight: number, viewportHeight: number): number {
+  return Math.max(0, itemOffsetTop - viewportHeight / 2 + itemHeight / 2)
+}
+
 /** 聊天侧入口目标：命中则带 chunkId 定位，匹配不到不传 chunkId（阅读器停正文顶部、不报错） */
 export interface ChapterReaderTarget {
   chapter: number
