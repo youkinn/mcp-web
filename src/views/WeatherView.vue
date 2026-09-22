@@ -56,9 +56,10 @@
                         v-if="chatStore.mode === 'sango-novel'"
                         type="button"
                         class="citation-read-btn"
+                        size="small"
                         @click="openCitationReader(group.chapter, group.title, entry.text)"
                       >
-                        查看原文
+                        查看全文
                       </button>
                     </p>
                   </div>
@@ -532,7 +533,6 @@ function formatTime(date: Date) {
 
 .citation-area {
   width: 100%;
-  max-width: 640px;
   margin-top: 10px;
   padding: 12px 14px;
   border: 1px solid #e3e9e2;
