@@ -1,6 +1,6 @@
 # mcp-web — 项目规范
 
-> 前端负责人：小叶。团队级规则（编号 / Commit / 分支 / 交付 / 审查）见 `dev-docs/AGENTS.md`，本文件只列本项目特有约束。
+> 前端负责人：小叶。团队级规则（编号 / Commit / 分支 / 交付 / 审查）见 `D:\workplace\dev-docs\AGENTS.md`（含需求 / Bug / 排查对接文档索引），本文件只列本项目特有约束。
 
 ## 技术栈
 
@@ -22,15 +22,23 @@
 ```
 src/
 ├── api/          API 客户端层（client.ts）
+├── assets/       静态资源
 ├── components/   通用组件
 ├── router/       路由配置
 ├── stores/       Pinia store
+├── types/        共享类型定义
+├── utils/        工具函数
 ├── views/        页面级组件
 └── style.less    全局和共享样式
 ```
 
 ## API 客户端
 
-- 统一信封与字段语义见 `dev-docs/mcp-orchestrator/api/response-convention.md`；字段级契约以各特性接口文档为准。
+- 统一信封与字段语义见 `D:\workplace\dev-docs\mcp-orchestrator\api\response-convention.md`；字段级契约以各特性接口文档为准。
 - 判断成功用 `res.code === 200`，失败展示 `res.message`。
 - 状态码分支：413 输入超长 / 503 工具服务不可用 / 500 重试。
+
+## 测试
+
+- 测试文件与被测文件同目录，命名 `*.test.ts`（如 `src/utils/clipboard.test.ts`）。
+- `npm test` — `node --test "src/**/*.test.ts"`；用例命名清晰即活文档，不单独维护用例清单。
