@@ -4,6 +4,7 @@
     title="三国演义 · 原文阅读"
     width="960px"
     wrap-class-name="reader-modal-wrap"
+    :get-container="getReaderContainer"
     :footer="null"
     @update:open="onOpenChange"
   >
@@ -58,15 +59,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { fetchSangoChapter, getErrorMessage, type SangoChapterData } from '../api/client'
 import {
-  centeredScrollTop,
   isValidChapter,
   SANGO_CHAPTER_MAX,
   SANGO_CHAPTER_MIN,
   shortChunkId,
+  targetScrollTop,
 } from '../utils/sangoChapter'
 
 // 入参契约严格按需求「组件入参契约」表：chapter 必填 / chapterTitle 选填占位 / chunkId 选填定位高亮。
@@ -119,9 +120,6 @@ async function load(chapter: number) {
     const result = await fetchSangoChapter(chapter)
     if (currentChapter.value !== chapter) return // 已切回，丢弃过期结果
     data.value = result
-    // 先卸载 spinner 让 chunk 行真正挂载，再定位；否则 querySelector 命中不到已渲染行
-    loading.value = false
-    await scrollToTarget()
   } catch (err) {
     if (currentChapter.value !== chapter) return
     error.value = getErrorMessage(err)
@@ -130,20 +128,27 @@ async function load(chapter: number) {
   }
 }
 
+// bug-00016：定位必须晚于弹框正文挂载 —— antd-vue 4.2.6 Modal 没有 afterOpenChange（只有 afterClose），
+// 故不挂事件，改声明式触发：模板 ref 挂载 / loading 结束 / data 就绪（chunk 行渲染）时各测一次。
+// flush: 'post' 保证测量时 DOM 已更新，不做无界轮询。
+watch([scrollRef, loading, data], scrollToTarget, { flush: 'post' })
+
 // 容器内偏移滚动居中：不用 scrollIntoView，避免连带滚动弹框外层 / 页面造成跳位
-async function scrollToTarget() {
-  await nextTick()
+function scrollToTarget() {
   const container = scrollRef.value
-  if (!container) return
+  if (!container) return // 弹框正文未挂载：等 ref 挂载后的下一次触发，不提前回顶
   const targetId = targetChunkId.value
   const el = targetId ? container.querySelector<HTMLElement>(`[data-chunk-id="${targetId}"]`) : null
-  if (!el) {
-    container.scrollTop = 0
-    return
-  }
   // 只用布局量（offsetTop / offsetHeight / clientHeight）：antd 弹框 zoom 动画的祖先 transform
   // 会等比缩放 rect，getBoundingClientRect 差值算出的偏移会被乘上当时的 scale，导致定位偏上
-  container.scrollTop = centeredScrollTop(el.offsetTop, el.offsetHeight, container.clientHeight)
+  container.scrollTop = targetScrollTop(container.clientHeight, el)
+}
+
+// bug-00017：弹框容器指定为非 body 的 #app —— antd PortalWrapper 只在 portal 容器是 document.body
+// 或内部默认容器时才启用滚动锁（改写 document.body 的 overflow 与 width），换容器后页面宽度与
+// 滚动位置完全不被改写；「弹框打开时页面不滚动」改由 overscroll-behavior: contain 控制（见样式块）。
+function getReaderContainer(): HTMLElement {
+  return document.getElementById('app') ?? document.body
 }
 
 function goTo(chapter: number) {
@@ -192,6 +197,10 @@ function onOpenChange(next: boolean) {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  /* bug-00015：槽位常驻 —— 滚动条出现 / 消失（loading ↔ loaded）不再改变正文区宽度，纸面不横向跳 */
+  scrollbar-gutter: stable;
+  /* bug-00017：正文区滚到边界不再把滚轮链式传给遮罩 / 页面 */
+  overscroll-behavior: contain;
   padding: 10px;
   border-radius: 12px;
   background: #00000087;
@@ -200,6 +209,7 @@ function onOpenChange(next: boolean) {
 .reader-paper {
   width: 210mm;
   max-width: 100%;
+  /* bug-00015：撑满正文区高度 —— loading 态（data = null，正文只剩 spinner）也不塌缩、弹框尺寸不变 */
   min-height: 100%;
   margin: 0 auto;
   padding: 16mm 18mm 24mm;
@@ -296,6 +306,12 @@ function onOpenChange(next: boolean) {
 
 <!-- 弹框 teleport 到 body，scoped 选择器够不到 .ant-modal，故用 wrapClassName 挂载的非 scoped 样式块；选择器统一挂在 .reader-modal-wrap 下，不外泄 -->
 <style>
+/* bug-00017：弹框容器改为 #app（get-container）后 antd 不再对 document.body 加滚动锁，页面宽度 / 滚动位置
+   不被改写；「弹框打开时页面不滚动」由遮罩层吃掉滚轮实现（overscroll-behavior: contain 阻断链式滚动到 html）。 */
+.reader-modal-wrap.ant-modal-wrap {
+  overscroll-behavior: contain;
+}
+
 /* height: 100% 相对 wrap 的 content box（= 视口高 − 24px），正好「最多一屏」；top: 0 覆盖 antd 默认 top: 100px，padding-bottom: 0 覆盖其 24px */
 .reader-modal-wrap .ant-modal {
   top: 0;

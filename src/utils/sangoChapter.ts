@@ -27,6 +27,17 @@ export function centeredScrollTop(itemOffsetTop: number, itemHeight: number, vie
   return Math.max(0, itemOffsetTop - viewportHeight / 2 + itemHeight / 2)
 }
 
+/**
+ * 定位偏移口径（bug-00016）：目标行已在当前回渲染 → 容器内居中偏移；
+ * 未传 chunkId / 目标行不在当前回（null）→ 0（停正文顶部，不报错）
+ */
+export function targetScrollTop(
+  containerHeight: number,
+  target: { offsetTop: number; offsetHeight: number } | null,
+): number {
+  return target ? centeredScrollTop(target.offsetTop, target.offsetHeight, containerHeight) : 0
+}
+
 /** 聊天侧入口目标：命中则带 chunkId 定位，匹配不到不传 chunkId（阅读器停正文顶部、不报错） */
 export interface ChapterReaderTarget {
   chapter: number

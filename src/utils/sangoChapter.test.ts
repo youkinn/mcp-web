@@ -9,6 +9,7 @@ import {
   SANGO_CHAPTER_MAX,
   SANGO_CHAPTER_MIN,
   shortChunkId,
+  targetScrollTop,
 } from './sangoChapter.ts'
 
 // ── 原文阅读器纯逻辑单测（feat-A010，node:test，跑法：npm test）──
@@ -63,6 +64,20 @@ describe('验收 4：目标片段定位（容器内居中偏移，不滚弹框�
 
   it('目标即正文第一行：偏移 0，正文停顶部', () => {
     assert.equal(centeredScrollTop(0, 40, 800), 0)
+  })
+})
+
+describe('bug-00016：定位偏移口径（目标行已渲染才测量，未命中回正文顶部）', () => {
+  it('目标行已在当前回渲染：给容器内居中偏移', () => {
+    assert.equal(targetScrollTop(800, { offsetTop: 2000, offsetHeight: 40 }), 1620)
+  })
+
+  it('未传 chunkId / 目标行不在当前回（null）：回正文顶部 0，不报错', () => {
+    assert.equal(targetScrollTop(800, null), 0)
+  })
+
+  it('目标即正文第一行：0（不产生负偏移）', () => {
+    assert.equal(targetScrollTop(800, { offsetTop: 0, offsetHeight: 40 }), 0)
   })
 })
 
