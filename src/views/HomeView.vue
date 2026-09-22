@@ -25,22 +25,10 @@
               <p class="section-kicker">Available tools</p>
               <h2>已接入能力</h2>
             </div>
-            <span class="tool-count">03 个工具</span>
+            <span class="tool-count">02 个工具</span>
           </div>
 
-          <RouterLink to="/weather?mode=weather" class="tool-card">
-            <div class="tool-icon">☼</div>
-            <div class="tool-copy">
-              <div class="tool-title-row">
-                <h3>天气助手</h3>
-                <span class="tool-status">已连接</span>
-              </div>
-              <p>统一对话入口：天气查询、风云三国题库与三国演义原著解读，均在本页标签切换使用。</p>
-            </div>
-            <span class="tool-arrow" aria-hidden="true">→</span>
-          </RouterLink>
-
-          <RouterLink to="/weather?mode=fengyunsanguo&service=knowledge" class="tool-card">
+          <RouterLink to="/chat?mode=fengyunsanguo&service=knowledge" class="tool-card">
             <div class="tool-icon">⚔</div>
             <div class="tool-copy">
               <div class="tool-title-row">
@@ -52,7 +40,7 @@
             <span class="tool-arrow" aria-hidden="true">→</span>
           </RouterLink>
 
-          <RouterLink to="/weather?mode=sango-novel" class="tool-card">
+          <RouterLink to="/chat?mode=sango-novel" class="tool-card">
             <div class="tool-icon">📖</div>
             <div class="tool-copy">
               <div class="tool-title-row">
