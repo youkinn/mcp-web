@@ -12,14 +12,14 @@
         <div class="reader-paper">
           <h1 class="reader-chapter-title">{{ displayTitle }}</h1>
 
-          <div v-if="loading" class="reader-state">
+          <div v-if="!data && loading" class="reader-state">
             <a-spin size="small" />
             <span class="reader-state-text">原文加载中…</span>
           </div>
 
-          <a-alert v-else-if="error" type="error" show-icon :message="error" />
+          <a-alert v-else-if="!data && error" type="error" show-icon :message="error" />
 
-          <div v-else class="chunk-list">
+          <div v-if="data" class="chunk-list">
             <div
               v-for="chunk in data?.chunks ?? []"
               :key="chunk.chunkId"
@@ -32,6 +32,11 @@
             </div>
           </div>
         </div>
+      </div>
+
+      <div v-if="data && loading" class="reader-loading-hint">
+        <a-spin size="small" />
+        <span class="reader-state-text">原文加载中…</span>
       </div>
 
       <div v-if="showFooter" class="reader-nav">
@@ -125,7 +130,11 @@ async function load(chapter: number) {
     data.value = result
   } catch (err) {
     if (currentChapter.value !== chapter) return
-    error.value = getErrorMessage(err)
+    if (data.value) {
+      message.error(getErrorMessage(err))
+    } else {
+      error.value = getErrorMessage(err)
+    }
   } finally {
     loading.value = false
   }
@@ -152,7 +161,6 @@ function goTo(chapter: number) {
   currentChapter.value = chapter
   pendingTitle.value = undefined
   jumpChapter.value = chapter
-  data.value = null
   void load(chapter)
 }
 
@@ -181,10 +189,25 @@ function onOpenChange(next: boolean) {
 <style scoped>
 /* 正文区由弹框 flex 链路分配高度（见文末非 scoped 样式块），不写 magic number */
 .reader-body {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
+}
+
+.reader-loading-hint {
+  position: absolute;
+  top: 40px;
+  right: 24px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
 
 .reader-scroll {
