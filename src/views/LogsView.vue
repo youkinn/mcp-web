@@ -196,7 +196,7 @@
                           <template v-else-if="column.key === 'time'">
                             <template v-if="call.responseAt !== null">
                               <a-tooltip placement="topLeft">
-                                <template #title>开始 {{ formatTime(call.requestAt, true) }} ～ 结束 {{ formatTime(call.responseAt, true) }}</template>
+                                <template #title>{{ formatTime(call.requestAt, true) }} ～ {{ formatTime(call.responseAt, true) }}</template>
                                 <span class="dur-simple">耗时 {{ formatDuration(call.responseAt - call.requestAt) }}</span>
                               </a-tooltip>
                             </template>
@@ -249,7 +249,7 @@
                           <template v-else-if="column.key === 'time'">
                             <template v-if="call.callReturnedAt !== null">
                               <a-tooltip placement="topLeft">
-                                <template #title>开始 {{ formatTime(call.callSentAt, true) }} ～ 结束 {{ formatTime(call.callReturnedAt, true) }}</template>
+                                <template #title>{{ formatTime(call.callSentAt, true) }} ～ {{ formatTime(call.callReturnedAt, true) }}</template>
                                 <span class="dur-simple">耗时 {{ formatDuration(call.callReturnedAt - call.callSentAt) }}</span>
                               </a-tooltip>
                             </template>
