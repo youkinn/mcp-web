@@ -78,7 +78,7 @@
               :loading="listLoading"
               :row-key="rowKeyTrace"
               :pagination="pagination"
-              :scroll="{ x: 1360 }"
+              :scroll="{ x: 'max-content' }"
               v-model:expandedRowKeys="expandedRowKeys"
               :expand-row-by-click="false"
               @change="onTableChange"

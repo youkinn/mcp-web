@@ -50,15 +50,17 @@
                   <div class="citation-source-header">第{{ group.chapter }}回 {{ group.title }}</div>
                   <div v-for="entry in group.entries" :key="entry.badge" class="citation-card">
                     <span class="citation-badge">{{ entry.badge }}</span>
-                    <p class="citation-text">{{ entry.text }}</p>
-                    <button
-                      v-if="chatStore.mode === 'sango-novel'"
-                      type="button"
-                      class="citation-read-btn"
-                      @click="openCitationReader(group.chapter, group.title, entry.text)"
-                    >
-                      查看原文
-                    </button>
+                    <p class="citation-text">
+                      {{ entry.text }}
+                      <button
+                        v-if="chatStore.mode === 'sango-novel'"
+                        type="button"
+                        class="citation-read-btn"
+                        @click="openCitationReader(group.chapter, group.title, entry.text)"
+                      >
+                        查看原文
+                      </button>
+                    </p>
                   </div>
                 </div>
               </section>

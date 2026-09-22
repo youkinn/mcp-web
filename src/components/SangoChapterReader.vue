@@ -194,7 +194,7 @@ function onOpenChange(next: boolean) {
   overflow: auto;
   padding: 10px;
   border-radius: 12px;
-  background: #e8ece6;
+  background: #00000087;
 }
 
 .reader-paper {
@@ -296,12 +296,6 @@ function onOpenChange(next: boolean) {
 
 <!-- 弹框 teleport 到 body，scoped 选择器够不到 .ant-modal，故用 wrapClassName 挂载的非 scoped 样式块；选择器统一挂在 .reader-modal-wrap 下，不外泄 -->
 <style>
-/* 以 wrap 实际盒子为基准撑满，不用 vh 算术：wrap 内边距留出上下各 12px，并保证 wrap 自身永不出现滚动条 */
-.reader-modal-wrap {
-  padding: 12px 0;
-  overflow: hidden;
-}
-
 /* height: 100% 相对 wrap 的 content box（= 视口高 − 24px），正好「最多一屏」；top: 0 覆盖 antd 默认 top: 100px，padding-bottom: 0 覆盖其 24px */
 .reader-modal-wrap .ant-modal {
   top: 0;
