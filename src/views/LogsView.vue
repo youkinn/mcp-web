@@ -203,8 +203,11 @@
                             <div v-else class="sub-meta err-text">未返回</div>
                           </template>
                           <template v-else-if="column.key === 'status'">
-                            <a-tag :color="call.status === 'failed' ? 'error' : 'success'">{{ call.status === 'failed' ? '失败' : '成功' }}</a-tag>
-                            <div v-if="call.status === 'failed' && call.errorMessage" class="sub-meta err-text">{{ call.errorMessage }}</div>
+                            <a-tooltip v-if="call.status === 'failed' && call.errorMessage" placement="topLeft">
+                              <template #title>{{ call.errorMessage }}</template>
+                              <a-tag color="error">失败</a-tag>
+                            </a-tooltip>
+                            <a-tag v-else :color="call.status === 'failed' ? 'error' : 'success'">{{ call.status === 'failed' ? '失败' : '成功' }}</a-tag>
                           </template>
                           <template v-else-if="column.key === 'content'">
                             <div class="content-actions">
