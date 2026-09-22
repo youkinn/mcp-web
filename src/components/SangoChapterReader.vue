@@ -318,11 +318,18 @@ function onOpenChange(next: boolean) {
   padding-bottom: 0;
 }
 
-/* antd-vue 在 .ant-modal 与 .ant-modal-content 之间多一层无 class 包裹 div，须一并撑开，否则 content 的百分比高度解析失败 */
-.reader-modal-wrap .ant-modal > * {
+/* antd-vue 在 .ant-modal 下渲染两个无 class 子 div：第 1 个是 sentinelStart（内含 .ant-modal-content），第 2 个是 sentinelEnd 焦点哨兵（width:0;height:0;overflow:hidden）。
+   只有内容包裹层才参与撑开，哨兵必须钉死 0 —— 若让哨兵也 flex:1 1 auto，loading 态（内容比弹框矮）时富余高度会被哨兵吃掉，导致正文区矮 115px、底部导航上跳（bug-00015 翻回抖动）。 */
+.reader-modal-wrap .ant-modal > div:first-child {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
+  min-height: 0;
+}
+
+.reader-modal-wrap .ant-modal > div:last-child {
+  flex: 0 0 0;
+  height: 0;
   min-height: 0;
 }
 
