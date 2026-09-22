@@ -423,8 +423,8 @@ const CALLER_LABELS: Record<string, string> = {
 const STAGE_LABELS: Record<string, string> = {
   l3: 'L3 预检',
   fastpath: '域快路径',
-  classify: '分类轮',
-  generation: '生成轮',
+  classify: '分类轮预调',
+  generation: '生成轮调用',
   admin: '后台直调',
 }
 
