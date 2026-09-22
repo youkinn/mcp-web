@@ -34,11 +34,6 @@
         </div>
       </div>
 
-      <div v-if="data && loading" class="reader-loading-hint">
-        <a-spin size="small" />
-        <span class="reader-state-text">原文加载中…</span>
-      </div>
-
       <div v-if="showFooter" class="reader-nav">
         <a-button :disabled="!data?.prev" @click="goToPrev">
           上一回{{ data?.prev ? ` ${data.prev.title}` : '' }}
@@ -189,25 +184,10 @@ function onOpenChange(next: boolean) {
 <style scoped>
 /* 正文区由弹框 flex 链路分配高度（见文末非 scoped 样式块），不写 magic number */
 .reader-body {
-  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
-}
-
-.reader-loading-hint {
-  position: absolute;
-  top: 40px;
-  right: 24px;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
 
 .reader-scroll {
