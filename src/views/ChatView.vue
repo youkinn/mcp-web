@@ -1,5 +1,5 @@
 ﻿<template>
-  <main class="weather-page">
+  <main class="chat-page">
     <div class="page-shell">
       <header class="site-header">
         <RouterLink to="/" class="brand">
@@ -95,13 +95,11 @@
 
             <div class="composer-box">
               <div class="mode-tags">
-                <a-checkable-tag :checked="chatStore.mode === 'weather'" class="mode-select-tag"
-                  @change="onWeatherTagChange">天气</a-checkable-tag>
                 <a-checkable-tag :checked="chatStore.mode === 'fengyunsanguo'" class="mode-select-tag"
                   @change="onSangoTagChange">风云三国</a-checkable-tag>
                 <a-checkable-tag :checked="chatStore.mode === 'sango-novel'" class="mode-select-tag"
                   @change="onSangoNovelTagChange">三国演义</a-checkable-tag>
-                <span class="mode-tags-hint">未选择时由助手自动判断：天气 / 风云三国 / 三国演义 / 自由问答</span>
+                <span class="mode-tags-hint">未选择时由助手自动判断：风云三国 / 三国演义 / 自由问答</span>
               </div>
               <form class="composer" @submit.prevent="submit">
                 <div class="input-scope">
@@ -215,7 +213,7 @@ async function openCitationReader(chapter: number, title: string, text: string) 
 // 风云三国未选二级服务时 URL 只带 mode，选中问题查询 / 随机一题后才带 service。
 function syncRoute() {
   const query: Record<string, string> = {}
-  if (chatStore.mode === 'weather' || chatStore.mode === 'sango-novel') {
+  if (chatStore.mode === 'sango-novel') {
     query.mode = chatStore.mode
   } else if (chatStore.mode === 'fengyunsanguo') {
     query.mode = 'fengyunsanguo'
@@ -233,11 +231,6 @@ watch(
   () => route.fullPath,
   () => {
     const { mode, service } = route.query
-    if (mode === 'weather') {
-      chatStore.setMode('weather')
-      panelVisible.value = false
-      return
-    }
     if (mode === 'fengyunsanguo') {
       chatStore.setMode('fengyunsanguo')
       if (service === 'random' || service === 'knowledge') {
@@ -271,14 +264,11 @@ watch(
 )
 
 interface ModeTag {
-  key: 'weather' | 'fengyunsanguo' | 'sango-novel' | 'fengyunsanguo-knowledge' | 'fengyunsanguo-random'
+  key: 'fengyunsanguo' | 'sango-novel' | 'fengyunsanguo-knowledge' | 'fengyunsanguo-random'
   label: string
 }
 
 const activeModeTags = computed<ModeTag[]>(() => {
-  if (chatStore.mode === 'weather') {
-    return [{ key: 'weather', label: '天气' }]
-  }
   if (chatStore.mode === 'sango-novel') {
     return [{ key: 'sango-novel', label: '三国演义' }]
   }
@@ -293,19 +283,6 @@ const activeModeTags = computed<ModeTag[]>(() => {
   }
   return []
 })
-
-function onWeatherTagChange(checked: boolean) {
-  if (checked) {
-    chatStore.setMode('weather')
-    panelVisible.value = true
-    syncRoute()
-    return
-  }
-  if (chatStore.mode === 'weather') {
-    chatStore.setMode(null)
-    syncRoute()
-  }
-}
 
 function onSangoTagChange(checked: boolean) {
   if (checked) {
@@ -342,7 +319,7 @@ function selectSangoService(service: SangoServiceId) {
 }
 
 function onModeTagClose(tag: ModeTag) {
-  if (tag.key === 'weather' || tag.key === 'sango-novel' || tag.key === 'fengyunsanguo') {
+  if (tag.key === 'sango-novel' || tag.key === 'fengyunsanguo') {
     chatStore.setMode(null)
     syncRoute()
     return
@@ -392,7 +369,7 @@ function formatTime(date: Date) {
 </script>
 
 <style scoped>
-.weather-page {
+.chat-page {
   height: 100vh;
   overflow: hidden;
   background: #f5f7f2;

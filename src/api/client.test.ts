@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert'
 import { afterEach, describe, it, mock } from 'node:test'
-import { apiClient, fetchLogList, fetchSangoChapter, sendChatMessage, sendSangoRandom } from './client.ts'
+import { apiClient, fetchLogDetail, fetchLogList, fetchSangoChapter, sendChatMessage, sendSangoRandom } from './client.ts'
 
 // ── feat-A008 前端链路埋点测试（node:test，跑法：npm test）──
 
@@ -98,15 +98,15 @@ describe('sendSangoRandom 链路埋点（feat-A008）', () => {
   })
 })
 
-describe('sendChatMessage domain=weather（feat-A008）', () => {
-  it('传 weather 时请求体携带 domain=weather', async () => {
+describe('sendChatMessage domain 传递（feat-A011 天气下线）', () => {
+  it('传 fengyunsanguo 时请求体携带 domain=fengyunsanguo', async () => {
     const { calls } = installFakePost({})
-    await sendChatMessage('今天天气如何？', 'weather')
+    await sendChatMessage('曹操字什么？', 'fengyunsanguo')
     const main = calls.find((c) => c.url === '/chat')
     assert.ok(main, '应发起 /chat 请求')
     const payload = main?.payload as Record<string, string>
-    assert.equal(payload.domain, 'weather')
-    assert.equal(payload.message, '今天天气如何？')
+    assert.equal(payload.domain, 'fengyunsanguo')
+    assert.equal(payload.message, '曹操字什么？')
   })
 
   it('不传 domain 时请求体不含 domain 字段', async () => {
@@ -115,6 +115,72 @@ describe('sendChatMessage domain=weather（feat-A008）', () => {
     const main = calls.find((c) => c.url === '/chat')
     assert.ok(main, '应发起 /chat 请求')
     assert.ok(!('domain' in (main?.payload as Record<string, string>)), '默认请求不应携带 domain')
+  })
+})
+
+describe('fetchLogDetail cachedTokens 透传（feat-A011 验收 6）', () => {
+  it('cachedTokens 为 null / 数字时原样透传（旧记录 null、未命中 0）', async () => {
+    const detail = {
+      log: {
+        traceId: 't1',
+        logType: 'chat',
+        userInput: 'q',
+        domain: 'sango-novel',
+        status: 'success',
+        responseCode: 200,
+        errorMessage: '',
+        clientSentAt: null,
+        serverReceivedAt: 1,
+        handleStartedAt: null,
+        serverRespondedAt: null,
+        clientReceivedAt: null,
+        answer: null,
+        citations: null,
+        createdAt: 1,
+      },
+      llmCalls: [
+        {
+          seq: 1,
+          stage: 'classify',
+          model: 'm',
+          requestAt: 1,
+          responseAt: 2,
+          requestSummary: '',
+          responseSummary: '',
+          toolCalls: '',
+          promptTokens: 10,
+          completionTokens: 5,
+          cachedTokens: null,
+          finishReason: 'stop',
+          status: 'success',
+          errorMessage: '',
+        },
+        {
+          seq: 2,
+          stage: 'generation',
+          model: 'm',
+          requestAt: 2,
+          responseAt: 3,
+          requestSummary: '',
+          responseSummary: '',
+          toolCalls: '',
+          promptTokens: 10,
+          completionTokens: 5,
+          cachedTokens: 0,
+          finishReason: 'stop',
+          status: 'success',
+          errorMessage: '',
+        },
+      ],
+      toolCalls: [],
+    }
+    mock.method(apiClient, 'get', async (url: string) => {
+      assert.ok(url.startsWith('/v1/logs/'), '应请求明细接口')
+      return Promise.resolve({ data: { code: 200, data: detail, message: '' }, headers: {} })
+    })
+    const result = await fetchLogDetail('t1')
+    assert.equal(result.llmCalls[0].cachedTokens, null)
+    assert.equal(result.llmCalls[1].cachedTokens, 0)
   })
 })
 

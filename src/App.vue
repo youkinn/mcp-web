@@ -1,6 +1,6 @@
 <template>
   <RouterView v-slot="{ Component }">
-    <KeepAlive include="WeatherView">
+    <KeepAlive include="ChatView">
       <component :is="Component" />
     </KeepAlive>
   </RouterView>

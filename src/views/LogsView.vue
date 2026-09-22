@@ -10,7 +10,7 @@
           </span>
         </RouterLink>
         <div class="header-actions">
-          <RouterLink to="/weather">
+          <RouterLink to="/chat">
             <a-button size="small">← 返回聊天</a-button>
           </RouterLink>
           <a-tag color="green">服务就绪</a-tag>
@@ -190,18 +190,24 @@
                           <template v-else-if="column.key === 'tokens'">
                             {{ formatTokens(call.promptTokens) }} / {{ formatTokens(call.completionTokens) }}
                           </template>
+                          <template v-else-if="column.key === 'cachedTokens'">
+                            {{ formatTokens(call.cachedTokens) }}
+                          </template>
                           <template v-else-if="column.key === 'time'">
                             <template v-if="call.responseAt !== null">
                               <a-tooltip placement="topLeft">
-                                <template #title>开始 {{ formatTime(call.requestAt, true) }} ～ 结束 {{ formatTime(call.responseAt, true) }}</template>
+                                <template #title>{{ formatTime(call.requestAt, true) }} ～ {{ formatTime(call.responseAt, true) }}</template>
                                 <span class="dur-simple">耗时 {{ formatDuration(call.responseAt - call.requestAt) }}</span>
                               </a-tooltip>
                             </template>
                             <div v-else class="sub-meta err-text">未返回</div>
                           </template>
                           <template v-else-if="column.key === 'status'">
-                            <a-tag :color="call.status === 'failed' ? 'error' : 'success'">{{ call.status === 'failed' ? '失败' : '成功' }}</a-tag>
-                            <div v-if="call.status === 'failed' && call.errorMessage" class="sub-meta err-text">{{ call.errorMessage }}</div>
+                            <a-tooltip v-if="call.status === 'failed' && call.errorMessage" placement="topLeft">
+                              <template #title>{{ call.errorMessage }}</template>
+                              <a-tag color="error">失败</a-tag>
+                            </a-tooltip>
+                            <a-tag v-else :color="call.status === 'failed' ? 'error' : 'success'">{{ call.status === 'failed' ? '失败' : '成功' }}</a-tag>
                           </template>
                           <template v-else-if="column.key === 'content'">
                             <div class="content-actions">
@@ -237,10 +243,13 @@
                           <template v-else-if="column.key === 'toolName'">
                             <span class="tool-name">{{ call.toolName }}</span>
                           </template>
+                          <template v-else-if="column.key === 'caller'">
+                            {{ callerStageLabel(call) }}
+                          </template>
                           <template v-else-if="column.key === 'time'">
                             <template v-if="call.callReturnedAt !== null">
                               <a-tooltip placement="topLeft">
-                                <template #title>开始 {{ formatTime(call.callSentAt, true) }} ～ 结束 {{ formatTime(call.callReturnedAt, true) }}</template>
+                                <template #title>{{ formatTime(call.callSentAt, true) }} ～ {{ formatTime(call.callReturnedAt, true) }}</template>
                                 <span class="dur-simple">耗时 {{ formatDuration(call.callReturnedAt - call.callSentAt) }}</span>
                               </a-tooltip>
                             </template>
@@ -407,6 +416,28 @@ function formatTokens(n: number | null | undefined): string {
   if (n === null || n === undefined) return '—'
   if (n >= 1000) return `${parseFloat((n / 1000).toFixed(1))}k`
   return String(n)
+}
+
+const CALLER_LABELS: Record<string, string> = {
+  server: '服务端',
+  model: '大模型',
+}
+
+const STAGE_LABELS: Record<string, string> = {
+  l3: 'L3 预检',
+  fastpath: '域快路径',
+  classify: '分类轮预调',
+  generation: '生成轮调用',
+  admin: '后台直调',
+}
+
+function callerStageLabel(call: { caller?: string | null; stage?: string | null }): string {
+  const parts: string[] = []
+  const caller = call.caller ?? null
+  const stage = call.stage ?? null
+  if (caller && CALLER_LABELS[caller]) parts.push(CALLER_LABELS[caller])
+  if (stage && STAGE_LABELS[stage]) parts.push(STAGE_LABELS[stage])
+  return parts.length ? parts.join(' · ') : '—'
 }
 
 function truncateText(text: string, max: number): string {
@@ -579,6 +610,7 @@ const llmColumns = [
   { key: 'stage', title: '阶段', width: 120 },
   { key: 'model', title: '模型', width: 170 },
   { key: 'tokens', title: 'Token（输入/输出）', width: 150 },
+  { key: 'cachedTokens', title: '缓存命中', width: 100 },
   { key: 'time', title: '耗时', width: 110 },
   { key: 'status', title: '状态', width: 140 },
   { key: 'content', title: '内容', width: 200 },
@@ -587,6 +619,7 @@ const llmColumns = [
 const toolColumns = [
   { key: 'mcpServer', title: 'MCP 名称', width: 140 },
   { key: 'toolName', title: '调用方法', width: 180 },
+  { key: 'caller', title: '调用方', width: 130 },
   { key: 'time', title: '耗时', width: 110 },
   { key: 'status', title: '状态', width: 140 },
   { key: 'content', title: '内容', width: 200 },
