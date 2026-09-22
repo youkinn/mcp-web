@@ -15,10 +15,12 @@
 
 * { box-sizing: border-box; }
 /* 预留滚动条槽位：滚动条出现 / 消失不再造成横向抖动（bug-00011 修法效果保留），但没有溢出时不绘制滚动条。
-   阅读器弹框（feat-A010）打开时页面宽度 / 滚动位置不被改写：弹框容器改为非 document.body 的 #app，antd 滚动锁
-   （vc-util/Dom/scrollLocker.js）不再对 body 设 overflow: hidden / width: calc(100% - scrollBarSize)（bug-00017 修法）；
-   页面不滚动改由遮罩层 overscroll-behavior: contain 控制，故 html 无需常驻绘制那条 inert 滚动条。 */
+   阅读器弹框（feat-A010）的 antd 滚动锁（vc-util/Dom/scrollLocker.js）会向 body 注入 overflow: hidden /
+   width: calc(100% - scrollBarSize)（bug-00017）：其开关条件恒真，传 :get-container 绕不开，故用下面一行 !important 中和 ——
+   槽位已由 scrollbar-gutter 预留、width 无需补偿；overflow-y 必须回 visible，否则 body 变成内部滚动容器、文档滚动被换走。
+   弹框打开时页面不滚动改由遮罩层 overscroll-behavior: contain 保证，故 html 无需常驻绘制那条 inert 滚动条。 */
 html { overflow-y: auto; scrollbar-gutter: stable; }
+html body { overflow-y: visible !important; width: auto !important; }
 body { margin: 0; min-width: 320px; }
 button, textarea { font: inherit; }
 

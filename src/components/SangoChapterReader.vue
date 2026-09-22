@@ -4,7 +4,6 @@
     title="三国演义 · 原文阅读"
     width="960px"
     wrap-class-name="reader-modal-wrap"
-    :get-container="getReaderContainer"
     :footer="null"
     @update:open="onOpenChange"
   >
@@ -144,13 +143,6 @@ function scrollToTarget() {
   container.scrollTop = targetScrollTop(container.clientHeight, el)
 }
 
-// bug-00017：弹框容器指定为非 body 的 #app —— antd PortalWrapper 只在 portal 容器是 document.body
-// 或内部默认容器时才启用滚动锁（改写 document.body 的 overflow 与 width），换容器后页面宽度与
-// 滚动位置完全不被改写；「弹框打开时页面不滚动」改由 overscroll-behavior: contain 控制（见样式块）。
-function getReaderContainer(): HTMLElement {
-  return document.getElementById('app') ?? document.body
-}
-
 function goTo(chapter: number) {
   if (chapter === currentChapter.value && data.value) return
   currentChapter.value = chapter
@@ -201,7 +193,7 @@ function onOpenChange(next: boolean) {
   scrollbar-gutter: stable;
   /* bug-00017：正文区滚到边界不再把滚轮链式传给遮罩 / 页面 */
   overscroll-behavior: contain;
-  padding: 10px;
+  padding: 30px 10px;
   border-radius: 12px;
   background: #00000087;
 }
@@ -306,26 +298,31 @@ function onOpenChange(next: boolean) {
 
 <!-- 弹框 teleport 到 body，scoped 选择器够不到 .ant-modal，故用 wrapClassName 挂载的非 scoped 样式块；选择器统一挂在 .reader-modal-wrap 下，不外泄 -->
 <style>
-/* bug-00017：弹框容器改为 #app（get-container）后 antd 不再对 document.body 加滚动锁，页面宽度 / 滚动位置
-   不被改写；「弹框打开时页面不滚动」由遮罩层吃掉滚轮实现（overscroll-behavior: contain 阻断链式滚动到 html）。 */
+/* bug-00017：「弹框打开时页面不滚动」由 wrap 吃掉滚轮实现（overscroll-behavior: contain 阻断链式滚动到 html）；
+   antd 滚动锁对 document.body 的副作用由 style.less 的 html body 中和规则处理。 */
 .reader-modal-wrap.ant-modal-wrap {
   overscroll-behavior: contain;
 }
 
 /* height: 100% 相对 wrap 的 content box（= 视口高 − 24px），正好「最多一屏」；top: 0 覆盖 antd 默认 top: 100px，padding-bottom: 0 覆盖其 24px */
 .reader-modal-wrap .ant-modal {
+  display: flex;
+  flex-direction: column;
   top: 0;
   height: 100%;
   max-height: 100%;
   padding-bottom: 0;
 }
 
-.reader-modal-wrap .ant-modal-content {
+/* antd-vue 在 .ant-modal 与 .ant-modal-content 之间多一层无 class 包裹 div，须一并撑开，否则 content 的百分比高度解析失败 */
+.reader-modal-wrap .ant-modal > * {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
+.reader-modal-wrap .ant-modal-content,
 .reader-modal-wrap .ant-modal-body {
   display: flex;
   flex-direction: column;
