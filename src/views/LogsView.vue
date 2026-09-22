@@ -240,6 +240,9 @@
                           <template v-else-if="column.key === 'toolName'">
                             <span class="tool-name">{{ call.toolName }}</span>
                           </template>
+                          <template v-else-if="column.key === 'caller'">
+                            {{ callerStageLabel(call) }}
+                          </template>
                           <template v-else-if="column.key === 'time'">
                             <template v-if="call.callReturnedAt !== null">
                               <a-tooltip placement="topLeft">
@@ -410,6 +413,28 @@ function formatTokens(n: number | null | undefined): string {
   if (n === null || n === undefined) return '—'
   if (n >= 1000) return `${parseFloat((n / 1000).toFixed(1))}k`
   return String(n)
+}
+
+const CALLER_LABELS: Record<string, string> = {
+  server: '服务端',
+  model: '大模型',
+}
+
+const STAGE_LABELS: Record<string, string> = {
+  l3: 'L3 预检',
+  fastpath: '域快路径',
+  classify: '分类轮',
+  generation: '生成轮',
+  admin: '后台直调',
+}
+
+function callerStageLabel(call: { caller?: string | null; stage?: string | null }): string {
+  const parts: string[] = []
+  const caller = call.caller ?? null
+  const stage = call.stage ?? null
+  if (caller && CALLER_LABELS[caller]) parts.push(CALLER_LABELS[caller])
+  if (stage && STAGE_LABELS[stage]) parts.push(STAGE_LABELS[stage])
+  return parts.length ? parts.join(' · ') : '—'
 }
 
 function truncateText(text: string, max: number): string {
@@ -591,6 +616,7 @@ const llmColumns = [
 const toolColumns = [
   { key: 'mcpServer', title: 'MCP 名称', width: 140 },
   { key: 'toolName', title: '调用方法', width: 180 },
+  { key: 'caller', title: '调用方', width: 130 },
   { key: 'time', title: '耗时', width: 110 },
   { key: 'status', title: '状态', width: 140 },
   { key: 'content', title: '内容', width: 200 },

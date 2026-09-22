@@ -144,6 +144,8 @@ export interface ToolCallRecord {
   seq: number
   mcpServer: string
   toolName: string
+  caller?: 'model' | 'server' | null
+  stage?: 'l3' | 'fastpath' | 'classify' | 'generation' | 'admin' | null
   argsSummary: string
   callSentAt: number
   callReturnedAt: number | null
