@@ -128,6 +128,7 @@
       :chapter="readerTarget.chapter"
       :chapter-title="readerTarget.chapterTitle"
       :chunk-id="readerTarget.chunkId"
+      :show-footer="false"
     />
   </main>
 </template>

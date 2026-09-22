@@ -34,7 +34,7 @@
         </div>
       </div>
 
-      <div class="reader-nav">
+      <div v-if="showFooter" class="reader-nav">
         <a-button :disabled="!data?.prev" @click="goToPrev">
           上一回{{ data?.prev ? ` ${data.prev.title}` : '' }}
         </a-button>
@@ -70,13 +70,17 @@ import {
 } from '../utils/sangoChapter'
 
 // 入参契约严格按需求「组件入参契约」表：chapter 必填 / chapterTitle 选填占位 / chunkId 选填定位高亮。
-// 打开方式与关闭回调自定为 v-model:open，无额外业务入参。
-const props = defineProps<{
-  open: boolean
-  chapter: number
-  chapterTitle?: string
-  chunkId?: string
-}>()
+// 打开方式与关闭回调自定为 v-model:open；showFooter 选填，控制底部区域（翻回 + 回号跳转）是否渲染，默认渲染。
+const props = withDefaults(
+  defineProps<{
+    open: boolean
+    chapter: number
+    chapterTitle?: string
+    chunkId?: string
+    showFooter?: boolean
+  }>(),
+  { showFooter: true },
+)
 
 const emit = defineEmits<{
   (e: 'update:open', open: boolean): void
