@@ -10,7 +10,7 @@
           </span>
         </RouterLink>
         <div class="header-actions">
-          <RouterLink to="/weather">
+          <RouterLink to="/chat">
             <a-button size="small">← 返回聊天</a-button>
           </RouterLink>
           <a-tag color="green">服务就绪</a-tag>
@@ -189,6 +189,9 @@
                           </template>
                           <template v-else-if="column.key === 'tokens'">
                             {{ formatTokens(call.promptTokens) }} / {{ formatTokens(call.completionTokens) }}
+                          </template>
+                          <template v-else-if="column.key === 'cachedTokens'">
+                            {{ formatTokens(call.cachedTokens) }}
                           </template>
                           <template v-else-if="column.key === 'time'">
                             <template v-if="call.responseAt !== null">
@@ -579,6 +582,7 @@ const llmColumns = [
   { key: 'stage', title: '阶段', width: 120 },
   { key: 'model', title: '模型', width: 170 },
   { key: 'tokens', title: 'Token（输入/输出）', width: 150 },
+  { key: 'cachedTokens', title: '缓存命中', width: 100 },
   { key: 'time', title: '耗时', width: 110 },
   { key: 'status', title: '状态', width: 140 },
   { key: 'content', title: '内容', width: 200 },

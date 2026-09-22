@@ -68,7 +68,7 @@ export interface LogDetailMain {
 
 export interface LlmCallRecord {
   seq: number
-  stage: 'routing' | 'generation'
+  stage: 'routing' | 'generation' | 'classify'
   model: string
   requestAt: number
   responseAt: number | null
@@ -77,6 +77,7 @@ export interface LlmCallRecord {
   toolCalls: string
   promptTokens: number | null
   completionTokens: number | null
+  cachedTokens: number | null
   finishReason: string | null
   status: 'success' | 'failed'
   errorMessage: string
@@ -227,7 +228,7 @@ async function postChatForAnswer(
 
 export function sendChatMessage(
   message: string,
-  domain?: 'fengyunsanguo' | 'sango-novel' | 'weather',
+  domain?: 'fengyunsanguo' | 'sango-novel',
 ): Promise<ChatData> {
   const payload: Record<string, string> = { message }
   if (domain) payload.domain = domain
