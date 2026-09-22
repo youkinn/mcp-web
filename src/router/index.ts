@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
-import WeatherView from '../views/WeatherView.vue'
+import ChatView from '../views/ChatView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -11,9 +11,9 @@ const router = createRouter({
       component: HomeView,
     },
     {
-      path: '/weather',
-      name: 'weather',
-      component: WeatherView,
+      path: '/chat',
+      name: 'chat',
+      component: ChatView,
     },
     {
       path: '/logs',
