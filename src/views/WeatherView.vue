@@ -50,7 +50,18 @@
                   <div class="citation-source-header">第{{ group.chapter }}回 {{ group.title }}</div>
                   <div v-for="entry in group.entries" :key="entry.badge" class="citation-card">
                     <span class="citation-badge">{{ entry.badge }}</span>
-                    <p class="citation-text">{{ entry.text }}</p>
+                    <p class="citation-text">
+                      {{ entry.text }}
+                      <button
+                        v-if="chatStore.mode === 'sango-novel'"
+                        type="button"
+                        class="citation-read-btn"
+                        size="small"
+                        @click="openCitationReader(group.chapter, group.title, entry.text)"
+                      >
+                        查看全文
+                      </button>
+                    </p>
                   </div>
                 </div>
               </section>
@@ -110,6 +121,15 @@
         </section>
       </section>
     </div>
+
+    <SangoChapterReader
+      v-if="readerTarget"
+      v-model:open="readerOpen"
+      :chapter="readerTarget.chapter"
+      :chapter-title="readerTarget.chapterTitle"
+      :chunk-id="readerTarget.chunkId"
+      :show-footer="false"
+    />
   </main>
 </template>
 
@@ -118,7 +138,9 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useChatStore, type SangoServiceId } from '../stores/chat'
-import type { Citation } from '../api/client'
+import { fetchSangoChapter, getErrorMessage, type Citation } from '../api/client'
+import { buildCitationReaderTarget } from '../utils/sangoChapter'
+import SangoChapterReader from '../components/SangoChapterReader.vue'
 
 // 引用出处分组：连续同回目（chapter + title 相同）合并为一组，跨回/回目变化另起一组；
 // 分组只影响出处头的出现次数，组内条目保留各自全局角标；顺序恒为 citations 数组顺序。
@@ -166,6 +188,28 @@ const customInput = ref<HTMLElement | null>(null)
 const messageList = ref<HTMLElement | null>(null)
 const route = useRoute()
 const router = useRouter()
+
+// ── 原文阅读器（feat-A010）──
+interface ReaderTarget {
+  chapter: number
+  chapterTitle?: string
+  chunkId?: string
+}
+
+const readerOpen = ref(false)
+const readerTarget = ref<ReaderTarget | null>(null)
+
+// 「查看原文」：读共享按回缓存 → citation.text 与整回原文精确匹配（includes）→ 打开阅读器定位；
+// 匹配不到不传 chunkId，阅读器停正文顶部不报错（接口文档 §5.3）
+async function openCitationReader(chapter: number, title: string, text: string) {
+  try {
+    const data = await fetchSangoChapter(chapter)
+    readerTarget.value = buildCitationReaderTarget(chapter, title, text, data)
+    readerOpen.value = true
+  } catch (err) {
+    message.error(getErrorMessage(err))
+  }
+}
 
 // 把当前标签 / 子服务状态写回 URL（replace：不污染历史，刷新 / 分享链接可恢复）。
 // 风云三国未选二级服务时 URL 只带 mode，选中问题查询 / 随机一题后才带 service。
@@ -490,7 +534,6 @@ function formatTime(date: Date) {
 
 .citation-area {
   width: 100%;
-  max-width: 640px;
   margin-top: 10px;
   padding: 12px 14px;
   border: 1px solid #e3e9e2;
@@ -555,6 +598,26 @@ function formatTime(date: Date) {
   color: #40544a;
   font-size: 13px;
   line-height: 1.6;
+}
+
+/* 三国演义模式：引用原文末尾「查看原文」（引用卡片本体无点击入口，feat-A010 验收 6） */
+.citation-read-btn {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 2px 8px;
+  border: 1px solid #d9e1d8;
+  border-radius: 999px;
+  background: #fff;
+  color: #2e6d56;
+  font-size: 12px;
+  line-height: 1.6;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.citation-read-btn:hover {
+  border-color: #8cab92;
+  color: #163c32;
 }
 
 .message-meta {

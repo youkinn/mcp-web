@@ -65,7 +65,9 @@
               <span :class="{ 'diag-rank-topn': record.inTopN }">{{ record.rank }}</span>
               <a-tag v-if="record.inTopN" color="green" size="small">top-N</a-tag>
             </template>
-            <template v-else-if="column.key === 'chunkId'">{{ record.chunkId }}</template>
+            <template v-else-if="column.key === 'chunkId'">
+              <a class="chunk-id-link" @click="onOpenReader(record)">{{ record.chunkId }}</a>
+            </template>
             <template v-else-if="column.key === 'chapter'">{{ record.chapterText }}</template>
             <template v-else-if="column.key === 'bm25Norm'">
               <a-tooltip placement="topLeft">
@@ -113,6 +115,9 @@
             </template>
             <template v-else-if="column.key === 'cited'">
               <a-tag :color="record.citedText === '是' ? 'gold' : 'default'" size="small">{{ record.citedText }}</a-tag>
+            </template>
+            <template v-else-if="column.key === 'actions'">
+              <a-button size="small" @click="onCopyChunkId(record)">复制</a-button>
             </template>
           </template>
         </a-table>
@@ -261,12 +266,18 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { message } from 'ant-design-vue'
 import type { RetrievalDiagnostics } from '../api/client'
 import { buildDiagnosticsView, scoreRowClass, type ScoreRowView } from '../utils/retrievalDiagnostics'
+import { copyText } from '../utils/clipboard'
 
 const props = defineProps<{
   diagnostics: RetrievalDiagnostics | null
   citationCount?: number | null
+}>()
+
+const emit = defineEmits<{
+  (e: 'open-reader', target: { chapter: number; title: string; chunkId: string }): void
 }>()
 
 const view = computed(() => buildDiagnosticsView(props.diagnostics, props.citationCount ?? null))
@@ -282,10 +293,27 @@ const scoreColumns = [
   { key: 'sources', title: '来源', width: 180, align: 'center' },
   { key: 'injected', title: '进注入视图', width: 130, align: 'center' },
   { key: 'cited', title: '被引用', width: 90, align: 'center' },
+  { key: 'actions', title: '操作', width: 80, align: 'center' },
 ]
 
 function scoreRowKey(record: ScoreRowView): string {
   return record.key
+}
+
+// chunkId 点击 → 打开原文阅读器并定位该片段（入参直接取 candidates 的 chapter / title，feat-A010 验收 5）
+function onOpenReader(record: ScoreRowView) {
+  emit('open-reader', { chapter: record.chapter, title: record.title, chunkId: record.chunkId })
+}
+
+// 操作列「复制」：复制该行完整 chunkId，成功反馈，不打开阅读器（feat-A010 验收 5a）
+function onCopyChunkId(record: ScoreRowView) {
+  void copyText(record.chunkId).then((ok) => {
+    if (ok) {
+      message.success('已复制 chunkId')
+    } else {
+      message.error('复制失败，请手动选择复制')
+    }
+  })
 }
 </script>
 
@@ -380,6 +408,17 @@ function scoreRowKey(record: ScoreRowView): string {
 
 .diag-cited-tag {
   margin-left: 6px;
+}
+
+/* chunkId 可点击入口（feat-A010）：点开原文阅读器定位该片段 */
+.chunk-id-link {
+  color: #2e6d56;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.chunk-id-link:hover {
+  color: #b17837;
 }
 
 /* 被引用行高亮：青底，覆盖绿底以便一眼看到被引用的那条 */
