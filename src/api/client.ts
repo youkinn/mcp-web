@@ -44,6 +44,8 @@ export interface LogListItem {
   tokens: { input: number | null; output: number | null } | null
   routeSource: RouteSource | null
   hasRetry: boolean
+  /** 缓存判定结果（feat-A013）：1 命中 / 0 未命中 / null 非 sango-novel、开关关闭、降级旁路或历史行 */
+  cacheHit: number | null
 }
 
 export interface LogListData {
@@ -178,6 +180,108 @@ export interface LogDetail {
   log: LogDetailMain
   llmCalls: LlmCallRecord[]
   toolCalls: ToolCallRecord[]
+  /** 缓存判定审计（feat-A013）：cache_logs 无行时为 null */
+  cache: CacheLogRecord | null
+}
+
+// ── 三国演义问答缓存（feat-A013）类型 ──
+
+/** 命中判定 reason 枚举：命中 / 低相似 / 灰色区 / 歧义 / 焦点拒判（接口文档 §3.10） */
+export type CacheMissReason = 'hit' | 'miss-low' | 'miss-gray' | 'miss-tie' | 'miss-focus'
+
+export interface CacheLogRecord {
+  hit: boolean
+  hitLine: number
+  similarity: number | null
+  tieHits: number | null
+  userQuery: string
+  nearestQuery: string | null
+  reason: CacheMissReason
+  marked: boolean
+  createdAt: number
+  /** 命中解释卡片标记误判所需（§3.9 标记接口按 cache_logs id）；§3.10 样例未含，缺失时卡片标记按钮禁用 */
+  cacheLogId?: number
+}
+
+export interface CacheStatus {
+  enabled: boolean
+  hitLine: number
+  maxEntries: number
+  entryCount: number
+}
+
+export interface CacheEntryItem {
+  id: number
+  queryText: string
+  answerBytes: number
+  embeddingBytes: number
+  hitCount: number
+  lastAccessAt: number
+  createdAt: number
+}
+
+export interface CacheEntriesData {
+  list: CacheEntryItem[]
+  total: number
+  pageNo: number
+  pageSize: number
+}
+
+export interface CacheOverview {
+  enabled: boolean
+  hitLine: number
+  maxEntries: number
+  entryCount: number
+  answerBytesTotal: number
+  embeddingBytesTotal: number
+  approximateBytes: number
+  avgAnswerBytes: number
+}
+
+export interface SimilarityBucket {
+  lower: number
+  upper: number
+  count: number
+}
+
+export interface SimilarityDistributionData {
+  hitLine: number
+  bucketWidth: number
+  bucketCount: number
+  buckets: SimilarityBucket[]
+  totals: {
+    lowSimilar: number
+    grayZone: number
+    highConfidence: number
+    totalCount: number
+  }
+  startAt: number
+  endAt: number
+}
+
+export interface GrayzoneItem {
+  cacheLogId: number
+  traceId: string
+  createdAt: number
+  userQuery: string
+  nearestQuery: string
+  similarity: number
+  hitLine: number
+  marked: boolean
+}
+
+export interface GrayzoneData {
+  list: GrayzoneItem[]
+  total: number
+  pageNo: number
+  pageSize: number
+}
+
+export interface MisjudgeData {
+  hitTotal: number
+  markedMisjudge: number
+  misjudgeRate: number | null
+  note: string
 }
 
 export interface TokenBucket {
@@ -366,6 +470,103 @@ export async function fetchTokenStats(query: TokenStatsQuery): Promise<TokenStat
       endAt: query.endAt,
       granularity: query.granularity,
     },
+  })
+  return unwrapData(data)
+}
+
+// ── 缓存控制台（feat-A013）──
+
+export interface CacheEntriesQuery {
+  pageNo?: number
+  pageSize?: number
+  sortBy?: 'lastAccessAt' | 'hitCount'
+  order?: 'desc' | 'asc'
+}
+
+export interface GrayzoneQuery {
+  startAt: number
+  endAt: number
+  pageNo?: number
+  pageSize?: number
+  marked?: 'all' | 'marked' | 'unmarked'
+}
+
+export async function fetchCacheStatus(): Promise<CacheStatus> {
+  const { data } = await apiClient.get<ApiResponse<CacheStatus>>('/v1/cache/status')
+  return unwrapData(data)
+}
+
+export async function updateCacheStatus(enabled: boolean): Promise<CacheStatus> {
+  const { data } = await apiClient.put<ApiResponse<CacheStatus>>('/v1/cache/status', { enabled })
+  return unwrapData(data)
+}
+
+export async function clearCache(): Promise<{ cleared: number }> {
+  const { data } = await apiClient.post<ApiResponse<{ cleared: number }>>('/v1/cache/clear')
+  return unwrapData(data)
+}
+
+export async function deleteCacheEntry(id: number): Promise<{ deleted: boolean }> {
+  const { data } = await apiClient.delete<ApiResponse<{ deleted: boolean }>>(`/v1/cache/entries/${id}`)
+  return unwrapData(data)
+}
+
+export async function fetchCacheEntries(query: CacheEntriesQuery = {}): Promise<CacheEntriesData> {
+  const params: Record<string, string | number> = {}
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') params[key] = value
+  })
+  const { data } = await apiClient.get<ApiResponse<CacheEntriesData>>('/v1/cache/entries', { params })
+  return unwrapData(data)
+}
+
+export async function fetchCacheOverview(): Promise<CacheOverview> {
+  const { data } = await apiClient.get<ApiResponse<CacheOverview>>('/v1/cache/overview')
+  return unwrapData(data)
+}
+
+export async function fetchSimilarityDistribution(
+  startAt: number,
+  endAt: number,
+): Promise<SimilarityDistributionData> {
+  const { data } = await apiClient.get<ApiResponse<SimilarityDistributionData>>(
+    '/v1/cache/stats/similarity-distribution',
+    { params: { startAt, endAt } },
+  )
+  return unwrapData(data)
+}
+
+export async function fetchGrayzone(query: GrayzoneQuery): Promise<GrayzoneData> {
+  const params: Record<string, string | number> = { startAt: query.startAt, endAt: query.endAt }
+  if (query.pageNo !== undefined && query.pageNo > 0) params.pageNo = query.pageNo
+  if (query.pageSize !== undefined && query.pageSize > 0) params.pageSize = query.pageSize
+  if (query.marked && query.marked !== 'all') params.marked = query.marked
+  const { data } = await apiClient.get<ApiResponse<GrayzoneData>>('/v1/cache/grayzone', { params })
+  return unwrapData(data)
+}
+
+// 标记类写接口响应只需 code 校验（幂等 200，data 形状未承诺非 null）
+function unwrapOk(body: ApiResponse<unknown>): void {
+  if (body.code !== 200) {
+    throw new Error(body.message || '请求失败，请稍后重试。')
+  }
+}
+
+export async function markMisjudge(cacheLogId: number, markedBy?: string): Promise<void> {
+  const { data } = await apiClient.post<ApiResponse<unknown>>(`/v1/cache/records/${cacheLogId}/mark`, {
+    markedBy: markedBy || '控制台',
+  })
+  unwrapOk(data)
+}
+
+export async function unmarkMisjudge(cacheLogId: number): Promise<void> {
+  const { data } = await apiClient.post<ApiResponse<unknown>>(`/v1/cache/records/${cacheLogId}/unmark`)
+  unwrapOk(data)
+}
+
+export async function fetchMisjudge(startAt: number, endAt: number): Promise<MisjudgeData> {
+  const { data } = await apiClient.get<ApiResponse<MisjudgeData>>('/v1/cache/misjudge', {
+    params: { startAt, endAt },
   })
   return unwrapData(data)
 }

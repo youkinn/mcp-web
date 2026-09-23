@@ -1,6 +1,24 @@
 import { strict as assert } from 'node:assert'
 import { afterEach, describe, it, mock } from 'node:test'
-import { apiClient, fetchLogDetail, fetchLogList, fetchSangoChapter, sendChatMessage, sendSangoRandom } from './client.ts'
+import {
+  apiClient,
+  clearCache,
+  deleteCacheEntry,
+  fetchCacheEntries,
+  fetchCacheOverview,
+  fetchCacheStatus,
+  fetchGrayzone,
+  fetchLogDetail,
+  fetchLogList,
+  fetchMisjudge,
+  fetchSangoChapter,
+  fetchSimilarityDistribution,
+  markMisjudge,
+  sendChatMessage,
+  sendSangoRandom,
+  unmarkMisjudge,
+  updateCacheStatus,
+} from './client.ts'
 
 // ── feat-A008 前端链路埋点测试（node:test，跑法：npm test）──
 
@@ -284,5 +302,206 @@ describe('fetchSangoChapter 按回缓存（feat-A010 验收 13）', () => {
     await fetchSangoChapter(75)
     const hits = calls.filter((url) => url === '/v1/sango/chapters/75')
     assert.equal(hits.length, 2, '失败一次 + 成功一次后缓存命中，不再请求')
+  })
+})
+
+// ── 缓存控制台（feat-A013）──
+
+const okEnvelope = (data: unknown) => ({ data: { code: 200, data, message: '' }, headers: {} })
+
+describe('缓存控制台接口（feat-A013）', () => {
+  it('fetchCacheStatus GET /v1/cache/status 并解包', async () => {
+    mock.method(apiClient, 'get', async (url: string) => {
+      assert.equal(url, '/v1/cache/status')
+      return okEnvelope({ enabled: true, hitLine: 0.92, maxEntries: 500, entryCount: 37 })
+    })
+    const result = await fetchCacheStatus()
+    assert.equal(result.enabled, true)
+    assert.equal(result.hitLine, 0.92)
+    assert.equal(result.entryCount, 37)
+  })
+
+  it('updateCacheStatus PUT /v1/cache/status 携带 enabled 布尔值', async () => {
+    mock.method(apiClient, 'put', async (url: string, body?: unknown) => {
+      assert.equal(url, '/v1/cache/status')
+      assert.deepEqual(body, { enabled: false })
+      return okEnvelope({ enabled: false, hitLine: 0.92, maxEntries: 500, entryCount: 37 })
+    })
+    const result = await updateCacheStatus(false)
+    assert.equal(result.enabled, false)
+  })
+
+  it('clearCache POST /v1/cache/clear 返回清除前条目数', async () => {
+    mock.method(apiClient, 'post', async (url: string) => {
+      assert.equal(url, '/v1/cache/clear')
+      return okEnvelope({ cleared: 37 })
+    })
+    const result = await clearCache()
+    assert.equal(result.cleared, 37)
+  })
+
+  it('deleteCacheEntry DELETE /v1/cache/entries/:id', async () => {
+    mock.method(apiClient, 'delete', async (url: string) => {
+      assert.equal(url, '/v1/cache/entries/12')
+      return okEnvelope({ deleted: true })
+    })
+    const result = await deleteCacheEntry(12)
+    assert.equal(result.deleted, true)
+  })
+
+  it('fetchCacheEntries 携带分页与排序参数并解包', async () => {
+    const calls: { url: string; params?: Record<string, unknown> }[] = []
+    mock.method(apiClient, 'get', (url: string, config?: { params?: Record<string, unknown> }) => {
+      calls.push({ url, params: config?.params })
+      return okEnvelope({ list: [], total: 0, pageNo: 1, pageSize: 10 })
+    })
+    const result = await fetchCacheEntries({ pageNo: 2, pageSize: 10, sortBy: 'hitCount', order: 'asc' })
+    assert.equal(result.total, 0)
+    assert.equal(calls[0]?.url, '/v1/cache/entries')
+    assert.equal(calls[0]?.params?.pageNo, 2)
+    assert.equal(calls[0]?.params?.pageSize, 10)
+    assert.equal(calls[0]?.params?.sortBy, 'hitCount')
+    assert.equal(calls[0]?.params?.order, 'asc')
+  })
+
+  it('fetchCacheOverview GET /v1/cache/overview', async () => {
+    mock.method(apiClient, 'get', async (url: string) => {
+      assert.equal(url, '/v1/cache/overview')
+      return okEnvelope({
+        enabled: true,
+        hitLine: 0.92,
+        maxEntries: 500,
+        entryCount: 37,
+        answerBytesTotal: 68154,
+        embeddingBytesTotal: 151552,
+        approximateBytes: 239220,
+        avgAnswerBytes: 1842,
+      })
+    })
+    const result = await fetchCacheOverview()
+    assert.equal(result.entryCount, 37)
+    assert.equal(result.approximateBytes, 239220)
+  })
+
+  it('fetchSimilarityDistribution 携带 startAt / endAt', async () => {
+    const calls: { url: string; params?: Record<string, unknown> }[] = []
+    mock.method(apiClient, 'get', (url: string, config?: { params?: Record<string, unknown> }) => {
+      calls.push({ url, params: config?.params })
+      return okEnvelope({
+        hitLine: 0.92,
+        bucketWidth: 0.02,
+        bucketCount: 50,
+        buckets: [],
+        totals: { lowSimilar: 41, grayZone: 9, highConfidence: 12, totalCount: 62 },
+        startAt: 1779408000000,
+        endAt: 1779494400000,
+      })
+    })
+    const result = await fetchSimilarityDistribution(1779408000000, 1779494400000)
+    assert.equal(result.totals.totalCount, 62)
+    assert.equal(calls[0]?.url, '/v1/cache/stats/similarity-distribution')
+    assert.equal(calls[0]?.params?.startAt, 1779408000000)
+    assert.equal(calls[0]?.params?.endAt, 1779494400000)
+  })
+
+  it('fetchGrayzone marked=all 不携带 marked 参数，unmarked 时携带', async () => {
+    const calls: { url: string; params?: Record<string, unknown> }[] = []
+    mock.method(apiClient, 'get', (url: string, config?: { params?: Record<string, unknown> }) => {
+      calls.push({ url, params: config?.params })
+      return okEnvelope({ list: [], total: 0, pageNo: 1, pageSize: 20 })
+    })
+    await fetchGrayzone({ startAt: 1, endAt: 2, marked: 'all', pageNo: 1, pageSize: 20 })
+    await fetchGrayzone({ startAt: 1, endAt: 2, marked: 'unmarked' })
+    assert.equal(calls[0]?.url, '/v1/cache/grayzone')
+    assert.ok(!('marked' in (calls[0]?.params ?? {})), 'all 不应携带 marked 参数')
+    assert.equal(calls[1]?.params?.marked, 'unmarked')
+    assert.equal(calls[0]?.params?.startAt, 1)
+  })
+
+  it('markMisjudge POST 标记接口：缺省 markedBy 用「控制台」', async () => {
+    mock.method(apiClient, 'post', async (url: string, body?: unknown) => {
+      assert.equal(url, '/v1/cache/records/88/mark')
+      assert.deepEqual(body, { markedBy: '控制台' })
+      return { data: { code: 200, data: null, message: '' }, headers: {} }
+    })
+    await markMisjudge(88)
+  })
+
+  it('markMisjudge 显式 markedBy 透传；unmarkMisjudge 取消标记接口', async () => {
+    const urls: string[] = []
+    const bodies: unknown[] = []
+    mock.method(apiClient, 'post', (url: string, body?: unknown) => {
+      urls.push(url)
+      bodies.push(body)
+      return Promise.resolve({ data: { code: 200, data: null, message: '' }, headers: {} })
+    })
+    await markMisjudge(88, '小叶')
+    await unmarkMisjudge(88)
+    assert.deepEqual(urls, ['/v1/cache/records/88/mark', '/v1/cache/records/88/unmark'])
+    assert.deepEqual(bodies[0], { markedBy: '小叶' })
+  })
+
+  it('fetchMisjudge 解包并透传 rate=null', async () => {
+    mock.method(apiClient, 'get', async (url: string, config?: { params?: Record<string, unknown> }) => {
+      assert.equal(url, '/v1/cache/misjudge')
+      assert.equal(config?.params?.startAt, 1)
+      return okEnvelope({
+        hitTotal: 0,
+        markedMisjudge: 0,
+        misjudgeRate: null,
+        note: 'hitTotal=0 时 rate 为 null',
+      })
+    })
+    const result = await fetchMisjudge(1, 2)
+    assert.equal(result.hitTotal, 0)
+    assert.equal(result.misjudgeRate, null)
+  })
+
+  it('fetchLogDetail 明细透传 data.cache（命中解释，§3.10）', async () => {
+    const cache = {
+      hit: true,
+      hitLine: 0.92,
+      similarity: 0.9821,
+      tieHits: 1,
+      userQuery: '严颜是怎么被义释的',
+      nearestQuery: '义释严颜是怎么回事',
+      reason: 'hit',
+      marked: false,
+      createdAt: 1779408000000,
+      cacheLogId: 88,
+    }
+    mock.method(apiClient, 'get', async (url: string) => {
+      assert.equal(url, '/v1/logs/t1')
+      return okEnvelope({
+        log: { traceId: 't1' },
+        llmCalls: [],
+        toolCalls: [],
+        cache,
+      })
+    })
+    const result = await fetchLogDetail('t1')
+    assert.equal(result.cache?.hit, true)
+    assert.equal(result.cache?.similarity, 0.9821)
+    assert.equal(result.cache?.cacheLogId, 88)
+  })
+
+  it('fetchLogList 透传 cacheHit（1 命中 / 0 未命中 / null 旁路或历史行）', async () => {
+    mock.method(apiClient, 'get', async (url: string) => {
+      assert.ok(url.startsWith('/v1/logs'))
+      return okEnvelope({
+        list: [
+          { traceId: 't1', cacheHit: 1 },
+          { traceId: 't2', cacheHit: 0 },
+          { traceId: 't3', cacheHit: null },
+        ],
+        total: 3,
+        pageNo: 1,
+        pageSize: 10,
+      })
+    })
+    const result = await fetchLogList({})
+    assert.equal(result.list[0]?.cacheHit, 1)
+    assert.equal(result.list[1]?.cacheHit, 0)
+    assert.equal(result.list[2]?.cacheHit, null)
   })
 })
