@@ -36,8 +36,30 @@
               />
               <span class="switch-state">{{ statusStateText }}</span>
             </div>
+            <div class="hitline-group">
+              <span class="switch-label">命中线</span>
+              <a-input-number
+                v-model:value="hitLineInput"
+                class="hitline-input"
+                :min="0"
+                :max="1"
+                :step="0.05"
+                :precision="2"
+                placeholder="0~1"
+                :disabled="overview === null"
+                @change="onHitLineInputChange"
+              />
+              <a-button
+                size="small"
+                type="primary"
+                ghost
+                :loading="hitLineSaving"
+                :disabled="!hitLineDirty"
+                @click="onSaveHitLine"
+              >保存</a-button>
+              <span v-if="hitLineHint" class="hitline-hint">{{ hitLineHint }}</span>
+            </div>
             <div class="status-meta">
-              <span>命中线 {{ formatHitLine(overview?.hitLine ?? 0) }}</span>
               <span>上限 {{ overview?.maxEntries ?? '—' }} 条</span>
               <span>当前条目 {{ overview?.entryCount ?? '—' }}</span>
             </div>
@@ -103,7 +125,10 @@
               <template #bodyCell="{ column, record }">
                 <template v-if="column.key === 'id'">{{ record.id }}</template>
                 <template v-else-if="column.key === 'queryText'">
-                  <span class="cell-ellipsis">{{ record.queryText }}</span>
+                  <a-tooltip placement="topLeft">
+                    <template #title>{{ record.queryText }}</template>
+                    <span class="cell-ellipsis">{{ record.queryText }}</span>
+                  </a-tooltip>
                 </template>
                 <template v-else-if="column.key === 'hitCount'">
                   <a v-if="record.hitCount > 0" class="hit-count-link" @click="onOpenEntryHits(record)">{{ record.hitCount }}</a>
@@ -413,6 +438,7 @@ import {
   markMisjudge,
   unmarkMisjudge,
   updateCacheStatus,
+  updateHitLine,
   type CacheEntryItem,
   type CacheEntriesData,
   type CacheEntryHitItem,
@@ -556,12 +582,16 @@ const overview = ref<CacheOverview | null>(null)
 const statusEnabled = ref(false)
 const statusSaving = ref(false)
 const clearing = ref(false)
+const hitLineInput = ref<number | null>(null)
+const hitLineSaving = ref(false)
+const hitLineTouched = ref(false)
 
 async function loadOverview() {
   try {
     const [status, data] = await Promise.all([fetchCacheStatus(), fetchCacheOverview()])
     overview.value = data
     statusEnabled.value = status.enabled
+    if (!hitLineTouched.value) hitLineInput.value = data.hitLine
   } catch (err) {
     message.error(getErrorMessage(err))
   }
@@ -590,6 +620,49 @@ async function onStatusChange(checked: boolean) {
   }
 }
 
+// ── 命中线配置（灰区清单第 15 条）──
+
+const hitLineValid = computed(() => {
+  const value = hitLineInput.value
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= 1
+})
+
+const hitLineDirty = computed(() =>
+  hitLineValid.value &&
+  overview.value !== null &&
+  Math.abs(hitLineInput.value! - overview.value.hitLine) > 1e-9,
+)
+
+const hitLineHint = computed(() => {
+  if (hitLineInput.value === null) return ''
+  return hitLineValid.value ? '' : '需 0 < 命中线 ≤ 1'
+})
+
+function onHitLineInputChange() {
+  hitLineTouched.value = true
+}
+
+async function onSaveHitLine() {
+  if (!hitLineDirty.value) {
+    if (!hitLineValid.value) message.warning('命中线需大于 0 且不超过 1')
+    return
+  }
+  const next = hitLineInput.value!
+  hitLineSaving.value = true
+  try {
+    const result = await updateHitLine(next)
+    hitLineTouched.value = false
+    hitLineInput.value = result.hitLine
+    await loadOverview()
+    message.success(`命中线已更新为 ${formatHitLine(result.hitLine)}`)
+    if (distData.value) void loadDist()
+  } catch (err) {
+    message.error(getErrorMessage(err))
+  } finally {
+    hitLineSaving.value = false
+  }
+}
+
 async function onClearCache() {
   clearing.value = true
   try {
@@ -607,7 +680,7 @@ async function onClearCache() {
 
 const entriesColumns = [
   { key: 'id', title: 'ID', width: 60 },
-  { key: 'queryText', title: '查询（用户输入原文）', width: 340, ellipsis: true },
+  { key: 'queryText', title: '查询（用户输入原文）', width: 280, ellipsis: true },
   { key: 'hitCount', title: '命中次数', width: 100, align: 'center' },
   { key: 'lastAccessAt', title: '最后访问', width: 170 },
   { key: 'createdAt', title: '写入时间', width: 170 },
@@ -1270,6 +1343,22 @@ onBeforeUnmount(() => {
 
 .switch-state {
   color: #7b8a80;
+  font-size: 12px;
+}
+
+.hitline-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 24px;
+}
+
+.hitline-input {
+  width: 88px;
+}
+
+.hitline-hint {
+  color: #b17837;
   font-size: 12px;
 }
 

@@ -550,6 +550,11 @@ export async function updateCacheStatus(enabled: boolean): Promise<CacheStatus> 
   return unwrapData(data)
 }
 
+export async function updateHitLine(hitLine: number): Promise<{ hitLine: number }> {
+  const { data } = await apiClient.put<ApiResponse<{ hitLine: number }>>('/v1/cache/hit-line', { hitLine })
+  return unwrapData(data)
+}
+
 export async function clearCache(): Promise<{ cleared: number }> {
   const { data } = await apiClient.post<ApiResponse<{ cleared: number }>>('/v1/cache/clear')
   return unwrapData(data)
