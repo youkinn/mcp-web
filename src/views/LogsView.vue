@@ -203,8 +203,8 @@
                               <template #title>
                                 <div class="token-tooltip">
                                   <div class="token-tooltip-title">输出 Token = 思考 + 正文</div>
-                                  <div v-if="call.reasoningTokens != null">思考 {{ formatTokens(call.reasoningTokens) }}</div>
-                                  <div>正文 {{ bodyTokensOf(call) }}{{ bodyTokensDerivationOf(call) }}</div>
+                                  <div v-if="call.reasoningTokens != null">思考（reasoningTokens） {{ formatTokens(call.reasoningTokens) }}</div>
+                                  <div>正文（completionTokens − reasoningTokens）= {{ bodyTokensEquationOf(call) }}</div>
                                   <div v-if="call.maxTokens != null">上限（max_tokens）{{ formatTokens(call.maxTokens) }}</div>
                                 </div>
                               </template>
@@ -337,7 +337,7 @@
             <div class="stats-head">
               <div class="stats-range-info">
                 <span v-if="statsRangeLabel" class="stats-range-label">{{ statsRangeLabel }}</span>
-                <span class="stats-granularity-hint">日界：Asia/Shanghai · 实际粒度：{{ granularity === 'day' ? '按天' : '按小时' }}</span>
+                <span class="stats-granularity-hint">日界：上海时区（UTC+8） · 实际粒度：{{ granularity === 'day' ? '按天' : '按小时' }}</span>
               </div>
               <div v-if="statsData" class="stats-summary">
                 <span class="summary-item">区间总 Token：{{ formatTokens(statsSummary.totalTokens) }}</span>
@@ -525,20 +525,12 @@ function finishReasonLabel(reason: string): string {
   return FINISH_REASON_LABELS[reason] ?? reason
 }
 
-// 正文 = completionTokens − reasoningTokens，两项均非 null 时计算，否则「—」
-function bodyTokensOf(call: LlmCallRecord): string {
+// 正文 = completionTokens − reasoningTokens（feat-A012 复验 A/B）：完整等式 左端字段名 + 右端代入求值，不可算时「—」
+function bodyTokensEquationOf(call: LlmCallRecord): string {
   if (call.completionTokens != null && call.reasoningTokens != null) {
-    return formatTokens(call.completionTokens - call.reasoningTokens)
+    return `${formatTokens(call.completionTokens)} − ${formatTokens(call.reasoningTokens)} = ${formatTokens(call.completionTokens - call.reasoningTokens)}`
   }
   return '—'
-}
-
-// 正文推导过程（feat-A012 验收 5）：代入 completionTokens − reasoningTokens，缺项不展示
-function bodyTokensDerivationOf(call: LlmCallRecord): string {
-  if (call.completionTokens != null && call.reasoningTokens != null) {
-    return `（${formatTokens(call.completionTokens)} − ${formatTokens(call.reasoningTokens)}）`
-  }
-  return ''
 }
 
 function truncateText(text: string, max: number): string {
@@ -698,13 +690,13 @@ function tryParseJson(raw: string): unknown {
 
 const columns = [
   { key: 'time', title: '时间', width: 165 },
-  { key: 'logType', title: '类型', width: 150 },
-  { key: 'userInput', title: '用户输入', width: 200, ellipsis: true },
+  { key: 'logType', title: '类型', width: 80 },
+  { key: 'userInput', title: '用户输入', width: 240, ellipsis: true },
   { key: 'domain', title: '域', width: 110 },
   { key: 'status', title: '状态', width: 150 },
-  { key: 'durations', title: '耗时', width: 110 },
-  { key: 'tokens', title: 'Token（输入/输出）', width: 220 },
-  { key: 'actions', title: '操作', width: 80 },
+  { key: 'durations', title: '耗时', width: 80 },
+  { key: 'tokens', title: 'Token（输入/输出）', width: 180, align: 'center' },
+  { key: 'actions', title: '操作', width: 100, align: 'center' },
 ]
 
 const llmColumns = [
@@ -1053,7 +1045,15 @@ function onRefreshStats() {
 function renderChart(data: TokenStatsData) {
   if (!chartEl.value) return
   chart ??= initChart(chartEl.value)
-  const labels = data.buckets.map((bucket) => bucket.bucket.replace('T', ' '))
+  // x 轴标签：区间已在标题给出，轴只留必要部分（feat-A012 复验 E1）——按天 MM-DD，按小时 HH:mm
+  const labels = data.buckets.map((bucket) => {
+    const raw = bucket.bucket
+    if (granularity.value === 'day') {
+      return raw.length >= 10 ? raw.slice(5, 10) : raw
+    }
+    const timeMatch = raw.match(/[T ](\d{2}:\d{2})/)
+    return timeMatch ? timeMatch[1] : raw
+  })
   const cached = data.buckets.map((bucket) => bucket.cachedTokens ?? 0)
   // 未缓存 = 输入 − 缓存，两段之和恒等于该桶输入；历史 null 计 0；单桶异常（缓存>输入）未缓存段兜底 0，不出现负值柱
   const uncached = data.buckets.map((bucket) => Math.max(0, (bucket.inputTokens ?? 0) - (bucket.cachedTokens ?? 0)))

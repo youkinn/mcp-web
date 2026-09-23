@@ -279,13 +279,13 @@ const view = computed(() => buildDiagnosticsView(props.diagnostics, props.citati
 
 const scoreColumns = [
   { key: 'rank', title: '排名', width: 120 },
-  { key: 'chunkId', title: 'chunkId', width: 210 },
+  { key: 'chunkId', title: 'chunkId', width: 115 },
   { key: 'chapter', title: '回目', width: 430 },
   { key: 'bm25Norm', title: 'BM25归一化', width: 130, align: 'center' },
   { key: 'vectorMap', title: '向量映射', width: 100, align: 'center' },
   { key: 'labelHit', title: '标签命中', width: 100, align: 'center' },
   { key: 'finalScore', title: '最终分', width: 80, align: 'center' },
-  { key: 'sources', title: '来源', width: 180, align: 'center' },
+  { key: 'sources', title: '来源', width: 200, align: 'center' },
   { key: 'injected', title: '进注入视图', width: 130, align: 'center' },
   { key: 'cited', title: '被引用', width: 90, align: 'center' },
   { key: 'actions', title: '操作', width: 80, align: 'center' },
@@ -434,6 +434,7 @@ function onCopyChunkId(record: ScoreRowView) {
 
 .diag-source-tag {
   margin: 2px 2px 0 0;
+  font-size: 12px;
 }
 
 /* 第 N+1 名 */
