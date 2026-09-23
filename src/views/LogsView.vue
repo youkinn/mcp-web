@@ -87,19 +87,12 @@
                 <template v-if="column.key === 'time'">{{ formatTime(record.serverReceivedAt) }}</template>
 
                 <template v-else-if="column.key === 'logType'">
-                  <div class="type-cell">
+                  <a-tooltip :open="typeBadgeTitle(record) ? undefined : false" placement="top">
+                    <template #title>
+                      <div class="line-tooltip">{{ typeBadgeTitle(record) }}</div>
+                    </template>
                     <a-tag class="log-type-tag">{{ LOG_TYPE_LABELS[record.logType] ?? record.logType }}</a-tag>
-                    <div v-if="record.routeSource != null || record.hasRetry === true" class="type-badges">
-                      <a-tooltip v-if="record.routeSource != null" placement="top">
-                        <template #title>{{ routeSourceLabel(record.routeSource) }}</template>
-                        <span class="route-badge">{{ routeSourceIcon(record.routeSource) }}</span>
-                      </a-tooltip>
-                      <a-tooltip v-if="record.hasRetry === true" placement="top">
-                        <template #title>存在变参重试（attempt=2）</template>
-                        <span class="retry-badge">⟳ 重试</span>
-                      </a-tooltip>
-                    </div>
-                  </div>
+                  </a-tooltip>
                 </template>
 
                 <template v-else-if="column.key === 'userInput'">
@@ -112,27 +105,17 @@
                 <template v-else-if="column.key === 'domain'">{{ record.domain || '—' }}</template>
 
                 <template v-else-if="column.key === 'status'">
-                  <div class="status-cell">
-                    <a-tooltip v-if="record.status === 'failed'" placement="topLeft">
-                      <template #title>{{ errorDetailText(record) }}</template>
-                      <div class="status-line">
-                        <a-tag color="error">失败</a-tag>
-                        <span class="status-code-text">{{ record.responseCode }}</span>
-                      </div>
-                    </a-tooltip>
-                    <a-tag v-else color="success">成功</a-tag>
-                  </div>
+                  <a-tooltip v-if="record.status === 'failed'" placement="topLeft">
+                    <template #title>{{ errorDetailText(record) }}</template>
+                    <a-tag color="error">失败</a-tag>
+                  </a-tooltip>
+                  <a-tag v-else color="success">成功</a-tag>
                 </template>
                 <template v-else-if="column.key === 'durations'">
                   <a-tooltip placement="topLeft">
                     <template #title>
-                      <div class="dur-tooltip">
-                        <div>总 {{ formatDuration(record.durations.total) }}</div>
-                        <div>前端 {{ formatDuration(record.durations.frontend) }}</div>
-                        <div>总台 {{ formatDuration(record.durations.server) }}</div>
-                        <div>LLM {{ formatDuration(record.durations.llm) }}</div>
-                        <div>工具 {{ formatDuration(record.durations.tool) }}</div>
-                        <div>队列等待 {{ formatDuration(record.durations.queueWait) }}</div>
+                      <div class="line-tooltip">
+                        <div v-for="line in durationTooltipLines(record)" :key="line.text" :class="{ 'line-tooltip-indent': line.indent }">{{ line.text }}</div>
                       </div>
                     </template>
                     <div class="dur-total">{{ formatDuration(record.durations.total) }}</div>
@@ -195,17 +178,20 @@
                             <span class="llm-seq">#{{ call.seq }}</span> {{ call.stage }}
                           </template>
                           <template v-else-if="column.key === 'model'">
-                            {{ call.model }}
-                            <div v-if="call.finishReason" class="sub-meta">finish: {{ call.finishReason }}</div>
+                            <a-tooltip v-if="call.finishReason" placement="topLeft">
+                              <template #title>finish_reason：{{ finishReasonLabel(call.finishReason) }}</template>
+                              <span>{{ call.model }}</span>
+                            </a-tooltip>
+                            <span v-else>{{ call.model }}</span>
                           </template>
                           <template v-else-if="column.key === 'inputTokens'">
                             <a-tooltip v-if="call.inputBreakdown" placement="topLeft">
                               <template #title>
                                 <div class="token-tooltip">
                                   <div class="token-tooltip-title">输入分段（估算）</div>
-                                  <div>system {{ formatTokens(call.inputBreakdown.system) }}</div>
-                                  <div>user {{ formatTokens(call.inputBreakdown.user) }}</div>
-                                  <div>injected {{ formatTokens(call.inputBreakdown.injected) }}</div>
+                                  <div>系统提示（system） {{ formatTokens(call.inputBreakdown.system) }}</div>
+                                  <div>用户输入（user） {{ formatTokens(call.inputBreakdown.user) }}</div>
+                                  <div>检索注入（injected） {{ formatTokens(call.inputBreakdown.injected) }}</div>
                                 </div>
                               </template>
                               <span class="token-cell">{{ formatTokens(call.promptTokens) }}</span>
@@ -216,9 +202,10 @@
                             <a-tooltip v-if="call.reasoningTokens != null || call.maxTokens != null" placement="topLeft">
                               <template #title>
                                 <div class="token-tooltip">
-                                  <div>思考 {{ formatTokens(call.reasoningTokens) }}</div>
-                                  <div>正文 {{ bodyTokensOf(call) }}</div>
-                                  <div>上限 {{ formatTokens(call.maxTokens) }}</div>
+                                  <div class="token-tooltip-title">输出 Token = 思考 + 正文</div>
+                                  <div v-if="call.reasoningTokens != null">思考 {{ formatTokens(call.reasoningTokens) }}</div>
+                                  <div>正文 {{ bodyTokensOf(call) }}{{ bodyTokensDerivationOf(call) }}</div>
+                                  <div v-if="call.maxTokens != null">上限（max_tokens）{{ formatTokens(call.maxTokens) }}</div>
                                 </div>
                               </template>
                               <span class="token-cell">{{ formatTokens(call.completionTokens) }}</span>
@@ -455,8 +442,7 @@ function formatDuration(ms: number | null | undefined): string {
 
 function formatTokens(n: number | null | undefined): string {
   if (n === null || n === undefined) return '—'
-  if (n >= 1000) return `${parseFloat((n / 1000).toFixed(1))}k`
-  return String(n)
+  return n.toLocaleString('en-US')
 }
 
 const CALLER_LABELS: Record<string, string> = {
@@ -491,25 +477,52 @@ const ROUTE_SOURCE_LABELS: Record<RouteSource, string> = {
   free: '自由路由（free）',
 }
 
-const ROUTE_SOURCE_ICONS: Record<RouteSource, string> = {
-  label: '🏷️',
-  keyword: '🔑',
-  vector: '🔍',
-  classify: '📂',
-  free: '🪶',
-}
-
 function routeSourceLabel(source: RouteSource | null | undefined): string {
   return source ? ROUTE_SOURCE_LABELS[source] : '—'
 }
 
-function routeSourceIcon(source: RouteSource | null | undefined): string {
-  return source ? ROUTE_SOURCE_ICONS[source] : ''
+// 类型列 hover（feat-A012 验收 1）：有哪项列哪项，两项都无返回空串（不弹浮层）
+function typeBadgeTitle(record: LogListItem): string {
+  const lines: string[] = []
+  if (record.routeSource != null) lines.push(`路由来源：${routeSourceLabel(record.routeSource)}`)
+  if (record.hasRetry === true) lines.push('重试：存在变参重试（attempt=2）')
+  return lines.join('\n')
+}
+
+// 耗时列 hover（feat-A012 验收 3）：总台 = 服务端墙钟（server_responded_at − server_received_at），
+// LLM / 工具为各自调用累计和，不保证与总台相等；差值 ≥ 100ms 时补「其他」行
+interface DurTooltipLine { indent: boolean; text: string }
+function durationTooltipLines(record: LogListItem): DurTooltipLine[] {
+  const d = record.durations
+  const lines: DurTooltipLine[] = [
+    { indent: false, text: `总 ${formatDuration(d.total)}（= 前端 + 队列等待 + 总台）` },
+    { indent: false, text: `前端 ${formatDuration(d.frontend)}` },
+    { indent: false, text: `队列等待 ${formatDuration(d.queueWait)}` },
+    { indent: false, text: `总台 ${formatDuration(d.server)}（服务端墙钟）` },
+    { indent: true, text: `LLM ${formatDuration(d.llm)}` },
+    { indent: true, text: `工具 ${formatDuration(d.tool)}` },
+  ]
+  const llmToolSum = (d.llm ?? 0) + (d.tool ?? 0)
+  lines.push({ indent: true, text: `LLM + 工具 ${formatDuration(llmToolSum)}` })
+  if (Math.abs((d.server ?? 0) - llmToolSum) >= 100) {
+    lines.push({ indent: false, text: `其他 ${formatDuration((d.server ?? 0) - llmToolSum)}（路由 / 落库等）` })
+  }
+  return lines
 }
 
 function errorDetailText(record: LogListItem): string {
   const base = `异常 ${record.responseCode}`
   return record.errorMessage ? `${base}：${record.errorMessage}` : base
+}
+
+const FINISH_REASON_LABELS: Record<string, string> = {
+  stop: '正常结束',
+  tool_calls: '请求工具',
+  length: '触达上限',
+}
+
+function finishReasonLabel(reason: string): string {
+  return FINISH_REASON_LABELS[reason] ?? reason
 }
 
 // 正文 = completionTokens − reasoningTokens，两项均非 null 时计算，否则「—」
@@ -518,6 +531,14 @@ function bodyTokensOf(call: LlmCallRecord): string {
     return formatTokens(call.completionTokens - call.reasoningTokens)
   }
   return '—'
+}
+
+// 正文推导过程（feat-A012 验收 5）：代入 completionTokens − reasoningTokens，缺项不展示
+function bodyTokensDerivationOf(call: LlmCallRecord): string {
+  if (call.completionTokens != null && call.reasoningTokens != null) {
+    return `（${formatTokens(call.completionTokens)} − ${formatTokens(call.reasoningTokens)}）`
+  }
+  return ''
 }
 
 function truncateText(text: string, max: number): string {
@@ -1040,7 +1061,7 @@ function renderChart(data: TokenStatsData) {
     {
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
       legend: {
-        data: ['缓存命中', '未缓存', '输出 Token'],
+        data: ['缓存输入', '未缓存输入', '输出'],
         top: 0,
         textStyle: { color: '#40544a' },
       },
@@ -1056,32 +1077,33 @@ function renderChart(data: TokenStatsData) {
         type: 'value',
         name: 'Token',
         nameTextStyle: { color: '#849189' },
-        axisLabel: { color: '#718078' },
+        axisLabel: { color: '#718078', formatter: (value: number) => value.toLocaleString('en-US') },
         splitLine: { lineStyle: { color: '#edf0eb' } },
       },
       series: [
         {
-          name: '缓存命中',
+          name: '缓存输入',
           type: 'bar',
-          stack: 'input',
+          stack: 'total',
           barMaxWidth: 26,
           data: cached,
-          itemStyle: { color: '#2e7d57' },
+          itemStyle: { color: '#8ab6e8' },
         },
         {
-          name: '未缓存',
+          name: '未缓存输入',
           type: 'bar',
-          stack: 'input',
+          stack: 'total',
           barMaxWidth: 26,
           data: uncached,
-          itemStyle: { color: '#9fd1b5', borderRadius: [4, 4, 0, 0] },
+          itemStyle: { color: '#8a63d2' },
         },
         {
-          name: '输出 Token',
+          name: '输出',
           type: 'bar',
+          stack: 'total',
           barMaxWidth: 26,
           data: data.buckets.map((bucket) => bucket.outputTokens),
-          itemStyle: { color: '#b17837', borderRadius: [4, 4, 0, 0] },
+          itemStyle: { color: '#2e7d57', borderRadius: [4, 4, 0, 0] },
         },
       ],
     },
@@ -1276,43 +1298,6 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
-.type-cell {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-
-.type-badges {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.route-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  border-radius: 10px;
-  background: #eef3eb;
-  font-size: 12px;
-  cursor: help;
-}
-
-.retry-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 6px;
-  border-radius: 8px;
-  background: #fff3e0;
-  color: #b17837;
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: help;
-}
 
 .cell-ellipsis {
   display: block;
@@ -1322,17 +1307,6 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.status-line {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.status-code-text {
-  color: #94a099;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
 
 .token-cell {
   cursor: help;
@@ -1547,13 +1521,14 @@ onBeforeUnmount(() => {
 </style>
 
 <style>
-.dur-tooltip {
+.line-tooltip {
   font-size: 12px;
   line-height: 1.9;
+  white-space: pre-line;
 }
 
-.dur-tooltip div span {
-  font-variant-numeric: tabular-nums;
+.line-tooltip-indent {
+  padding-left: 1em;
 }
 
 .token-tooltip {

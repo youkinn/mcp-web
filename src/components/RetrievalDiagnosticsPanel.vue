@@ -66,7 +66,7 @@
               <a-tag v-if="record.inTopN" color="green" size="small">top-N</a-tag>
             </template>
             <template v-else-if="column.key === 'chunkId'">
-              <a class="chunk-id-link" @click="onOpenReader(record)">{{ record.chunkId }}</a>
+              <a class="chunk-id-link" @click="onOpenReader(record)">{{ record.chunkIdText }}</a>
             </template>
             <template v-else-if="column.key === 'chapter'">{{ record.chapterText }}</template>
             <template v-else-if="column.key === 'bm25Norm'">
@@ -82,13 +82,7 @@
               </a-tooltip>
             </template>
             <template v-else-if="column.key === 'labelHit'">
-              <!-- 命中标签可能多个，tooltip 内逐行展示（hitLabelsTitle 为换行拼接）；无命中标签时不弹浮层 -->
-              <a-tooltip :open="record.hitLabelsTitle ? undefined : false" placement="topLeft">
-                <template #title>
-                  <div class="diag-tooltip-lines">{{ record.hitLabelsTitle }}</div>
-                </template>
-                <a-tag :color="record.labelHit ? 'gold' : 'default'" size="small">{{ record.labelHit ? '是' : '否' }}</a-tag>
-              </a-tooltip>
+              <a-tag :color="record.labelHit ? 'gold' : 'default'" size="small">{{ record.labelHit ? '是' : '否' }}</a-tag>
             </template>
             <template v-else-if="column.key === 'finalScore'">
               <!-- 浮层逐行给出 finalScore 算式代入过程（finalScoreTitle 为换行拼接），免除手算 -->
@@ -100,15 +94,16 @@
               </a-tooltip>
             </template>
             <template v-else-if="column.key === 'sources'">
-              <a-tag
-                v-for="source in record.sources"
-                :key="source.text"
-                :color="source.color"
-                size="small"
-                class="diag-source-tag"
-              >
-                {{ source.text }}
-              </a-tag>
+              <template v-for="source in record.sources" :key="source.text">
+                <!-- 命中标签 tooltip 移到来源列「标签」tag 上（feat-A012 验收 6.2），标签 tag 仅 sources 含 label 时出现 -->
+                <a-tooltip v-if="source.text === '标签' && record.hitLabelsTitle" placement="topLeft">
+                  <template #title>
+                    <div class="diag-tooltip-lines">{{ record.hitLabelsTitle }}</div>
+                  </template>
+                  <a-tag :color="source.color" size="small" class="diag-source-tag">{{ source.text }}</a-tag>
+                </a-tooltip>
+                <a-tag v-else :color="source.color" size="small" class="diag-source-tag">{{ source.text }}</a-tag>
+              </template>
             </template>
             <template v-else-if="column.key === 'injected'">
               <a-tag :color="record.injectedText === '是' ? 'gold' : 'default'" size="small">{{ record.injectedText }}</a-tag>
