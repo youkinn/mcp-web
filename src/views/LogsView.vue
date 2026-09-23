@@ -87,7 +87,19 @@
                 <template v-if="column.key === 'time'">{{ formatTime(record.serverReceivedAt) }}</template>
 
                 <template v-else-if="column.key === 'logType'">
-                  <a-tag class="log-type-tag">{{ LOG_TYPE_LABELS[record.logType] ?? record.logType }}</a-tag>
+                  <div class="type-cell">
+                    <a-tag class="log-type-tag">{{ LOG_TYPE_LABELS[record.logType] ?? record.logType }}</a-tag>
+                    <div v-if="record.routeSource != null || record.hasRetry === true" class="type-badges">
+                      <a-tooltip v-if="record.routeSource != null" placement="top">
+                        <template #title>{{ routeSourceLabel(record.routeSource) }}</template>
+                        <span class="route-badge">{{ routeSourceIcon(record.routeSource) }}</span>
+                      </a-tooltip>
+                      <a-tooltip v-if="record.hasRetry === true" placement="top">
+                        <template #title>存在变参重试（attempt=2）</template>
+                        <span class="retry-badge">⟳ 重试</span>
+                      </a-tooltip>
+                    </div>
+                  </div>
                 </template>
 
                 <template v-else-if="column.key === 'userInput'">
@@ -101,15 +113,14 @@
 
                 <template v-else-if="column.key === 'status'">
                   <div class="status-cell">
-                    <div class="status-line">
-                      <a-tag :color="record.status === 'failed' ? 'error' : 'success'">
-                        {{ record.status === 'failed' ? '失败' : '成功' }}
-                      </a-tag>
-                      <a-tooltip v-if="record.status === 'failed'" placement="topLeft">
-                        <template #title>{{ record.errorMessage || '响应码 ' + record.responseCode }}</template>
-                        <a-tag color="error">{{ record.responseCode }}</a-tag>
-                      </a-tooltip>
-                    </div>
+                    <a-tooltip v-if="record.status === 'failed'" placement="topLeft">
+                      <template #title>{{ errorDetailText(record) }}</template>
+                      <div class="status-line">
+                        <a-tag color="error">失败</a-tag>
+                        <span class="status-code-text">{{ record.responseCode }}</span>
+                      </div>
+                    </a-tooltip>
+                    <a-tag v-else color="success">成功</a-tag>
                   </div>
                 </template>
                 <template v-else-if="column.key === 'durations'">
@@ -187,8 +198,32 @@
                             {{ call.model }}
                             <div v-if="call.finishReason" class="sub-meta">finish: {{ call.finishReason }}</div>
                           </template>
-                          <template v-else-if="column.key === 'tokens'">
-                            {{ formatTokens(call.promptTokens) }} / {{ formatTokens(call.completionTokens) }}
+                          <template v-else-if="column.key === 'inputTokens'">
+                            <a-tooltip v-if="call.inputBreakdown" placement="topLeft">
+                              <template #title>
+                                <div class="token-tooltip">
+                                  <div class="token-tooltip-title">输入分段（估算）</div>
+                                  <div>system {{ formatTokens(call.inputBreakdown.system) }}</div>
+                                  <div>user {{ formatTokens(call.inputBreakdown.user) }}</div>
+                                  <div>injected {{ formatTokens(call.inputBreakdown.injected) }}</div>
+                                </div>
+                              </template>
+                              <span class="token-cell">{{ formatTokens(call.promptTokens) }}</span>
+                            </a-tooltip>
+                            <span v-else class="token-cell">{{ formatTokens(call.promptTokens) }}</span>
+                          </template>
+                          <template v-else-if="column.key === 'outputTokens'">
+                            <a-tooltip v-if="call.reasoningTokens != null || call.maxTokens != null" placement="topLeft">
+                              <template #title>
+                                <div class="token-tooltip">
+                                  <div>思考 {{ formatTokens(call.reasoningTokens) }}</div>
+                                  <div>正文 {{ bodyTokensOf(call) }}</div>
+                                  <div>上限 {{ formatTokens(call.maxTokens) }}</div>
+                                </div>
+                              </template>
+                              <span class="token-cell">{{ formatTokens(call.completionTokens) }}</span>
+                            </a-tooltip>
+                            <span v-else class="token-cell">{{ formatTokens(call.completionTokens) }}</span>
                           </template>
                           <template v-else-if="column.key === 'cachedTokens'">
                             {{ formatTokens(call.cachedTokens) }}
@@ -317,6 +352,10 @@
                 <span v-if="statsRangeLabel" class="stats-range-label">{{ statsRangeLabel }}</span>
                 <span class="stats-granularity-hint">日界：Asia/Shanghai · 实际粒度：{{ granularity === 'day' ? '按天' : '按小时' }}</span>
               </div>
+              <div v-if="statsData" class="stats-summary">
+                <span class="summary-item">区间总 Token：{{ formatTokens(statsSummary.totalTokens) }}</span>
+                <span class="summary-item">缓存命中率：{{ statsSummary.hitRateText }}</span>
+              </div>
             </div>
             <a-spin :spinning="statsLoading">
               <div ref="chartEl" class="chart-canvas"></div>
@@ -377,8 +416,10 @@ import {
   fetchTokenStats,
   getErrorMessage,
   type LogDetail,
+  type LlmCallRecord,
   type LogListItem,
   type LogListQuery,
+  type RouteSource,
   type TokenStatsData,
 } from '../api/client'
 import RetrievalDiagnosticsPanel from '../components/RetrievalDiagnosticsPanel.vue'
@@ -438,6 +479,45 @@ function callerStageLabel(call: { caller?: string | null; stage?: string | null 
   if (caller && CALLER_LABELS[caller]) parts.push(CALLER_LABELS[caller])
   if (stage && STAGE_LABELS[stage]) parts.push(STAGE_LABELS[stage])
   return parts.length ? parts.join(' · ') : '—'
+}
+
+// ── 路由来源 / 重试标记（feat-A012）──
+
+const ROUTE_SOURCE_LABELS: Record<RouteSource, string> = {
+  label: '标签路由（label）',
+  keyword: '关键词路由（keyword）',
+  vector: '向量路由（vector）',
+  classify: '分类路由（classify）',
+  free: '自由路由（free）',
+}
+
+const ROUTE_SOURCE_ICONS: Record<RouteSource, string> = {
+  label: '🏷️',
+  keyword: '🔑',
+  vector: '🔍',
+  classify: '📂',
+  free: '🪶',
+}
+
+function routeSourceLabel(source: RouteSource | null | undefined): string {
+  return source ? ROUTE_SOURCE_LABELS[source] : '—'
+}
+
+function routeSourceIcon(source: RouteSource | null | undefined): string {
+  return source ? ROUTE_SOURCE_ICONS[source] : ''
+}
+
+function errorDetailText(record: LogListItem): string {
+  const base = `异常 ${record.responseCode}`
+  return record.errorMessage ? `${base}：${record.errorMessage}` : base
+}
+
+// 正文 = completionTokens − reasoningTokens，两项均非 null 时计算，否则「—」
+function bodyTokensOf(call: LlmCallRecord): string {
+  if (call.completionTokens != null && call.reasoningTokens != null) {
+    return formatTokens(call.completionTokens - call.reasoningTokens)
+  }
+  return '—'
 }
 
 function truncateText(text: string, max: number): string {
@@ -597,7 +677,7 @@ function tryParseJson(raw: string): unknown {
 
 const columns = [
   { key: 'time', title: '时间', width: 165 },
-  { key: 'logType', title: '类型', width: 90 },
+  { key: 'logType', title: '类型', width: 150 },
   { key: 'userInput', title: '用户输入', width: 200, ellipsis: true },
   { key: 'domain', title: '域', width: 110 },
   { key: 'status', title: '状态', width: 150 },
@@ -609,7 +689,8 @@ const columns = [
 const llmColumns = [
   { key: 'stage', title: '阶段', width: 120 },
   { key: 'model', title: '模型', width: 170 },
-  { key: 'tokens', title: 'Token（输入/输出）', width: 150 },
+  { key: 'inputTokens', title: '输入 Token', width: 130 },
+  { key: 'outputTokens', title: '输出 Token', width: 130 },
   { key: 'cachedTokens', title: '缓存命中', width: 100 },
   { key: 'time', title: '耗时', width: 110 },
   { key: 'status', title: '状态', width: 140 },
@@ -866,6 +947,22 @@ const statsLoading = ref(false)
 const chartEl = ref<HTMLElement | null>(null)
 let chart: EChartsType | null = null
 
+// 区间合计读数（feat-A012）：总 Token = 输入+输出合计；命中率 = 缓存合计/输入合计，输入合计 0 显示「—」
+const statsSummary = computed(() => {
+  const buckets = statsData.value?.buckets ?? []
+  let inputTotal = 0
+  let outputTotal = 0
+  let cachedTotal = 0
+  buckets.forEach((bucket) => {
+    inputTotal += bucket.inputTokens ?? 0
+    outputTotal += bucket.outputTokens ?? 0
+    cachedTotal += bucket.cachedTokens ?? 0
+  })
+  const totalTokens = inputTotal + outputTotal
+  const hitRateText = inputTotal > 0 ? `${((cachedTotal / inputTotal) * 100).toFixed(1)}%` : '—'
+  return { totalTokens, hitRateText }
+})
+
 function isValidCustomRange(): boolean {
   return Array.isArray(customRange.value) && customRange.value.length === 2 && !!customRange.value[0] && !!customRange.value[1]
 }
@@ -936,11 +1033,14 @@ function renderChart(data: TokenStatsData) {
   if (!chartEl.value) return
   chart ??= initChart(chartEl.value)
   const labels = data.buckets.map((bucket) => bucket.bucket.replace('T', ' '))
+  const cached = data.buckets.map((bucket) => bucket.cachedTokens ?? 0)
+  // 未缓存 = 输入 − 缓存，两段之和恒等于该桶输入；历史 null 计 0；单桶异常（缓存>输入）未缓存段兜底 0，不出现负值柱
+  const uncached = data.buckets.map((bucket) => Math.max(0, (bucket.inputTokens ?? 0) - (bucket.cachedTokens ?? 0)))
   chart.setOption(
     {
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
       legend: {
-        data: ['输入 Token', '输出 Token'],
+        data: ['缓存命中', '未缓存', '输出 Token'],
         top: 0,
         textStyle: { color: '#40544a' },
       },
@@ -961,11 +1061,20 @@ function renderChart(data: TokenStatsData) {
       },
       series: [
         {
-          name: '输入 Token',
+          name: '缓存命中',
           type: 'bar',
+          stack: 'input',
           barMaxWidth: 26,
-          data: data.buckets.map((bucket) => bucket.inputTokens),
-          itemStyle: { color: '#163c32', borderRadius: [4, 4, 0, 0] },
+          data: cached,
+          itemStyle: { color: '#2e7d57' },
+        },
+        {
+          name: '未缓存',
+          type: 'bar',
+          stack: 'input',
+          barMaxWidth: 26,
+          data: uncached,
+          itemStyle: { color: '#9fd1b5', borderRadius: [4, 4, 0, 0] },
         },
         {
           name: '输出 Token',
@@ -1167,6 +1276,44 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.type-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.type-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.route-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  background: #eef3eb;
+  font-size: 12px;
+  cursor: help;
+}
+
+.retry-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: #fff3e0;
+  color: #b17837;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: help;
+}
+
 .cell-ellipsis {
   display: block;
   max-width: 200px;
@@ -1179,6 +1326,17 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.status-code-text {
+  color: #94a099;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.token-cell {
+  cursor: help;
+  font-variant-numeric: tabular-nums;
 }
 
 .dur-total {
@@ -1334,6 +1492,19 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
+.stats-summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.summary-item {
+  color: #40544a;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .stats-granularity-hint {
   margin-left: 10px;
   color: #94a099;
@@ -1383,5 +1554,15 @@ onBeforeUnmount(() => {
 
 .dur-tooltip div span {
   font-variant-numeric: tabular-nums;
+}
+
+.token-tooltip {
+  font-size: 12px;
+  line-height: 1.9;
+}
+
+.token-tooltip-title {
+  margin-bottom: 2px;
+  font-weight: 600;
 }
 </style>
