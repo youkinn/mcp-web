@@ -434,7 +434,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { init as initChart, use } from 'echarts/core'
 import { BarChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
@@ -1085,6 +1085,19 @@ function defaultGranularity(startAt: number, endAt: number): 'day' | 'hour' {
 }
 
 const activeTab = ref<'list' | 'stats'>('list')
+const LOGS_TABS = ['list', 'stats'] as const
+const LOGS_ACTIVE_TAB_KEY = 'logs-active-tab'
+
+// 初始 tab（test.md 第 11 条）：优先 route.query.tab（合法用之、显式但非法回退 list），
+// 其次 sessionStorage 最近 tab，最后默认 list
+function readInitialLogsTab(routeTab: unknown): 'list' | 'stats' {
+  if (typeof routeTab === 'string') {
+    return (LOGS_TABS as readonly string[]).includes(routeTab) ? (routeTab as 'list' | 'stats') : 'list'
+  }
+  const saved = sessionStorage.getItem(LOGS_ACTIVE_TAB_KEY)
+  return saved && (LOGS_TABS as readonly string[]).includes(saved) ? (saved as 'list' | 'stats') : 'list'
+}
+
 const rangePreset = ref<'today' | '7d' | '30d' | 'custom'>('today')
 const customRange = ref<string[]>([])
 const granularity = ref<'day' | 'hour'>('day')
@@ -1267,6 +1280,8 @@ function onWindowResize() {
 }
 
 watch(activeTab, async (tab) => {
+  sessionStorage.setItem(LOGS_ACTIVE_TAB_KEY, tab)
+  void router.replace({ path: '/logs', query: { ...route.query, tab } })
   await nextTick()
   if (tab !== 'stats') return
   if (statsData.value) {
@@ -1278,8 +1293,10 @@ watch(activeTab, async (tab) => {
 })
 
 const route = useRoute()
+const router = useRouter()
 
 onMounted(async () => {
+  activeTab.value = readInitialLogsTab(route.query.tab)
   const today = shanghaiDateString(Date.now())
   customRange.value = [today, today]
   window.addEventListener('resize', onWindowResize)

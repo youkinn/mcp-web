@@ -10,7 +10,7 @@
           </span>
         </RouterLink>
         <div class="header-actions">
-          <RouterLink to="/logs">
+          <RouterLink :to="logsBackTarget">
             <a-button size="small">← 返回日志</a-button>
           </RouterLink>
           <RouterLink to="/chat">
@@ -158,6 +158,7 @@
                 <template v-else-if="column.key === 'similarity'">
                   <span class="tab-num">{{ formatSimilarity(record.similarity) }}</span>
                 </template>
+                <template v-else-if="column.key === 'hitLine'">{{ formatHitLine(record.hitLine) }}</template>
                 <template v-else-if="column.key === 'marked'">
                   <a-tag :color="record.marked ? 'gold' : 'default'">{{ record.marked ? '已标记' : '未标记' }}</a-tag>
                 </template>
@@ -267,11 +268,28 @@
                 <template v-else-if="column.key === 'similarity'">
                   <span class="tab-num">{{ formatSimilarity(record.similarity) }}</span>
                 </template>
+                <template v-else-if="column.key === 'hitLine'">{{ formatHitLine(record.hitLine) }}</template>
                 <template v-else-if="column.key === 'status'">
                   <a-tag :color="distRowsStatus(record).color">{{ distRowsStatus(record).text }}</a-tag>
                 </template>
                 <template v-else-if="column.key === 'marked'">
                   <a-tag :color="record.marked ? 'gold' : 'default'">{{ record.marked ? '已标记' : '未标记' }}</a-tag>
+                </template>
+                <template v-else-if="column.key === 'actions'">
+                  <a-button
+                    v-if="record.marked"
+                    size="small"
+                    :loading="distRowsMarkBusy[record.cacheLogId]"
+                    @click="onDistRowUnmark(record)"
+                  >取消标记</a-button>
+                  <a-button
+                    v-else
+                    size="small"
+                    type="primary"
+                    ghost
+                    :loading="distRowsMarkBusy[record.cacheLogId]"
+                    @click="onDistRowMark(record)"
+                  >标记为误判</a-button>
                 </template>
               </template>
             </a-table>
@@ -357,12 +375,11 @@
                     :loading="gzMarkBusy[record.cacheLogId]"
                     @click="onGzMark(record)"
                   >标记为误判</a-button>
-                  <a-button size="small" class="copy-id-btn" @click="onCopyGzTraceId(record.traceId)">复制</a-button>
+                  <a-button size="small" class="copy-id-btn gz-copy-btn" @click="onCopyGzTraceId(record.traceId)">复制</a-button>
                 </template>
               </template>
             </a-table>
             <div class="gz-tip">口径：「差点命中谁」不去重，按次一行；从最相近条目原文可直接定位可删除的池条目（对照概览条目列表）。</div>
-            <div class="gz-tip gz-hitline-note">命中线 {{ formatHitLine(overview?.hitLine ?? 0) }} 为全局唯一基准</div>
           </div>
         </a-tab-pane>
       </a-tabs>
@@ -503,6 +520,14 @@ function rangeLabel(preset: string, customRange: string[]): string {
 const activeTab = ref<'overview' | 'distribution' | 'grayzone'>('overview')
 const router = useRouter()
 const route = useRoute()
+
+const LOGS_ACTIVE_TAB_KEY = 'logs-active-tab'
+
+// 返回日志时带上最近使用的 logs tab（test.md 第 11 条）
+const logsBackTarget = computed(() => {
+  const saved = sessionStorage.getItem(LOGS_ACTIVE_TAB_KEY)
+  return saved === 'stats' ? { path: '/logs', query: { tab: 'stats' } } : '/logs'
+})
 
 const CACHE_TABS = ['overview', 'distribution', 'grayzone'] as const
 
@@ -841,14 +866,17 @@ const distRowsPageNo = ref(1)
 const distRowsPageSize = ref(20)
 const distRowsData = ref<SimilarityRowData | null>(null)
 const distRowsLoading = ref(false)
+const distRowsMarkBusy = reactive<Record<number, boolean>>({})
 
 const distRowsColumns = [
-  { key: 'userQuery', title: '用户输入原文', width: 240, ellipsis: true },
-  { key: 'nearestQuery', title: '匹配条目原文', width: 240, ellipsis: true },
-  { key: 'similarity', title: '相似度', width: 100, align: 'center' },
-  { key: 'status', title: '命中状态', width: 150, align: 'center' },
-  { key: 'marked', title: '误判标记', width: 100, align: 'center' },
-  { key: 'time', title: '时间', width: 170 },
+  { key: 'userQuery', title: '用户输入原文', width: 200, ellipsis: true },
+  { key: 'nearestQuery', title: '匹配条目原文', width: 200, ellipsis: true },
+  { key: 'similarity', title: '相似度', width: 80, align: 'center' },
+  { key: 'hitLine', title: '命中线', width: 80, align: 'center' },
+  { key: 'status', title: '命中状态', width: 120, align: 'center' },
+  { key: 'marked', title: '误判标记', width: 80, align: 'center' },
+  { key: 'time', title: '时间', width: 150 },
+  { key: 'actions', title: '操作', width: 110, align: 'center' },
 ]
 
 const distRowsTitle = computed(() => {
@@ -903,6 +931,32 @@ function distRowsStatus(record: SimilarityRowItem): SimilarityHitBadge {
   return similarityHitBadge(similarityHitStatus(record.hit, record.similarity, record.hitLine, record.tieHits))
 }
 
+async function onDistRowMark(row: SimilarityRowItem) {
+  distRowsMarkBusy[row.cacheLogId] = true
+  try {
+    await markMisjudge(row.cacheLogId)
+    message.success('已标记为误判')
+    await loadDistRows()
+  } catch (err) {
+    message.error(getErrorMessage(err))
+  } finally {
+    distRowsMarkBusy[row.cacheLogId] = false
+  }
+}
+
+async function onDistRowUnmark(row: SimilarityRowItem) {
+  distRowsMarkBusy[row.cacheLogId] = true
+  try {
+    await unmarkMisjudge(row.cacheLogId)
+    message.success('已取消误判标记')
+    await loadDistRows()
+  } catch (err) {
+    message.error(getErrorMessage(err))
+  } finally {
+    distRowsMarkBusy[row.cacheLogId] = false
+  }
+}
+
 function onDistChartClick(event: unknown) {
   const chart = distChart
   if (!chart || !distData.value) return
@@ -927,6 +981,7 @@ const gzColumns = [
   { key: 'userQuery', title: '用户输入原文', width: 240, ellipsis: true },
   { key: 'nearestQuery', title: '最相近条目原文', width: 240, ellipsis: true },
   { key: 'similarity', title: '相似度', width: 100, align: 'center' },
+  { key: 'hitLine', title: '命中线', width: 90, align: 'center' },
   { key: 'marked', title: '误判标记', width: 100, align: 'center' },
   { key: 'time', title: '时间', width: 170 },
   { key: 'actions', title: '操作', width: 210, align: 'center' },
@@ -1518,6 +1573,10 @@ onBeforeUnmount(() => {
   margin-right: 6px;
 }
 
+.gz-copy-btn {
+  margin-left: 8px;
+}
+
 .hit-count-link {
   color: #2e6d56;
   text-decoration: underline;
@@ -1540,11 +1599,6 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
-.gz-hitline-note {
-  margin-top: 6px;
-  color: #8a988f;
-  font-size: 12px;
-}
 
 @media (max-width: 900px) {
   .page-shell {
