@@ -181,7 +181,7 @@
                             <span class="cache-meta-value">{{ cacheOf(record)?.userQuery }}</span>
                           </div>
                           <div class="cache-meta-row">
-                            <span class="cache-meta-label">命中条目原文</span>
+                            <span class="cache-meta-label">{{ cacheOf(record)?.hit === true ? '命中条目原文' : '最相近条目原文' }}</span>
                             <span class="cache-meta-value" :class="{ 'cache-nearest-em': cacheOf(record)?.reason === 'miss-gray' }">{{ cacheOf(record)?.nearestQuery || '—' }}</span>
                           </div>
                           <div class="cache-meta-row">

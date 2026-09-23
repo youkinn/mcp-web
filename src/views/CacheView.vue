@@ -106,7 +106,8 @@
                   <span class="cell-ellipsis">{{ record.queryText }}</span>
                 </template>
                 <template v-else-if="column.key === 'hitCount'">
-                  <span class="tab-num">{{ record.hitCount }}</span>
+                  <a v-if="record.hitCount > 0" class="hit-count-link" @click="onOpenEntryHits(record)">{{ record.hitCount }}</a>
+                  <span v-else class="tab-num">0</span>
                 </template>
                 <template v-else-if="column.key === 'lastAccessAt'">{{ formatTime(record.lastAccessAt) }}</template>
                 <template v-else-if="column.key === 'createdAt'">{{ formatTime(record.createdAt) }}</template>
@@ -125,6 +126,44 @@
               </template>
             </a-table>
           </div>
+
+          <a-modal
+            v-model:open="entryHitsOpen"
+            :title="entryHitsTitle"
+            :footer="null"
+            width="900px"
+            :destroy-on-close="true"
+          >
+            <a-table
+              :columns="entryHitsColumns"
+              :data-source="entryHitsData?.list ?? []"
+              :loading="entryHitsLoading"
+              :row-key="(record: CacheEntryHitItem) => record.traceId"
+              :pagination="entryHitsPagination"
+              :scroll="{ x: 'max-content' }"
+              size="small"
+              @change="onEntryHitsTableChange"
+            >
+              <template #emptyText>
+                <a-empty description="该条目暂无命中记录" />
+              </template>
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'time'">{{ formatTime(record.createdAt) }}</template>
+                <template v-else-if="column.key === 'userQuery'">
+                  <a-tooltip placement="topLeft">
+                    <template #title>{{ record.userQuery }}</template>
+                    <span class="cell-ellipsis">{{ record.userQuery }}</span>
+                  </a-tooltip>
+                </template>
+                <template v-else-if="column.key === 'similarity'">
+                  <span class="tab-num">{{ formatSimilarity(record.similarity) }}</span>
+                </template>
+                <template v-else-if="column.key === 'marked'">
+                  <a-tag :color="record.marked ? 'gold' : 'default'">{{ record.marked ? '已标记' : '未标记' }}</a-tag>
+                </template>
+              </template>
+            </a-table>
+          </a-modal>
         </a-tab-pane>
 
         <a-tab-pane key="distribution">
@@ -213,13 +252,10 @@
             >
               <template #bodyCell="{ column, record }">
                 <template v-if="column.key === 'time'">{{ formatTime(record.createdAt) }}</template>
-                <template v-else-if="column.key === 'traceId'">
-                  <a class="gz-trace-link" @click="goLogDetail(record.traceId)">{{ record.traceId }}</a>
-                </template>
                 <template v-else-if="column.key === 'userQuery'">
                   <a-tooltip placement="topLeft">
                     <template #title>{{ record.userQuery }}</template>
-                    <span class="cell-ellipsis">{{ record.userQuery }}</span>
+                    <span class="cell-ellipsis gz-query-link" @click="goLogDetail(record.traceId)">{{ record.userQuery }}</span>
                   </a-tooltip>
                 </template>
                 <template v-else-if="column.key === 'nearestQuery'">
@@ -266,8 +302,8 @@
                 </a-select>
               </div>
               <div class="query-item">
-                <span class="query-label">标记人</span>
-                <a-input v-model:value="gzMarkedBy" class="gz-mark-input" placeholder="缺省「控制台」" />
+                <span class="query-label">相似度</span>
+                <a-input v-model:value="gzSimilarity" class="gz-sim-input" placeholder="如 0.85~0.9（0~1），留空不限" @pressEnter="onGzSearch" />
               </div>
               <div class="query-actions">
                 <a-button type="primary" :loading="gzLoading" @click="onGzSearch">查 询</a-button>
@@ -287,14 +323,11 @@
               @change="onGzTableChange"
             >
               <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'traceId'">
-                  <a class="gz-trace-link" @click="goLogDetail(record.traceId)">{{ record.traceId }}</a>
-                </template>
-                <template v-else-if="column.key === 'time'">{{ formatTime(record.createdAt) }}</template>
+                <template v-if="column.key === 'time'">{{ formatTime(record.createdAt) }}</template>
                 <template v-else-if="column.key === 'userQuery'">
                   <a-tooltip placement="topLeft">
                     <template #title>{{ record.userQuery }}</template>
-                    <span class="cell-ellipsis">{{ record.userQuery }}</span>
+                    <span class="cell-ellipsis gz-query-link" @click="goLogDetail(record.traceId)">{{ record.userQuery }}</span>
                   </a-tooltip>
                 </template>
                 <template v-else-if="column.key === 'nearestQuery'">
@@ -306,7 +339,6 @@
                 <template v-else-if="column.key === 'similarity'">
                   <span class="tab-num">{{ formatSimilarity(record.similarity) }}</span>
                 </template>
-                <template v-else-if="column.key === 'hitLine'">{{ formatHitLine(record.hitLine) }}</template>
                 <template v-else-if="column.key === 'marked'">
                   <a-tag :color="record.marked ? 'gold' : 'default'">{{ record.marked ? '已标记' : '未标记' }}</a-tag>
                 </template>
@@ -325,11 +357,12 @@
                     :loading="gzMarkBusy[record.cacheLogId]"
                     @click="onGzMark(record)"
                   >标记为误判</a-button>
-                  <a-button size="small" class="gz-view-btn" @click="goLogDetail(record.traceId)">查看日志</a-button>
+                  <a-button size="small" class="copy-id-btn" @click="onCopyGzTraceId(record.traceId)">复制</a-button>
                 </template>
               </template>
             </a-table>
             <div class="gz-tip">口径：「差点命中谁」不去重，按次一行；从最相近条目原文可直接定位可删除的池条目（对照概览条目列表）。</div>
+            <div class="gz-tip gz-hitline-note">命中线 {{ formatHitLine(overview?.hitLine ?? 0) }} 为全局唯一基准</div>
           </div>
         </a-tab-pane>
       </a-tabs>
@@ -340,7 +373,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { init as initChart, use } from 'echarts/core'
 import { BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
@@ -354,6 +387,7 @@ import {
   fetchCacheEntries,
   fetchCacheOverview,
   fetchCacheStatus,
+  fetchEntryHits,
   fetchGrayzone,
   fetchMisjudge,
   fetchSimilarityDistribution,
@@ -364,6 +398,8 @@ import {
   updateCacheStatus,
   type CacheEntryItem,
   type CacheEntriesData,
+  type CacheEntryHitItem,
+  type CacheEntryHitsData,
   type CacheOverview,
   type GrayzoneData,
   type GrayzoneItem,
@@ -372,6 +408,7 @@ import {
   type SimilarityRowData,
   type SimilarityRowItem,
 } from '../api/client'
+import { copyText } from '../utils/clipboard'
 import {
   bucketZone,
   CACHE_ZONE_COLORS,
@@ -465,6 +502,30 @@ function rangeLabel(preset: string, customRange: string[]): string {
 
 const activeTab = ref<'overview' | 'distribution' | 'grayzone'>('overview')
 const router = useRouter()
+const route = useRoute()
+
+const CACHE_TABS = ['overview', 'distribution', 'grayzone'] as const
+
+function readActiveTabFromQuery(): 'overview' | 'distribution' | 'grayzone' {
+  const raw = route.query.tab
+  return typeof raw === 'string' && (CACHE_TABS as readonly string[]).includes(raw) ? (raw as 'overview' | 'distribution' | 'grayzone') : 'overview'
+}
+
+function readPositiveInt(value: unknown, fallback: number): number {
+  const num = typeof value === 'string' ? Number(value) : NaN
+  return Number.isInteger(num) && num > 0 ? num : fallback
+}
+
+// 切换 tab / 灰色区翻页时用 replace 同步 query（不膨胀历史栈）
+function syncRouteQuery() {
+  const query: Record<string, string> = {}
+  if (activeTab.value !== 'overview') query.tab = activeTab.value
+  if (activeTab.value === 'grayzone') {
+    query.pageNo = String(gzPageNo.value)
+    query.pageSize = String(gzPageSize.value)
+  }
+  void router.replace({ path: '/cache', query })
+}
 
 const overview = ref<CacheOverview | null>(null)
 const statusEnabled = ref(false)
@@ -591,13 +652,68 @@ async function onDeleteEntry(id: number) {
 }
 
 async function onCopyEntryId(id: number) {
+  void copyText(String(id)).then((ok) => {
+    if (ok) {
+      message.success('已复制条目 ID')
+    } else {
+      message.error('复制失败，请手动复制')
+    }
+  })
+}
+
+// ── 条目命中记录（缓存概览 hitCount 下钻）──
+
+const entryHitsOpen = ref(false)
+const entryHitsLoading = ref(false)
+const entryHitsData = ref<CacheEntryHitsData | null>(null)
+const entryHitsEntryId = ref<number | null>(null)
+const entryHitsQueryText = ref('')
+const entryHitsPageNo = ref(1)
+const entryHitsPageSize = ref(10)
+
+const entryHitsColumns = [
+  { key: 'time', title: '时间', width: 170 },
+  { key: 'userQuery', title: '用户输入原文', width: 240, ellipsis: true },
+  { key: 'similarity', title: '相似度', width: 100, align: 'center' },
+  { key: 'marked', title: '误判标记', width: 100, align: 'center' },
+]
+
+const entryHitsTitle = computed(() => (entryHitsEntryId.value === null ? '' : '命中记录（' + entryHitsQueryText.value + '）'))
+
+function onOpenEntryHits(record: CacheEntryItem) {
+  entryHitsEntryId.value = record.id
+  entryHitsQueryText.value = record.queryText
+  entryHitsPageNo.value = 1
+  entryHitsOpen.value = true
+  void loadEntryHits()
+}
+
+async function loadEntryHits() {
+  if (entryHitsEntryId.value === null) return
+  entryHitsLoading.value = true
   try {
-    await navigator.clipboard.writeText(String(id))
-    message.success('已复制条目 ID')
-  } catch {
-    message.error('复制失败，请手动复制')
+    entryHitsData.value = await fetchEntryHits(entryHitsEntryId.value, entryHitsPageNo.value, entryHitsPageSize.value)
+  } catch (err) {
+    message.error(getErrorMessage(err))
+  } finally {
+    entryHitsLoading.value = false
   }
 }
+
+function onEntryHitsTableChange(pagination: { current?: number; pageSize?: number }) {
+  entryHitsPageNo.value = pagination.current ?? 1
+  entryHitsPageSize.value = pagination.pageSize ?? 10
+  void loadEntryHits()
+}
+
+const entryHitsPagination = computed(() => ({
+  current: entryHitsPageNo.value,
+  pageSize: entryHitsPageSize.value,
+  total: entryHitsData.value?.total ?? 0,
+  showSizeChanger: true,
+  showTotal: (t: number) => '共 ' + t + ' 条',
+  buildOptionText: (opt: { value: string | number }) => opt.value + '条/页',
+}))
 
 // ── 相似度分布 + 误判率 ──
 
@@ -727,13 +843,12 @@ const distRowsData = ref<SimilarityRowData | null>(null)
 const distRowsLoading = ref(false)
 
 const distRowsColumns = [
-  { key: 'time', title: '时间', width: 170 },
-  { key: 'traceId', title: 'traceId', width: 240 },
   { key: 'userQuery', title: '用户输入原文', width: 240, ellipsis: true },
   { key: 'nearestQuery', title: '匹配条目原文', width: 240, ellipsis: true },
   { key: 'similarity', title: '相似度', width: 100, align: 'center' },
   { key: 'status', title: '命中状态', width: 150, align: 'center' },
   { key: 'marked', title: '误判标记', width: 100, align: 'center' },
+  { key: 'time', title: '时间', width: 170 },
 ]
 
 const distRowsTitle = computed(() => {
@@ -809,28 +924,47 @@ function onDistChartClick(event: unknown) {
 // ── 灰色区清单 ──
 
 const gzColumns = [
-  { key: 'traceId', title: 'traceId', width: 240 },
-  { key: 'time', title: '时间', width: 170 },
   { key: 'userQuery', title: '用户输入原文', width: 240, ellipsis: true },
   { key: 'nearestQuery', title: '最相近条目原文', width: 240, ellipsis: true },
   { key: 'similarity', title: '相似度', width: 100, align: 'center' },
-  { key: 'hitLine', title: '命中线', width: 90, align: 'center' },
   { key: 'marked', title: '误判标记', width: 100, align: 'center' },
+  { key: 'time', title: '时间', width: 170 },
   { key: 'actions', title: '操作', width: 210, align: 'center' },
 ]
 
 const gzRangePreset = ref<'today' | '7d' | '30d' | 'custom'>('7d')
 const gzCustomRange = ref<string[]>([])
 const gzMarked = ref<'all' | 'marked' | 'unmarked'>('all')
-const gzMarkedBy = ref('')
+const gzSimilarity = ref('')
 const gzData = ref<GrayzoneData | null>(null)
 const gzLoading = ref(false)
 const gzPageNo = ref(1)
 const gzPageSize = ref(10)
 const gzMarkBusy = reactive<Record<number, boolean>>({})
+// 解析相似度区间输入：支持「下限~上限」（半角波浪线分隔），可省一边或写单个下限；空返回空对象，非法返回 null
+
+function parseGzSimilarity(): { similarityMin?: number; similarityMax?: number } | null {
+  const text = gzSimilarity.value.trim().replace(/～/g, '\x7E')
+  if (!text) return {}
+  const parts = text.split('\x7E').map((part) => part.trim()).filter(Boolean)
+  if (parts.length === 0) return {}
+  if (parts.length > 2) return null
+  const nums = parts.map((part) => Number(part))
+  if (nums.some((num) => !Number.isFinite(num))) return null
+  const min = nums[0]!
+  const max = nums.length === 2 ? nums[1]! : undefined
+  if (min < 0 || min > 1 || (max !== undefined && (max < 0 || max > 1))) return null
+  if (max !== undefined && min > max) return null
+  return max === undefined ? { similarityMin: min } : { similarityMin: min, similarityMax: max }
+}
 
 async function loadGrayzone() {
   const range = currentRange(gzRangePreset.value, gzCustomRange.value)
+  const similarity = parseGzSimilarity()
+  if (similarity === null) {
+    message.warning('相似度区间非法：需为 0~1 内的两个数且下限 ≤ 上限，如 0.85~0.9')
+    return
+  }
   gzLoading.value = true
   try {
     gzData.value = await fetchGrayzone({
@@ -839,6 +973,7 @@ async function loadGrayzone() {
       pageNo: gzPageNo.value,
       pageSize: gzPageSize.value,
       marked: gzMarked.value,
+      ...similarity,
     })
   } catch (err) {
     message.error(getErrorMessage(err))
@@ -895,7 +1030,7 @@ const gzPagination = computed(() => ({
 async function onGzMark(row: GrayzoneItem) {
   gzMarkBusy[row.cacheLogId] = true
   try {
-    await markMisjudge(row.cacheLogId, gzMarkedBy.value.trim() || '控制台')
+    await markMisjudge(row.cacheLogId)
     message.success('已标记为误判')
     await loadGrayzone()
   } catch (err) {
@@ -922,6 +1057,16 @@ function goLogDetail(traceId: string) {
   void router.push({ path: '/logs', query: { traceId } })
 }
 
+function onCopyGzTraceId(traceId: string) {
+  void copyText(traceId).then((ok) => {
+    if (ok) {
+      message.success('已复制 traceId')
+    } else {
+      message.error('复制失败，请手动选择复制')
+    }
+  })
+}
+
 // ── Tab 懒加载 + 生命周期 ──
 
 watch(activeTab, async (tab) => {
@@ -940,6 +1085,11 @@ watch(activeTab, async (tab) => {
       void Promise.all([loadOverview(), loadEntries()])
     }
   }
+  syncRouteQuery()
+})
+
+watch([gzPageNo, gzPageSize], () => {
+  if (activeTab.value === 'grayzone') syncRouteQuery()
 })
 
 function onWindowResize() {
@@ -950,6 +1100,9 @@ onMounted(async () => {
   const today = shanghaiDateString(Date.now())
   distCustomRange.value = [today, today]
   gzCustomRange.value = [today, today]
+  activeTab.value = readActiveTabFromQuery()
+  gzPageNo.value = readPositiveInt(route.query.pageNo, 1)
+  gzPageSize.value = readPositiveInt(route.query.pageSize, 10)
   window.addEventListener('resize', onWindowResize)
   await Promise.all([loadOverview(), loadEntries()])
 })
@@ -1347,17 +1500,17 @@ onBeforeUnmount(() => {
   width: 110px;
 }
 
-.gz-mark-input {
+.gz-sim-input {
   width: 180px;
 }
 
-.gz-trace-link {
+.gz-query-link {
   color: #2e6d56;
   text-decoration: underline;
   cursor: pointer;
 }
 
-.gz-trace-link:hover {
+.gz-query-link:hover {
   color: #b17837;
 }
 
@@ -1365,18 +1518,31 @@ onBeforeUnmount(() => {
   margin-right: 6px;
 }
 
+.hit-count-link {
+  color: #2e6d56;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.hit-count-link:hover {
+  color: #b17837;
+}
+
 .gz-nearest {
   color: #d48806;
   font-weight: 600;
 }
 
-.gz-view-btn {
-  margin-left: 6px;
-}
 
 .gz-tip {
   margin-top: 10px;
   color: #94a099;
+  font-size: 12px;
+}
+
+.gz-hitline-note {
+  margin-top: 6px;
+  color: #8a988f;
   font-size: 12px;
 }
 

@@ -227,6 +227,21 @@ export interface CacheEntriesData {
   pageSize: number
 }
 
+export interface CacheEntryHitItem {
+  traceId: string
+  userQuery: string
+  similarity: number | null
+  createdAt: number
+  marked: boolean
+}
+
+export interface CacheEntryHitsData {
+  list: CacheEntryHitItem[]
+  total: number
+  pageNo: number
+  pageSize: number
+}
+
 export interface CacheOverview {
   enabled: boolean
   hitLine: number
@@ -510,6 +525,10 @@ export interface GrayzoneQuery {
   pageNo?: number
   pageSize?: number
   marked?: 'all' | 'marked' | 'unmarked'
+  /** 相似度下限（含），仅填写时传 */
+  similarityMin?: number
+  /** 相似度上限（含），仅填写时传 */
+  similarityMax?: number
 }
 
 export interface SimilarityRowQuery {
@@ -550,6 +569,18 @@ export async function fetchCacheEntries(query: CacheEntriesQuery = {}): Promise<
   return unwrapData(data)
 }
 
+export async function fetchEntryHits(
+  entryId: number,
+  pageNo?: number,
+  pageSize?: number,
+): Promise<CacheEntryHitsData> {
+  const params: Record<string, string | number> = {}
+  if (pageNo !== undefined && pageNo > 0) params.pageNo = pageNo
+  if (pageSize !== undefined && pageSize > 0) params.pageSize = pageSize
+  const { data } = await apiClient.get<ApiResponse<CacheEntryHitsData>>(`/v1/cache/entries/${entryId}/hits`, { params })
+  return unwrapData(data)
+}
+
 export async function fetchCacheOverview(): Promise<CacheOverview> {
   const { data } = await apiClient.get<ApiResponse<CacheOverview>>('/v1/cache/overview')
   return unwrapData(data)
@@ -571,6 +602,8 @@ export async function fetchGrayzone(query: GrayzoneQuery): Promise<GrayzoneData>
   if (query.pageNo !== undefined && query.pageNo > 0) params.pageNo = query.pageNo
   if (query.pageSize !== undefined && query.pageSize > 0) params.pageSize = query.pageSize
   if (query.marked && query.marked !== 'all') params.marked = query.marked
+  if (query.similarityMin !== undefined && query.similarityMin !== null) params.similarityMin = query.similarityMin
+  if (query.similarityMax !== undefined && query.similarityMax !== null) params.similarityMax = query.similarityMax
   const { data } = await apiClient.get<ApiResponse<GrayzoneData>>('/v1/cache/grayzone', { params })
   return unwrapData(data)
 }
