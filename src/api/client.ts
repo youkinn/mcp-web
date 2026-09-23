@@ -19,6 +19,9 @@ export interface ChatData {
 
 // ── 链路日志（feat-A007）类型 ──
 
+/** 路由来源五分支（feat-A012）：label 标签 / keyword 关键词 / vector 向量 / classify 分类 / free 自由 */
+export type RouteSource = 'label' | 'keyword' | 'vector' | 'classify' | 'free'
+
 export interface LogDurations {
   frontend: number | null
   queueWait: number | null
@@ -39,6 +42,8 @@ export interface LogListItem {
   serverReceivedAt: number
   durations: LogDurations
   tokens: { input: number | null; output: number | null } | null
+  routeSource: RouteSource | null
+  hasRetry: boolean
 }
 
 export interface LogListData {
@@ -64,6 +69,16 @@ export interface LogDetailMain {
   answer: string | null
   citations: string | null
   createdAt: number
+  routeSource: RouteSource | null
+}
+
+/** 输入分段 token 估算（feat-A012）：本地启发式折算，与 prompt_tokens 不对账 */
+export interface InputBreakdown {
+  system: number
+  user: number
+  injected: number
+  history: number
+  tools: number
 }
 
 export interface LlmCallRecord {
@@ -78,6 +93,10 @@ export interface LlmCallRecord {
   promptTokens: number | null
   completionTokens: number | null
   cachedTokens: number | null
+  reasoningTokens: number | null
+  attempt: number | null
+  inputBreakdown: InputBreakdown | null
+  maxTokens: number | null
   finishReason: string | null
   status: 'success' | 'failed'
   errorMessage: string
@@ -165,6 +184,7 @@ export interface TokenBucket {
   bucket: string
   inputTokens: number
   outputTokens: number
+  cachedTokens: number
 }
 
 export interface TokenStatsData {

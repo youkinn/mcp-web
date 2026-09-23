@@ -11,6 +11,7 @@ import {
   buildScoreRows,
   buildSelfConsistency,
   citedTag,
+  displayChunkId,
   finalScoreFormula,
   formatScore,
   MERGED_CANDIDATES_HINT,
@@ -196,6 +197,15 @@ describe('分数整形（buildScoreRow / formatScore / boolText / sourceMeta）'
     assert.equal(row.citedText, '是')
     assert.equal(row.inTopN, false)
     assert.equal(buildScoreRow(fullDiagnostics.candidates[0], 10).inTopN, true)
+  })
+
+  it('chunkId 展示文本：去掉 sanguo-yanyi: 前缀，完整 chunkId 仍供点击 / 复制（feat-A012 验收 6.1）', () => {
+    const row = buildScoreRow(fullDiagnostics.candidates[0], fullDiagnostics.funnel.topN)
+    assert.equal(row.chunkId, 'sanguo-yanyi:0073:c0007')
+    assert.equal(row.chunkIdText, '0073:c0007')
+    assert.equal(displayChunkId('sanguo-yanyi:0005:c0018'), '0005:c0018')
+    // 非 sanguo 前缀原样展示（兜底不误删）
+    assert.equal(displayChunkId('other-domain:x'), 'other-domain:x')
   })
 
   it('标签命中列 tooltip：命中候选逐行拼接命中标签，未命中 / 历史 trace 无字段为空串', () => {

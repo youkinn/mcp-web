@@ -87,7 +87,12 @@
                 <template v-if="column.key === 'time'">{{ formatTime(record.serverReceivedAt) }}</template>
 
                 <template v-else-if="column.key === 'logType'">
-                  <a-tag class="log-type-tag">{{ LOG_TYPE_LABELS[record.logType] ?? record.logType }}</a-tag>
+                  <a-tooltip :open="typeBadgeTitle(record) ? undefined : false" placement="top">
+                    <template #title>
+                      <div class="line-tooltip">{{ typeBadgeTitle(record) }}</div>
+                    </template>
+                    <a-tag class="log-type-tag">{{ LOG_TYPE_LABELS[record.logType] ?? record.logType }}</a-tag>
+                  </a-tooltip>
                 </template>
 
                 <template v-else-if="column.key === 'userInput'">
@@ -100,28 +105,17 @@
                 <template v-else-if="column.key === 'domain'">{{ record.domain || '—' }}</template>
 
                 <template v-else-if="column.key === 'status'">
-                  <div class="status-cell">
-                    <div class="status-line">
-                      <a-tag :color="record.status === 'failed' ? 'error' : 'success'">
-                        {{ record.status === 'failed' ? '失败' : '成功' }}
-                      </a-tag>
-                      <a-tooltip v-if="record.status === 'failed'" placement="topLeft">
-                        <template #title>{{ record.errorMessage || '响应码 ' + record.responseCode }}</template>
-                        <a-tag color="error">{{ record.responseCode }}</a-tag>
-                      </a-tooltip>
-                    </div>
-                  </div>
+                  <a-tooltip v-if="record.status === 'failed'" placement="topLeft">
+                    <template #title>{{ errorDetailText(record) }}</template>
+                    <a-tag color="error">失败</a-tag>
+                  </a-tooltip>
+                  <a-tag v-else color="success">成功</a-tag>
                 </template>
                 <template v-else-if="column.key === 'durations'">
                   <a-tooltip placement="topLeft">
                     <template #title>
-                      <div class="dur-tooltip">
-                        <div>总 {{ formatDuration(record.durations.total) }}</div>
-                        <div>前端 {{ formatDuration(record.durations.frontend) }}</div>
-                        <div>总台 {{ formatDuration(record.durations.server) }}</div>
-                        <div>LLM {{ formatDuration(record.durations.llm) }}</div>
-                        <div>工具 {{ formatDuration(record.durations.tool) }}</div>
-                        <div>队列等待 {{ formatDuration(record.durations.queueWait) }}</div>
+                      <div class="line-tooltip">
+                        <div v-for="line in durationTooltipLines(record)" :key="line.text" :class="{ 'line-tooltip-indent': line.indent }">{{ line.text }}</div>
                       </div>
                     </template>
                     <div class="dur-total">{{ formatDuration(record.durations.total) }}</div>
@@ -184,11 +178,39 @@
                             <span class="llm-seq">#{{ call.seq }}</span> {{ call.stage }}
                           </template>
                           <template v-else-if="column.key === 'model'">
-                            {{ call.model }}
-                            <div v-if="call.finishReason" class="sub-meta">finish: {{ call.finishReason }}</div>
+                            <a-tooltip v-if="call.finishReason" placement="topLeft">
+                              <template #title>finish_reason：{{ finishReasonLabel(call.finishReason) }}</template>
+                              <span>{{ call.model }}</span>
+                            </a-tooltip>
+                            <span v-else>{{ call.model }}</span>
                           </template>
-                          <template v-else-if="column.key === 'tokens'">
-                            {{ formatTokens(call.promptTokens) }} / {{ formatTokens(call.completionTokens) }}
+                          <template v-else-if="column.key === 'inputTokens'">
+                            <a-tooltip v-if="call.inputBreakdown" placement="topLeft">
+                              <template #title>
+                                <div class="token-tooltip">
+                                  <div class="token-tooltip-title">输入分段（估算）</div>
+                                  <div>系统提示（system） {{ formatTokens(call.inputBreakdown.system) }}</div>
+                                  <div>用户输入（user） {{ formatTokens(call.inputBreakdown.user) }}</div>
+                                  <div>检索注入（injected） {{ formatTokens(call.inputBreakdown.injected) }}</div>
+                                </div>
+                              </template>
+                              <span class="token-cell">{{ formatTokens(call.promptTokens) }}</span>
+                            </a-tooltip>
+                            <span v-else class="token-cell">{{ formatTokens(call.promptTokens) }}</span>
+                          </template>
+                          <template v-else-if="column.key === 'outputTokens'">
+                            <a-tooltip v-if="call.reasoningTokens != null || call.maxTokens != null" placement="topLeft">
+                              <template #title>
+                                <div class="token-tooltip">
+                                  <div class="token-tooltip-title">输出 Token = 思考 + 正文</div>
+                                  <div v-if="call.reasoningTokens != null">思考（reasoningTokens） {{ formatTokens(call.reasoningTokens) }}</div>
+                                  <div>正文（completionTokens − reasoningTokens）= {{ bodyTokensEquationOf(call) }}</div>
+                                  <div v-if="call.maxTokens != null">上限（max_tokens）{{ formatTokens(call.maxTokens) }}</div>
+                                </div>
+                              </template>
+                              <span class="token-cell">{{ formatTokens(call.completionTokens) }}</span>
+                            </a-tooltip>
+                            <span v-else class="token-cell">{{ formatTokens(call.completionTokens) }}</span>
                           </template>
                           <template v-else-if="column.key === 'cachedTokens'">
                             {{ formatTokens(call.cachedTokens) }}
@@ -315,7 +337,11 @@
             <div class="stats-head">
               <div class="stats-range-info">
                 <span v-if="statsRangeLabel" class="stats-range-label">{{ statsRangeLabel }}</span>
-                <span class="stats-granularity-hint">日界：Asia/Shanghai · 实际粒度：{{ granularity === 'day' ? '按天' : '按小时' }}</span>
+                <span class="stats-granularity-hint">日界：上海时区（UTC+8） · 实际粒度：{{ granularity === 'day' ? '按天' : '按小时' }}</span>
+              </div>
+              <div v-if="statsData" class="stats-summary">
+                <span class="summary-item">区间总 Token：{{ formatTokens(statsSummary.totalTokens) }}</span>
+                <span class="summary-item">缓存命中率：{{ statsSummary.hitRateText }}</span>
               </div>
             </div>
             <a-spin :spinning="statsLoading">
@@ -377,8 +403,10 @@ import {
   fetchTokenStats,
   getErrorMessage,
   type LogDetail,
+  type LlmCallRecord,
   type LogListItem,
   type LogListQuery,
+  type RouteSource,
   type TokenStatsData,
 } from '../api/client'
 import RetrievalDiagnosticsPanel from '../components/RetrievalDiagnosticsPanel.vue'
@@ -414,8 +442,7 @@ function formatDuration(ms: number | null | undefined): string {
 
 function formatTokens(n: number | null | undefined): string {
   if (n === null || n === undefined) return '—'
-  if (n >= 1000) return `${parseFloat((n / 1000).toFixed(1))}k`
-  return String(n)
+  return n.toLocaleString('en-US')
 }
 
 const CALLER_LABELS: Record<string, string> = {
@@ -438,6 +465,72 @@ function callerStageLabel(call: { caller?: string | null; stage?: string | null 
   if (caller && CALLER_LABELS[caller]) parts.push(CALLER_LABELS[caller])
   if (stage && STAGE_LABELS[stage]) parts.push(STAGE_LABELS[stage])
   return parts.length ? parts.join(' · ') : '—'
+}
+
+// ── 路由来源 / 重试标记（feat-A012）──
+
+const ROUTE_SOURCE_LABELS: Record<RouteSource, string> = {
+  label: '标签路由（label）',
+  keyword: '关键词路由（keyword）',
+  vector: '向量路由（vector）',
+  classify: '分类路由（classify）',
+  free: '自由路由（free）',
+}
+
+function routeSourceLabel(source: RouteSource | null | undefined): string {
+  return source ? ROUTE_SOURCE_LABELS[source] : '—'
+}
+
+// 类型列 hover（feat-A012 验收 1）：有哪项列哪项，两项都无返回空串（不弹浮层）
+function typeBadgeTitle(record: LogListItem): string {
+  const lines: string[] = []
+  if (record.routeSource != null) lines.push(`路由来源：${routeSourceLabel(record.routeSource)}`)
+  if (record.hasRetry === true) lines.push('重试：存在变参重试（attempt=2）')
+  return lines.join('\n')
+}
+
+// 耗时列 hover（feat-A012 验收 3）：总台 = 服务端墙钟（server_responded_at − server_received_at），
+// LLM / 工具为各自调用累计和，不保证与总台相等；差值 ≥ 100ms 时补「其他」行
+interface DurTooltipLine { indent: boolean; text: string }
+function durationTooltipLines(record: LogListItem): DurTooltipLine[] {
+  const d = record.durations
+  const lines: DurTooltipLine[] = [
+    { indent: false, text: `总 ${formatDuration(d.total)}（= 前端 + 队列等待 + 总台）` },
+    { indent: false, text: `前端 ${formatDuration(d.frontend)}` },
+    { indent: false, text: `队列等待 ${formatDuration(d.queueWait)}` },
+    { indent: false, text: `总台 ${formatDuration(d.server)}（服务端墙钟）` },
+    { indent: true, text: `LLM ${formatDuration(d.llm)}` },
+    { indent: true, text: `工具 ${formatDuration(d.tool)}` },
+  ]
+  const llmToolSum = (d.llm ?? 0) + (d.tool ?? 0)
+  lines.push({ indent: true, text: `LLM + 工具 ${formatDuration(llmToolSum)}` })
+  if (Math.abs((d.server ?? 0) - llmToolSum) >= 100) {
+    lines.push({ indent: false, text: `其他 ${formatDuration((d.server ?? 0) - llmToolSum)}（路由 / 落库等）` })
+  }
+  return lines
+}
+
+function errorDetailText(record: LogListItem): string {
+  const base = `异常 ${record.responseCode}`
+  return record.errorMessage ? `${base}：${record.errorMessage}` : base
+}
+
+const FINISH_REASON_LABELS: Record<string, string> = {
+  stop: '正常结束',
+  tool_calls: '请求工具',
+  length: '触达上限',
+}
+
+function finishReasonLabel(reason: string): string {
+  return FINISH_REASON_LABELS[reason] ?? reason
+}
+
+// 正文 = completionTokens − reasoningTokens（feat-A012 复验 A/B）：完整等式 左端字段名 + 右端代入求值，不可算时「—」
+function bodyTokensEquationOf(call: LlmCallRecord): string {
+  if (call.completionTokens != null && call.reasoningTokens != null) {
+    return `${formatTokens(call.completionTokens)} − ${formatTokens(call.reasoningTokens)} = ${formatTokens(call.completionTokens - call.reasoningTokens)}`
+  }
+  return '—'
 }
 
 function truncateText(text: string, max: number): string {
@@ -597,19 +690,20 @@ function tryParseJson(raw: string): unknown {
 
 const columns = [
   { key: 'time', title: '时间', width: 165 },
-  { key: 'logType', title: '类型', width: 90 },
-  { key: 'userInput', title: '用户输入', width: 200, ellipsis: true },
+  { key: 'logType', title: '类型', width: 80 },
+  { key: 'userInput', title: '用户输入', width: 240, ellipsis: true },
   { key: 'domain', title: '域', width: 110 },
   { key: 'status', title: '状态', width: 150 },
-  { key: 'durations', title: '耗时', width: 110 },
-  { key: 'tokens', title: 'Token（输入/输出）', width: 220 },
-  { key: 'actions', title: '操作', width: 80 },
+  { key: 'durations', title: '耗时', width: 80 },
+  { key: 'tokens', title: 'Token（输入/输出）', width: 180, align: 'center' },
+  { key: 'actions', title: '操作', width: 100, align: 'center' },
 ]
 
 const llmColumns = [
   { key: 'stage', title: '阶段', width: 120 },
   { key: 'model', title: '模型', width: 170 },
-  { key: 'tokens', title: 'Token（输入/输出）', width: 150 },
+  { key: 'inputTokens', title: '输入 Token', width: 130 },
+  { key: 'outputTokens', title: '输出 Token', width: 130 },
   { key: 'cachedTokens', title: '缓存命中', width: 100 },
   { key: 'time', title: '耗时', width: 110 },
   { key: 'status', title: '状态', width: 140 },
@@ -866,6 +960,22 @@ const statsLoading = ref(false)
 const chartEl = ref<HTMLElement | null>(null)
 let chart: EChartsType | null = null
 
+// 区间合计读数（feat-A012）：总 Token = 输入+输出合计；命中率 = 缓存合计/输入合计，输入合计 0 显示「—」
+const statsSummary = computed(() => {
+  const buckets = statsData.value?.buckets ?? []
+  let inputTotal = 0
+  let outputTotal = 0
+  let cachedTotal = 0
+  buckets.forEach((bucket) => {
+    inputTotal += bucket.inputTokens ?? 0
+    outputTotal += bucket.outputTokens ?? 0
+    cachedTotal += bucket.cachedTokens ?? 0
+  })
+  const totalTokens = inputTotal + outputTotal
+  const hitRateText = inputTotal > 0 ? `${((cachedTotal / inputTotal) * 100).toFixed(1)}%` : '—'
+  return { totalTokens, hitRateText }
+})
+
 function isValidCustomRange(): boolean {
   return Array.isArray(customRange.value) && customRange.value.length === 2 && !!customRange.value[0] && !!customRange.value[1]
 }
@@ -935,12 +1045,23 @@ function onRefreshStats() {
 function renderChart(data: TokenStatsData) {
   if (!chartEl.value) return
   chart ??= initChart(chartEl.value)
-  const labels = data.buckets.map((bucket) => bucket.bucket.replace('T', ' '))
+  // x 轴标签：区间已在标题给出，轴只留必要部分（feat-A012 复验 E1）——按天 MM-DD，按小时 HH:mm
+  const labels = data.buckets.map((bucket) => {
+    const raw = bucket.bucket
+    if (granularity.value === 'day') {
+      return raw.length >= 10 ? raw.slice(5, 10) : raw
+    }
+    const timeMatch = raw.match(/[T ](\d{2}:\d{2})/)
+    return timeMatch ? timeMatch[1] : raw
+  })
+  const cached = data.buckets.map((bucket) => bucket.cachedTokens ?? 0)
+  // 未缓存 = 输入 − 缓存，两段之和恒等于该桶输入；历史 null 计 0；单桶异常（缓存>输入）未缓存段兜底 0，不出现负值柱
+  const uncached = data.buckets.map((bucket) => Math.max(0, (bucket.inputTokens ?? 0) - (bucket.cachedTokens ?? 0)))
   chart.setOption(
     {
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
       legend: {
-        data: ['输入 Token', '输出 Token'],
+        data: ['缓存输入', '未缓存输入', '输出'],
         top: 0,
         textStyle: { color: '#40544a' },
       },
@@ -956,23 +1077,33 @@ function renderChart(data: TokenStatsData) {
         type: 'value',
         name: 'Token',
         nameTextStyle: { color: '#849189' },
-        axisLabel: { color: '#718078' },
+        axisLabel: { color: '#718078', formatter: (value: number) => value.toLocaleString('en-US') },
         splitLine: { lineStyle: { color: '#edf0eb' } },
       },
       series: [
         {
-          name: '输入 Token',
+          name: '缓存输入',
           type: 'bar',
+          stack: 'total',
           barMaxWidth: 26,
-          data: data.buckets.map((bucket) => bucket.inputTokens),
-          itemStyle: { color: '#163c32', borderRadius: [4, 4, 0, 0] },
+          data: cached,
+          itemStyle: { color: '#8ab6e8' },
         },
         {
-          name: '输出 Token',
+          name: '未缓存输入',
           type: 'bar',
+          stack: 'total',
+          barMaxWidth: 26,
+          data: uncached,
+          itemStyle: { color: '#8a63d2' },
+        },
+        {
+          name: '输出',
+          type: 'bar',
+          stack: 'total',
           barMaxWidth: 26,
           data: data.buckets.map((bucket) => bucket.outputTokens),
-          itemStyle: { color: '#b17837', borderRadius: [4, 4, 0, 0] },
+          itemStyle: { color: '#2e7d57', borderRadius: [4, 4, 0, 0] },
         },
       ],
     },
@@ -1167,6 +1298,7 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+
 .cell-ellipsis {
   display: block;
   max-width: 200px;
@@ -1175,10 +1307,10 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.status-line {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+
+.token-cell {
+  cursor: help;
+  font-variant-numeric: tabular-nums;
 }
 
 .dur-total {
@@ -1334,6 +1466,19 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
+.stats-summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.summary-item {
+  color: #40544a;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .stats-granularity-hint {
   margin-left: 10px;
   color: #94a099;
@@ -1376,12 +1521,23 @@ onBeforeUnmount(() => {
 </style>
 
 <style>
-.dur-tooltip {
+.line-tooltip {
+  font-size: 12px;
+  line-height: 1.9;
+  white-space: pre-line;
+}
+
+.line-tooltip-indent {
+  padding-left: 1em;
+}
+
+.token-tooltip {
   font-size: 12px;
   line-height: 1.9;
 }
 
-.dur-tooltip div span {
-  font-variant-numeric: tabular-nums;
+.token-tooltip-title {
+  margin-bottom: 2px;
+  font-weight: 600;
 }
 </style>

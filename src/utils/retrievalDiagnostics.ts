@@ -48,6 +48,11 @@ export function boolText(value: boolean | null): string {
   return '—'
 }
 
+// chunkId 展示（feat-A012 验收 6.1）：仅展示层去掉 sanguo-yanyi: 前缀，点击 / 复制仍用完整值
+export function displayChunkId(chunkId: string): string {
+  return chunkId.replace(/^sanguo-yanyi:/, '')
+}
+
 // finalScore 算式代入（feat-A009 验收 6b）：hover 浮层逐行给出代入过程，免除手算
 const FINAL_SCORE_FORMULA_LINE =
   'finalScore = round3( 0.3 × BM25归一化 + 0.6 × 向量映射((cosine+1)/2) + 0.1 × 标签命中 )'
@@ -117,6 +122,8 @@ export interface ScoreRowView {
   key: string
   rank: number
   chunkId: string
+  /** chunkId 展示文本：去掉 sanguo-yanyi: 前缀；点击 / 复制仍用完整 chunkId（feat-A012 验收 6.1） */
+  chunkIdText: string
   /** 原始回号 / 回目，供原文阅读器入参（feat-A010：直接取 candidates 字段，不解析 chunkId 字符串） */
   chapter: number
   title: string
@@ -144,6 +151,7 @@ export function buildScoreRow(candidate: RetrievalCandidate, topN: number): Scor
     key: candidate.chunkId,
     rank: candidate.rank,
     chunkId: candidate.chunkId,
+    chunkIdText: displayChunkId(candidate.chunkId),
     chapter: candidate.chapter,
     title: candidate.title,
     chapterText: `第 ${candidate.chapter} 回 ${candidate.title}`,
