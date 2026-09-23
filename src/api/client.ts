@@ -277,6 +277,27 @@ export interface GrayzoneData {
   pageSize: number
 }
 
+/** 相似度分布桶明细行（bug-00027）：分布柱下钻；nearestQuery 命中=命中条目原文 / 未命中=最相近条目原文 / 池空=null；similarity 4 位小数，池空=null */
+export interface SimilarityRowItem {
+  cacheLogId: number
+  traceId: string
+  createdAt: number
+  userQuery: string
+  nearestQuery: string | null
+  similarity: number | null
+  hit: boolean
+  tieHits: number | null
+  hitLine: number
+  marked: boolean
+}
+
+export interface SimilarityRowData {
+  list: SimilarityRowItem[]
+  total: number
+  pageNo: number
+  pageSize: number
+}
+
 export interface MisjudgeData {
   hitTotal: number
   markedMisjudge: number
@@ -491,6 +512,15 @@ export interface GrayzoneQuery {
   marked?: 'all' | 'marked' | 'unmarked'
 }
 
+export interface SimilarityRowQuery {
+  startAt: number
+  endAt: number
+  /** 桶序号 0~49，等价相似度分布图 dataIndex */
+  bucketIndex: number
+  pageNo?: number
+  pageSize?: number
+}
+
 export async function fetchCacheStatus(): Promise<CacheStatus> {
   const { data } = await apiClient.get<ApiResponse<CacheStatus>>('/v1/cache/status')
   return unwrapData(data)
@@ -542,6 +572,18 @@ export async function fetchGrayzone(query: GrayzoneQuery): Promise<GrayzoneData>
   if (query.pageSize !== undefined && query.pageSize > 0) params.pageSize = query.pageSize
   if (query.marked && query.marked !== 'all') params.marked = query.marked
   const { data } = await apiClient.get<ApiResponse<GrayzoneData>>('/v1/cache/grayzone', { params })
+  return unwrapData(data)
+}
+
+export async function fetchSimilarityRows(query: SimilarityRowQuery): Promise<SimilarityRowData> {
+  const params: Record<string, string | number> = {
+    startAt: query.startAt,
+    endAt: query.endAt,
+    bucketIndex: query.bucketIndex,
+  }
+  if (query.pageNo !== undefined && query.pageNo > 0) params.pageNo = query.pageNo
+  if (query.pageSize !== undefined && query.pageSize > 0) params.pageSize = query.pageSize
+  const { data } = await apiClient.get<ApiResponse<SimilarityRowData>>('/v1/cache/stats/similarity-rows', { params })
   return unwrapData(data)
 }
 

@@ -1,4 +1,4 @@
-import type { CacheLogRecord } from '../api/client'
+import type { CacheLogRecord, CacheMissReason } from '../api/client'
 
 // ── 缓存判定展示：格式化与区间着色（feat-A013）──
 // 判定 / 格式化逻辑收敛在本模块，便于 node:test 单测；组件只做渲染（口径见接口文档 §3.7 / §3.10 / §4.2）。
@@ -64,6 +64,40 @@ export function cacheBadge(cache: CacheLogRecord): CacheBadge {
       return { text: '歧义，不命中', color: 'orange' }
     case 'miss-focus':
       return { text: '焦点拒判，不命中', color: 'orange' }
+  }
+}
+
+/** 相似度分布桶明细命中状态（bug-00027，§3.11 行派生口径）：hit=true 命中；hit=false 按 similarity 与 tieHits 细分低相似 / 灰色区 / 歧义 / 焦点拒判，返回复用 CacheMissReason 枚举 */
+export function similarityHitStatus(
+  hit: boolean,
+  similarity: number | null | undefined,
+  hitLine: number,
+  tieHits: number | null | undefined,
+): CacheMissReason {
+  if (hit) return 'hit'
+  if (similarity === null || similarity === undefined || similarity < CACHE_LOW_SIM_LINE) return 'miss-low'
+  if (similarity < hitLine) return 'miss-gray'
+  return tieHits !== null && tieHits !== undefined && tieHits >= 2 ? 'miss-tie' : 'miss-focus'
+}
+
+export interface SimilarityHitBadge {
+  text: string
+  color: string
+}
+
+/** 分布明细命中状态标签（bug-00027）：命中绿 / 低相似灰 / 灰色区黄 / 歧义与焦点拒判橙，色语义对齐 cacheBadge */
+export function similarityHitBadge(status: CacheMissReason): SimilarityHitBadge {
+  switch (status) {
+    case 'hit':
+      return { text: '命中', color: 'green' }
+    case 'miss-low':
+      return { text: '未命中·低相似', color: 'default' }
+    case 'miss-gray':
+      return { text: '未命中·灰色区', color: 'gold' }
+    case 'miss-tie':
+      return { text: '未命中·歧义', color: 'orange' }
+    case 'miss-focus':
+      return { text: '未命中·焦点拒判', color: 'orange' }
   }
 }
 

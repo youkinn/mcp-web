@@ -193,6 +193,53 @@
             </div>
             <div class="misjudge-note">{{ misjudgeData.note }}</div>
           </div>
+
+          <a-modal
+            v-model:open="distRowsOpen"
+            :title="distRowsTitle"
+            :footer="null"
+            width="1080px"
+            :destroy-on-close="true"
+          >
+            <a-table
+              :columns="distRowsColumns"
+              :data-source="distRowsData?.list ?? []"
+              :loading="distRowsLoading"
+              :row-key="(record: SimilarityRowItem) => record.cacheLogId"
+              :pagination="distRowsPagination"
+              :scroll="{ x: 'max-content' }"
+              size="small"
+              @change="onDistRowsTableChange"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'time'">{{ formatTime(record.createdAt) }}</template>
+                <template v-else-if="column.key === 'traceId'">
+                  <a class="gz-trace-link" @click="goLogDetail(record.traceId)">{{ record.traceId }}</a>
+                </template>
+                <template v-else-if="column.key === 'userQuery'">
+                  <a-tooltip placement="topLeft">
+                    <template #title>{{ record.userQuery }}</template>
+                    <span class="cell-ellipsis">{{ record.userQuery }}</span>
+                  </a-tooltip>
+                </template>
+                <template v-else-if="column.key === 'nearestQuery'">
+                  <a-tooltip placement="topLeft">
+                    <template #title>{{ record.nearestQuery ?? '—' }}</template>
+                    <span class="cell-ellipsis">{{ record.nearestQuery ?? '—' }}</span>
+                  </a-tooltip>
+                </template>
+                <template v-else-if="column.key === 'similarity'">
+                  <span class="tab-num">{{ formatSimilarity(record.similarity) }}</span>
+                </template>
+                <template v-else-if="column.key === 'status'">
+                  <a-tag :color="distRowsStatus(record).color">{{ distRowsStatus(record).text }}</a-tag>
+                </template>
+                <template v-else-if="column.key === 'marked'">
+                  <a-tag :color="record.marked ? 'gold' : 'default'">{{ record.marked ? '已标记' : '未标记' }}</a-tag>
+                </template>
+              </template>
+            </a-table>
+          </a-modal>
         </a-tab-pane>
 
         <a-tab-pane key="grayzone">
@@ -310,6 +357,7 @@ import {
   fetchGrayzone,
   fetchMisjudge,
   fetchSimilarityDistribution,
+  fetchSimilarityRows,
   getErrorMessage,
   markMisjudge,
   unmarkMisjudge,
@@ -321,12 +369,17 @@ import {
   type GrayzoneItem,
   type MisjudgeData,
   type SimilarityDistributionData,
+  type SimilarityRowData,
+  type SimilarityRowItem,
 } from '../api/client'
 import {
   bucketZone,
   CACHE_ZONE_COLORS,
   formatHitLine,
   formatSimilarity,
+  similarityHitBadge,
+  similarityHitStatus,
+  type SimilarityHitBadge,
 } from '../utils/cacheDiagnostics'
 
 // ── 通用格式化 ──
@@ -560,9 +613,13 @@ const distRangeLabel = computed(() =>
   distRangePreset.value === 'custom' ? rangeLabel(distRangePreset.value, distCustomRange.value) : rangeLabel(distRangePreset.value, []),
 )
 
+// 图表网格边距（与 setOption grid 同源，下钻点击用网格矩形做命中门禁）
+const DIST_GRID = { left: 56, right: 20, top: 24, bottom: 52 } as const
+
 function renderDistChart(data: SimilarityDistributionData) {
   if (!distChartEl.value) return
   distChart ??= initChart(distChartEl.value)
+  distChart.getZr().on('click', onDistChartClick)
   const labels = data.buckets.map((bucket, index) =>
     index === data.buckets.length - 1 ? '1.00' : bucket.lower.toFixed(2),
   )
@@ -582,7 +639,7 @@ function renderDistChart(data: SimilarityDistributionData) {
           return bucket ? `${bucket.lower.toFixed(2)} ~ ${bucket.upper.toFixed(2)}：<b>${bucket.count}</b> 次请求` : ''
         },
       },
-      grid: { left: 56, right: 20, top: 24, bottom: 52 },
+      grid: DIST_GRID,
       xAxis: {
         type: 'category',
         name: '相似度',
@@ -658,6 +715,95 @@ function onDistCustomRangeChange(_dates: unknown, dateStrings: [string, string])
 
 function onRefreshDist() {
   void loadDist()
+}
+
+// ── 相似度分布桶下钻明细（bug-00027）──
+
+const distRowsOpen = ref(false)
+const distRowsBucketIndex = ref<number | null>(null)
+const distRowsPageNo = ref(1)
+const distRowsPageSize = ref(20)
+const distRowsData = ref<SimilarityRowData | null>(null)
+const distRowsLoading = ref(false)
+
+const distRowsColumns = [
+  { key: 'time', title: '时间', width: 170 },
+  { key: 'traceId', title: 'traceId', width: 240 },
+  { key: 'userQuery', title: '用户输入原文', width: 240, ellipsis: true },
+  { key: 'nearestQuery', title: '匹配条目原文', width: 240, ellipsis: true },
+  { key: 'similarity', title: '相似度', width: 100, align: 'center' },
+  { key: 'status', title: '命中状态', width: 150, align: 'center' },
+  { key: 'marked', title: '误判标记', width: 100, align: 'center' },
+]
+
+const distRowsTitle = computed(() => {
+  if (distRowsBucketIndex.value === null || !distData.value) return ''
+  const bucket = distData.value.buckets[distRowsBucketIndex.value]
+  if (!bucket) return ''
+  return `相似度 ${bucket.lower.toFixed(2)} ~ ${bucket.upper.toFixed(2)} 请求明细`
+})
+
+const distRowsPagination = computed(() => ({
+  current: distRowsPageNo.value,
+  pageSize: distRowsPageSize.value,
+  total: distRowsData.value?.total ?? 0,
+  showSizeChanger: true,
+  showTotal: (t: number) => `共 ${t} 条`,
+  buildOptionText: (opt: { value: string | number }) => `${opt.value}条/页`,
+}))
+
+function openDistRows(bucketIndex: number) {
+  distRowsBucketIndex.value = bucketIndex
+  distRowsPageNo.value = 1
+  distRowsOpen.value = true
+  void loadDistRows()
+}
+
+async function loadDistRows() {
+  if (distRowsBucketIndex.value === null) return
+  const range = currentRange(distRangePreset.value, distCustomRange.value)
+  distRowsLoading.value = true
+  try {
+    distRowsData.value = await fetchSimilarityRows({
+      startAt: range.startAt,
+      endAt: range.endAt,
+      bucketIndex: distRowsBucketIndex.value,
+      pageNo: distRowsPageNo.value,
+      pageSize: distRowsPageSize.value,
+    })
+  } catch (err) {
+    message.error(getErrorMessage(err))
+  } finally {
+    distRowsLoading.value = false
+  }
+}
+
+function onDistRowsTableChange(pagination: { current?: number; pageSize?: number }) {
+  distRowsPageNo.value = pagination.current ?? 1
+  distRowsPageSize.value = pagination.pageSize ?? 20
+  void loadDistRows()
+}
+
+function distRowsStatus(record: SimilarityRowItem): SimilarityHitBadge {
+  return similarityHitBadge(similarityHitStatus(record.hit, record.similarity, record.hitLine, record.tieHits))
+}
+
+function onDistChartClick(event: unknown) {
+  const chart = distChart
+  if (!chart || !distData.value) return
+  const ev = event as { offsetX?: number; offsetY?: number }
+  if (typeof ev.offsetX !== 'number' || typeof ev.offsetY !== 'number') return
+  const inGrid =
+    ev.offsetX >= DIST_GRID.left &&
+    ev.offsetX < chart.getWidth() - DIST_GRID.right &&
+    ev.offsetY >= DIST_GRID.top &&
+    ev.offsetY < chart.getHeight() - DIST_GRID.bottom
+  if (!inGrid) return
+  const mapped = chart.convertFromPixel({ gridIndex: 0 }, [ev.offsetX, ev.offsetY])
+  const index = Array.isArray(mapped) ? Math.round(mapped[0]) : NaN
+  if (!Number.isNaN(index) && index >= 0 && index < distData.value.buckets.length) {
+    openDistRows(index)
+  }
 }
 
 // ── 灰色区清单 ──

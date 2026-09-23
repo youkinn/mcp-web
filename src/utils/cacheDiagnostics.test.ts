@@ -11,6 +11,8 @@ import {
   cacheHitTooltipText,
   cacheZone,
   formatHitLine,
+  similarityHitBadge,
+  similarityHitStatus,
   formatSimilarity,
 } from './cacheDiagnostics.ts'
 
@@ -173,5 +175,48 @@ describe('CACHE_REASON_LABELS reason 文案', () => {
     assert.equal(CACHE_REASON_LABELS.hit, '命中')
     assert.equal(CACHE_REASON_LABELS['miss-gray'], '灰色区未命中')
     assert.equal(CACHE_REASON_LABELS['miss-tie'], '歧义未命中')
+  })
+})
+
+// ── 相似度分布明细命中状态（bug-00027，§3.11 行派生口径）──
+
+describe('similarityHitStatus（分布明细命中状态派生）', () => {
+  it('hit=1 → 命中（不论 similarity / tieHits）', () => {
+    assert.equal(similarityHitStatus(true, 0.8512, HIT_LINE, 1), 'hit')
+    assert.equal(similarityHitStatus(true, null, HIT_LINE, null), 'hit')
+  })
+
+  it('hit=0 且 similarity===null（池空）→ 未命中·低相似', () => {
+    assert.equal(similarityHitStatus(false, null, HIT_LINE, null), 'miss-low')
+    assert.equal(similarityHitStatus(false, undefined, HIT_LINE, undefined), 'miss-low')
+  })
+
+  it('hit=0 且 similarity<0.80 → 未命中·低相似', () => {
+    assert.equal(similarityHitStatus(false, 0.79, HIT_LINE, 1), 'miss-low')
+    assert.equal(similarityHitStatus(false, 0.716, HIT_LINE, null), 'miss-low')
+    assert.equal(similarityHitStatus(false, 0, HIT_LINE, 2), 'miss-low')
+  })
+
+  it('hit=0 且 0.80 ≤ similarity < hitLine → 未命中·灰色区', () => {
+    assert.equal(similarityHitStatus(false, 0.8, HIT_LINE, 1), 'miss-gray')
+    assert.equal(similarityHitStatus(false, 0.9199, HIT_LINE, null), 'miss-gray')
+  })
+
+  it('hit=0 且 similarity ≥ hitLine：tieHits≥2 → 歧义；否则 → 焦点拒判', () => {
+    assert.equal(similarityHitStatus(false, 0.92, HIT_LINE, 2), 'miss-tie')
+    assert.equal(similarityHitStatus(false, 0.98, HIT_LINE, 5), 'miss-tie')
+    assert.equal(similarityHitStatus(false, HIT_LINE, HIT_LINE, 1), 'miss-focus')
+    assert.equal(similarityHitStatus(false, 0.9821, HIT_LINE, null), 'miss-focus')
+    assert.equal(similarityHitStatus(false, 1, HIT_LINE, 0), 'miss-focus')
+  })
+})
+
+describe('similarityHitBadge（标签文案与颜色）', () => {
+  it('五档文案符合 bug-00027 口径', () => {
+    assert.deepEqual(similarityHitBadge('hit'), { text: '命中', color: 'green' })
+    assert.deepEqual(similarityHitBadge('miss-low'), { text: '未命中·低相似', color: 'default' })
+    assert.deepEqual(similarityHitBadge('miss-gray'), { text: '未命中·灰色区', color: 'gold' })
+    assert.deepEqual(similarityHitBadge('miss-tie'), { text: '未命中·歧义', color: 'orange' })
+    assert.deepEqual(similarityHitBadge('miss-focus'), { text: '未命中·焦点拒判', color: 'orange' })
   })
 })
