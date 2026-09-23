@@ -198,7 +198,7 @@
                           <span class="cache-mark-hint">标记误判（标记人）</span>
                           <a-input v-model:value="cacheMarkedBy[record.traceId]" size="small" class="cache-mark-input" placeholder="控制台" />
                           <a-button v-if="cacheOf(record)?.marked === true" size="small" :loading="cacheMarkBusy[record.traceId]" :disabled="cacheLogIdOf(record) === null" @click="onCacheUnmark(record)">取消标记</a-button>
-                          <a-button v-else size="small" type="primary" ghost :loading="cacheMarkBusy[record.traceId]" :disabled="cacheLogIdOf(record) === null" @click="onCacheMark(record)">标记为误判</a-button>
+                          <a-button v-else size="small" type="primary" ghost :loading="cacheMarkBusy[record.traceId]" :disabled="cacheLogIdOf(record) === null" @click="onCacheMark(record)">标记误判</a-button>
                           <span v-if="cacheLogIdOf(record) === null" class="cache-mark-disabled-hint">待接口补充 cacheLogId 后可操作</span>
                         </div>
                       </div>

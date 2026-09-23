@@ -289,7 +289,7 @@
                     ghost
                     :loading="distRowsMarkBusy[record.cacheLogId]"
                     @click="onDistRowMark(record)"
-                  >标记为误判</a-button>
+                  >标记误判</a-button>
                 </template>
               </template>
             </a-table>
@@ -374,7 +374,7 @@
                     ghost
                     :loading="gzMarkBusy[record.cacheLogId]"
                     @click="onGzMark(record)"
-                  >标记为误判</a-button>
+                  >标记误判</a-button>
                   <a-button size="small" class="copy-id-btn gz-copy-btn" @click="onCopyGzTraceId(record.traceId)">复制</a-button>
                 </template>
               </template>
@@ -902,10 +902,10 @@ function openDistRows(bucketIndex: number) {
   void loadDistRows()
 }
 
-async function loadDistRows() {
+async function loadDistRows(silent = false) {
   if (distRowsBucketIndex.value === null) return
   const range = currentRange(distRangePreset.value, distCustomRange.value)
-  distRowsLoading.value = true
+  if (!silent) distRowsLoading.value = true
   try {
     distRowsData.value = await fetchSimilarityRows({
       startAt: range.startAt,
@@ -917,7 +917,7 @@ async function loadDistRows() {
   } catch (err) {
     message.error(getErrorMessage(err))
   } finally {
-    distRowsLoading.value = false
+    if (!silent) distRowsLoading.value = false
   }
 }
 
@@ -936,7 +936,7 @@ async function onDistRowMark(row: SimilarityRowItem) {
   try {
     await markMisjudge(row.cacheLogId)
     message.success('已标记为误判')
-    await loadDistRows()
+    await loadDistRows(true)
   } catch (err) {
     message.error(getErrorMessage(err))
   } finally {
@@ -949,7 +949,7 @@ async function onDistRowUnmark(row: SimilarityRowItem) {
   try {
     await unmarkMisjudge(row.cacheLogId)
     message.success('已取消误判标记')
-    await loadDistRows()
+    await loadDistRows(true)
   } catch (err) {
     message.error(getErrorMessage(err))
   } finally {
@@ -1013,14 +1013,14 @@ function parseGzSimilarity(): { similarityMin?: number; similarityMax?: number }
   return max === undefined ? { similarityMin: min } : { similarityMin: min, similarityMax: max }
 }
 
-async function loadGrayzone() {
+async function loadGrayzone(silent = false) {
   const range = currentRange(gzRangePreset.value, gzCustomRange.value)
   const similarity = parseGzSimilarity()
   if (similarity === null) {
     message.warning('相似度区间非法：需为 0~1 内的两个数且下限 ≤ 上限，如 0.85~0.9')
     return
   }
-  gzLoading.value = true
+  if (!silent) gzLoading.value = true
   try {
     gzData.value = await fetchGrayzone({
       startAt: range.startAt,
@@ -1033,7 +1033,7 @@ async function loadGrayzone() {
   } catch (err) {
     message.error(getErrorMessage(err))
   } finally {
-    gzLoading.value = false
+    if (!silent) gzLoading.value = false
   }
 }
 
@@ -1087,7 +1087,7 @@ async function onGzMark(row: GrayzoneItem) {
   try {
     await markMisjudge(row.cacheLogId)
     message.success('已标记为误判')
-    await loadGrayzone()
+    await loadGrayzone(true)
   } catch (err) {
     message.error(getErrorMessage(err))
   } finally {
@@ -1100,7 +1100,7 @@ async function onGzUnmark(row: GrayzoneItem) {
   try {
     await unmarkMisjudge(row.cacheLogId)
     message.success('已取消误判标记')
-    await loadGrayzone()
+    await loadGrayzone(true)
   } catch (err) {
     message.error(getErrorMessage(err))
   } finally {
