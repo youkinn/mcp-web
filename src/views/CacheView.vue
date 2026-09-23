@@ -101,7 +101,8 @@
               @change="onEntriesTableChange"
             >
               <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'queryText'">
+                <template v-if="column.key === 'id'">{{ record.id }}</template>
+                <template v-else-if="column.key === 'queryText'">
                   <span class="cell-ellipsis">{{ record.queryText }}</span>
                 </template>
                 <template v-else-if="column.key === 'hitCount'">
@@ -111,6 +112,7 @@
                 <template v-else-if="column.key === 'createdAt'">{{ formatTime(record.createdAt) }}</template>
                 <template v-else-if="column.key === 'answerBytes'">{{ formatBytes(record.answerBytes) }}</template>
                 <template v-else-if="column.key === 'actions'">
+                  <a-button size="small" class="copy-id-btn" @click="onCopyEntryId(record.id)">复制</a-button>
                   <a-popconfirm
                     title="删除该条目？立即生效，仅该条失效，其余条目命中不受影响。"
                     ok-text="删除"
@@ -471,7 +473,7 @@ const entriesColumns = [
   { key: 'lastAccessAt', title: '最后访问', width: 170 },
   { key: 'createdAt', title: '写入时间', width: 170 },
   { key: 'answerBytes', title: '答案字节', width: 110, align: 'center' },
-  { key: 'actions', title: '操作', width: 90, align: 'center' },
+  { key: 'actions', title: '操作', width: 130, align: 'center' },
 ]
 
 const entriesData = ref<CacheEntriesData | null>(null)
@@ -532,6 +534,15 @@ async function onDeleteEntry(id: number) {
     message.error(getErrorMessage(err))
   } finally {
     deletingIds[id] = false
+  }
+}
+
+async function onCopyEntryId(id: number) {
+  try {
+    await navigator.clipboard.writeText(String(id))
+    message.success('已复制条目 ID')
+  } catch {
+    message.error('复制失败，请手动复制')
   }
 }
 
@@ -1202,6 +1213,10 @@ onBeforeUnmount(() => {
 
 .gz-trace-link:hover {
   color: #b17837;
+}
+
+.copy-id-btn {
+  margin-right: 6px;
 }
 
 .gz-nearest {
