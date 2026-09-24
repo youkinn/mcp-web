@@ -129,7 +129,10 @@
                 </template>
 
                 <template v-else-if="column.key === 'tokens'">
-                  <span>{{ formatTokens(record.tokens?.input ?? null) }} / {{ formatTokens(record.tokens?.output ?? null) }}</span>
+                  <a-tooltip placement="topLeft">
+                    <template #title>输入 {{ formatTokens(record.tokens?.input ?? null) }} / 输出 {{ formatTokens(record.tokens?.output ?? null) }}</template>
+                    <span>{{ formatTokens(record.tokens?.input ?? null) }} / {{ formatTokens(record.tokens?.output ?? null) }}</span>
+                  </a-tooltip>
                 </template>
 
                 <template v-else-if="column.key === 'actions'">
@@ -858,7 +861,7 @@ const columns = [
   { key: 'domain', title: '域', width: 110 },
   { key: 'status', title: '状态', width: 150 },
   { key: 'durations', title: '耗时', width: 80 },
-  { key: 'tokens', title: 'Token（输入/输出）', width: 180, align: 'center' },
+  { key: 'tokens', title: '消耗Token', width: 180, align: 'center' },
   { key: 'actions', title: '操作', width: 100, align: 'center' },
 ]
 
