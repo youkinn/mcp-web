@@ -224,6 +224,14 @@
         </div>
       </section>
 
+      <!-- 各阶段耗时（feat-A013 验收）：timing 缺失不展示 -->
+      <section v-if="view.timingLines" class="detail-section">
+        <h4 class="detail-section-title">各阶段耗时</h4>
+        <div class="diag-timing-lines">
+          <div v-for="line in view.timingLines" :key="line" class="diag-timing-line">{{ line }}</div>
+        </div>
+      </section>
+
       <!-- 死亡意图 -->
       <section v-if="view.deathIntent.detected && view.deathIntent.pinned" class="detail-section">
         <h4 class="detail-section-title">死亡意图</h4>
@@ -302,7 +310,7 @@ function onOpenReader(record: ScoreRowView) {
 
 // 操作列「复制」：复制该行完整 chunkId，成功反馈，不打开阅读器（feat-A010 验收 5a）
 function onCopyChunkId(record: ScoreRowView) {
-  void copyText(record.chunkId).then((ok) => {
+  void copyText(`chunkId: ${record.chunkId}`).then((ok) => {
     if (ok) {
       message.success('已复制 chunkId')
     } else {
@@ -541,6 +549,18 @@ function onCopyChunkId(record: ScoreRowView) {
   color: #163c32;
   font-size: 13px;
   font-weight: 600;
+}
+
+/* 各阶段耗时（feat-A013 验收） */
+.diag-timing-lines {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px 14px;
+}
+
+.diag-timing-line {
+  font-size: 12px;
+  color: #40544a;
 }
 
 /* 死亡意图 */

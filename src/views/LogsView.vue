@@ -10,6 +10,9 @@
           </span>
         </RouterLink>
         <div class="header-actions">
+          <RouterLink to="/cache">
+            <a-button size="small">缓存控制台</a-button>
+          </RouterLink>
           <RouterLink to="/chat">
             <a-button size="small">← 返回聊天</a-button>
           </RouterLink>
@@ -87,9 +90,12 @@
                 <template v-if="column.key === 'time'">{{ formatTime(record.serverReceivedAt) }}</template>
 
                 <template v-else-if="column.key === 'logType'">
-                  <a-tooltip :open="typeBadgeTitle(record) ? undefined : false" placement="top">
+                  <a-tooltip :open="typeBadgeTitle(record) || cacheHitLineOf(record) ? undefined : false" placement="top">
                     <template #title>
-                      <div class="line-tooltip">{{ typeBadgeTitle(record) }}</div>
+                      <div class="line-tooltip">
+                        <div v-if="typeBadgeTitle(record)">{{ typeBadgeTitle(record) }}</div>
+                        <div v-if="cacheHitLineOf(record)" :class="cacheHitLineOf(record)?.cls">{{ cacheHitLineOf(record)?.text }}</div>
+                      </div>
                     </template>
                     <a-tag class="log-type-tag">{{ LOG_TYPE_LABELS[record.logType] ?? record.logType }}</a-tag>
                   </a-tooltip>
@@ -123,7 +129,10 @@
                 </template>
 
                 <template v-else-if="column.key === 'tokens'">
-                  <span>{{ formatTokens(record.tokens?.input ?? null) }} / {{ formatTokens(record.tokens?.output ?? null) }}</span>
+                  <a-tooltip placement="topLeft">
+                    <template #title>输入 {{ formatTokens(record.tokens?.input ?? null) }} / 输出 {{ formatTokens(record.tokens?.output ?? null) }}</template>
+                    <span>{{ tokenTotalText(record.tokens) }}</span>
+                  </a-tooltip>
                 </template>
 
                 <template v-else-if="column.key === 'actions'">
@@ -162,6 +171,46 @@
                       <pre v-else class="json-pre">{{ readableText(detailOf(record.traceId)?.data?.log.citations ?? '') }}</pre>
                     </section>
 
+                    <section v-if="cacheOf(record)" class="detail-section">
+                      <h4 class="detail-section-title">缓存判定</h4>
+                      <div class="cache-card">
+                        <div class="cache-card-head">
+                          <a-tag :color="cacheBadgeOf(record).color" class="cache-badge-tag">{{ cacheBadgeOf(record).text }}</a-tag>
+                          <span class="cache-judge-time">{{ cacheOf(record)?.hit === true ? '命中时间' : '判定时间' }} {{ formatTime(cacheOf(record)?.createdAt ?? 0) }}</span>
+                        </div>
+                        <div class="cache-card-meta">
+                          <div class="cache-meta-row">
+                            <span class="cache-meta-label">用户输入原文</span>
+                            <span class="cache-meta-value">{{ cacheOf(record)?.userQuery }}</span>
+                          </div>
+                          <div class="cache-meta-row">
+                            <span class="cache-meta-label">{{ cacheOf(record)?.hit === true ? '命中条目原文' : '最相近条目原文' }}</span>
+                            <span class="cache-meta-value" :class="{ 'cache-nearest-em': cacheOf(record)?.reason === 'miss-gray' }">{{ cacheOf(record)?.nearestQuery || '—' }}</span>
+                          </div>
+                          <div class="cache-meta-row">
+                            <span class="cache-meta-label">相似度</span>
+                            <span class="cache-meta-value cache-sim">{{ formatSimilarity(cacheOf(record)?.similarity ?? null) }}</span>
+                          </div>
+                          <div class="cache-meta-row">
+                            <span class="cache-meta-label">命中线</span>
+                            <span class="cache-meta-value">{{ formatHitLine(cacheOf(record)?.hitLine ?? 0) }}</span>
+                          </div>
+                          <div v-if="cacheOf(record)?.lookupMs != null" class="cache-meta-row">
+                            <span class="cache-meta-label">判定耗时</span>
+                            <span class="cache-meta-value">{{ formatDuration(cacheOf(record)?.lookupMs) }}</span>
+                          </div>
+                        </div>
+                        <div class="cache-formula-line">{{ cacheFormulaTextOf(record) }}</div>
+                        <div class="cache-mark-row">
+                          <span class="cache-mark-hint">标记误判（标记人）</span>
+                          <a-input v-model:value="cacheMarkedBy[record.traceId]" size="small" class="cache-mark-input" placeholder="控制台" />
+                          <a-button v-if="cacheOf(record)?.marked === true" size="small" :loading="cacheMarkBusy[record.traceId]" :disabled="cacheLogIdOf(record) === null" @click="onCacheUnmark(record)">取消标记</a-button>
+                          <a-button v-else size="small" type="primary" ghost :loading="cacheMarkBusy[record.traceId]" :disabled="cacheLogIdOf(record) === null" @click="onCacheMark(record)">标记误判</a-button>
+                          <span v-if="cacheLogIdOf(record) === null" class="cache-mark-disabled-hint">待接口补充 cacheLogId 后可操作</span>
+                        </div>
+                      </div>
+                    </section>
+
                     <section class="detail-section">
                       <h4 class="detail-section-title">LLM 调用（{{ detailOf(record.traceId)?.data?.llmCalls.length ?? 0 }}）</h4>
                       <a-table
@@ -173,6 +222,15 @@
                         size="small"
                         class="sub-table"
                       >
+                        <template #headerCell="{ column }">
+                          <template v-if="column.key === 'outputTokens'">
+                            <a-tooltip placement="top">
+                              <template #title>completionTokens = 模型本次调用输出的全部 token 数（含思考 reasoningTokens）</template>
+                              <span>{{ column.title }}</span>
+                            </a-tooltip>
+                          </template>
+                          <template v-else>{{ column.title }}</template>
+                        </template>
                         <template #bodyCell="{ column, record: call }">
                           <template v-if="column.key === 'stage'">
                             <span class="llm-seq">#{{ call.seq }}</span> {{ call.stage }}
@@ -183,6 +241,9 @@
                               <span>{{ call.model }}</span>
                             </a-tooltip>
                             <span v-else>{{ call.model }}</span>
+                          </template>
+                          <template v-else-if="column.key === 'temperature'">
+                            {{ call.temperature ?? '—' }}
                           </template>
                           <template v-else-if="column.key === 'inputTokens'">
                             <a-tooltip v-if="call.inputBreakdown" placement="topLeft">
@@ -219,7 +280,7 @@
                             <template v-if="call.responseAt !== null">
                               <a-tooltip placement="topLeft">
                                 <template #title>{{ formatTime(call.requestAt, true) }} ～ {{ formatTime(call.responseAt, true) }}</template>
-                                <span class="dur-simple">耗时 {{ formatDuration(call.responseAt - call.requestAt) }}</span>
+                                <span class="dur-simple">{{ formatDuration(call.responseAt - call.requestAt) }}</span>
                               </a-tooltip>
                             </template>
                             <div v-else class="sub-meta err-text">未返回</div>
@@ -248,8 +309,12 @@
                     </section>
                     <section class="detail-section">
                       <h4 class="detail-section-title">工具调用（{{ detailOf(record.traceId)?.data?.toolCalls.length ?? 0 }}）</h4>
+                      <div v-if="cacheOf(record)?.hit === true" class="cache-no-retrieval">
+                        <a-tag color="green">缓存命中，未走检索</a-tag>
+                        <span class="cache-no-retrieval-hint">本次请求命中缓存：0 次检索、0 次 LLM 调用，不展示检索诊断</span>
+                      </div>
                       <a-table
-                        v-if="(detailOf(record.traceId)?.data?.toolCalls.length ?? 0) > 0"
+                        v-else-if="(detailOf(record.traceId)?.data?.toolCalls.length ?? 0) > 0"
                         :data-source="detailOf(record.traceId)?.data?.toolCalls"
                         :columns="toolColumns"
                         :pagination="false"
@@ -271,8 +336,13 @@
                           <template v-else-if="column.key === 'time'">
                             <template v-if="call.callReturnedAt !== null">
                               <a-tooltip placement="topLeft">
-                                <template #title>{{ formatTime(call.callSentAt, true) }} ～ {{ formatTime(call.callReturnedAt, true) }}</template>
-                                <span class="dur-simple">耗时 {{ formatDuration(call.callReturnedAt - call.callSentAt) }}</span>
+                                <template #title>
+                                  <template v-if="timingLinesOf(call)">
+                                    <div v-for="line in timingLinesOf(call)" :key="line">{{ line }}</div>
+                                  </template>
+                                  <div v-else>{{ formatTime(call.callSentAt, true) }} ～ {{ formatTime(call.callReturnedAt, true) }}</div>
+                                </template>
+                                <span class="dur-simple">{{ formatDuration(call.callReturnedAt - call.callSentAt) }}</span>
                               </a-tooltip>
                             </template>
                             <div v-else class="sub-meta err-text">未返回</div>
@@ -388,6 +458,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
+import { useRoute, useRouter } from 'vue-router'
 import { init as initChart, use } from 'echarts/core'
 import { BarChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
@@ -402,16 +473,28 @@ import {
   fetchLogList,
   fetchTokenStats,
   getErrorMessage,
+  markMisjudge,
+  unmarkMisjudge,
+  type CacheLogRecord,
   type LogDetail,
   type LlmCallRecord,
   type LogListItem,
   type LogListQuery,
   type RouteSource,
+  type ToolCallRecord,
   type TokenStatsData,
 } from '../api/client'
 import RetrievalDiagnosticsPanel from '../components/RetrievalDiagnosticsPanel.vue'
 import SangoChapterReader from '../components/SangoChapterReader.vue'
 import { copyText } from '../utils/clipboard'
+import { timingLines } from '../utils/retrievalDiagnostics'
+import {
+  cacheBadge,
+  cacheFormulaText,
+  cacheHitTooltipText,
+  formatHitLine,
+  formatSimilarity,
+} from '../utils/cacheDiagnostics'
 
 // ── 通用格式化 ──
 
@@ -445,6 +528,12 @@ function formatTokens(n: number | null | undefined): string {
   return n.toLocaleString('en-US')
 }
 
+function tokenTotalText(tokens: { input: number | null; output: number | null } | null | undefined): string {
+  if (tokens === null || tokens === undefined) return '—'
+  if ((tokens.input === null || tokens.input === undefined) && (tokens.output === null || tokens.output === undefined)) return '—'
+  return formatTokens((tokens.input ?? 0) + (tokens.output ?? 0))
+}
+
 const CALLER_LABELS: Record<string, string> = {
   server: '服务端',
   model: '大模型',
@@ -465,6 +554,11 @@ function callerStageLabel(call: { caller?: string | null; stage?: string | null 
   if (caller && CALLER_LABELS[caller]) parts.push(CALLER_LABELS[caller])
   if (stage && STAGE_LABELS[stage]) parts.push(STAGE_LABELS[stage])
   return parts.length ? parts.join(' · ') : '—'
+}
+
+// 检索分阶段耗时（feat-A013 验收）：timing 缺失返回 null，工具调用耗时 tooltip 不追加 4 行
+function timingLinesOf(call: ToolCallRecord): string[] | null {
+  return timingLines(call.diagnostics?.timing)
 }
 
 // ── 路由来源 / 重试标记（feat-A012）──
@@ -489,6 +583,81 @@ function typeBadgeTitle(record: LogListItem): string {
   return lines.join('\n')
 }
 
+// 类型列 hover 缓存行（feat-A013 §4.2）：cacheHit 非 null 时追加一行「缓存命中」（绿）/「缓存未命中」（灰）
+function cacheHitLineOf(record: LogListItem): { text: string; cls: string } | null {
+  const text = cacheHitTooltipText(record.cacheHit)
+  if (!text) return null
+  return { text, cls: text === '缓存命中' ? 'cache-line-hit' : 'cache-line-miss' }
+}
+
+// ── 缓存判定卡片（feat-A013 §3.10 / §4.2）──
+
+function cacheOf(record: LogListItem): CacheLogRecord | null {
+  return detailOf(record.traceId)?.data?.cache ?? null
+}
+
+function cacheBadgeOf(record: LogListItem) {
+  const cache = cacheOf(record)
+  return cache === null ? { text: '未命中（低相似）', color: 'default' } : cacheBadge(cache)
+}
+
+function cacheFormulaTextOf(record: LogListItem): string {
+  const cache = cacheOf(record)
+  return cache ? cacheFormulaText(cache) : ''
+}
+
+// §3.9 标记按 cache_logs id；§3.10 data.cache 未承诺该字段，缺失时禁用卡片标记（待接口补充）
+function cacheLogIdOf(record: LogListItem): number | null {
+  return cacheOf(record)?.cacheLogId ?? null
+}
+
+// 标记人输入框，缺省「控制台」（接口文档 §3.9）
+const cacheMarkedBy = reactive<Record<string, string>>({})
+const cacheMarkBusy = reactive<Record<string, boolean>>({})
+
+function markByOf(traceId: string): string {
+  return (cacheMarkedBy[traceId] ?? '').trim() || '控制台'
+}
+
+async function refreshCacheDetail(traceId: string) {
+  try {
+    const data = await fetchLogDetail(traceId)
+    if (detailState[traceId]) detailState[traceId].data = data
+  } catch (err) {
+    message.error(getErrorMessage(err))
+  }
+}
+
+async function onCacheMark(record: LogListItem) {
+  const cacheLogId = cacheLogIdOf(record)
+  if (cacheLogId === null) return
+  cacheMarkBusy[record.traceId] = true
+  try {
+    await markMisjudge(cacheLogId, markByOf(record.traceId))
+    message.success('已标记为误判')
+    await refreshCacheDetail(record.traceId)
+  } catch (err) {
+    message.error(getErrorMessage(err))
+  } finally {
+    cacheMarkBusy[record.traceId] = false
+  }
+}
+
+async function onCacheUnmark(record: LogListItem) {
+  const cacheLogId = cacheLogIdOf(record)
+  if (cacheLogId === null) return
+  cacheMarkBusy[record.traceId] = true
+  try {
+    await unmarkMisjudge(cacheLogId)
+    message.success('已取消误判标记')
+    await refreshCacheDetail(record.traceId)
+  } catch (err) {
+    message.error(getErrorMessage(err))
+  } finally {
+    cacheMarkBusy[record.traceId] = false
+  }
+}
+
 // 耗时列 hover（feat-A012 验收 3）：总台 = 服务端墙钟（server_responded_at − server_received_at），
 // LLM / 工具为各自调用累计和，不保证与总台相等；差值 ≥ 100ms 时补「其他」行
 interface DurTooltipLine { indent: boolean; text: string }
@@ -504,6 +673,9 @@ function durationTooltipLines(record: LogListItem): DurTooltipLine[] {
   ]
   const llmToolSum = (d.llm ?? 0) + (d.tool ?? 0)
   lines.push({ indent: true, text: `LLM + 工具 ${formatDuration(llmToolSum)}` })
+  if (d.cacheLookupMs != null) {
+    lines.push({ indent: true, text: `缓存判定 ${formatDuration(d.cacheLookupMs)}（含首启 embedding 冷启动）` })
+  }
   if (Math.abs((d.server ?? 0) - llmToolSum) >= 100) {
     lines.push({ indent: false, text: `其他 ${formatDuration((d.server ?? 0) - llmToolSum)}（路由 / 落库等）` })
   }
@@ -695,13 +867,14 @@ const columns = [
   { key: 'domain', title: '域', width: 110 },
   { key: 'status', title: '状态', width: 150 },
   { key: 'durations', title: '耗时', width: 80 },
-  { key: 'tokens', title: 'Token（输入/输出）', width: 180, align: 'center' },
+  { key: 'tokens', title: '消耗Token', width: 180, align: 'center' },
   { key: 'actions', title: '操作', width: 100, align: 'center' },
 ]
 
 const llmColumns = [
   { key: 'stage', title: '阶段', width: 120 },
   { key: 'model', title: '模型', width: 170 },
+  { key: 'temperature', title: '温度', width: 70, align: 'center' },
   { key: 'inputTokens', title: '输入 Token', width: 130 },
   { key: 'outputTokens', title: '输出 Token', width: 130 },
   { key: 'cachedTokens', title: '缓存命中', width: 100 },
@@ -808,6 +981,7 @@ async function ensureDetail(traceId: string) {
   try {
     const data = await fetchLogDetail(traceId)
     detailState[traceId].data = data
+    if (!(traceId in cacheMarkedBy)) cacheMarkedBy[traceId] = '控制台'
   } catch (err) {
     detailState[traceId].error = getErrorMessage(err)
   } finally {
@@ -907,7 +1081,7 @@ function onOpenReader(target: ReaderTarget) {
 
 // 「操作」列复制 traceId（feat-A010 验收 3）：剪贴板降级路径，成功反馈
 function copyTraceId(traceId: string) {
-  void copyText(traceId).then((ok) => {
+  void copyText(`traceId: ${traceId}`).then((ok) => {
     if (ok) {
       message.success('已复制 traceId')
     } else {
@@ -952,6 +1126,19 @@ function defaultGranularity(startAt: number, endAt: number): 'day' | 'hour' {
 }
 
 const activeTab = ref<'list' | 'stats'>('list')
+const LOGS_TABS = ['list', 'stats'] as const
+const LOGS_ACTIVE_TAB_KEY = 'logs-active-tab'
+
+// 初始 tab（test.md 第 11 条）：优先 route.query.tab（合法用之、显式但非法回退 list），
+// 其次 sessionStorage 最近 tab，最后默认 list
+function readInitialLogsTab(routeTab: unknown): 'list' | 'stats' {
+  if (typeof routeTab === 'string') {
+    return (LOGS_TABS as readonly string[]).includes(routeTab) ? (routeTab as 'list' | 'stats') : 'list'
+  }
+  const saved = sessionStorage.getItem(LOGS_ACTIVE_TAB_KEY)
+  return saved && (LOGS_TABS as readonly string[]).includes(saved) ? (saved as 'list' | 'stats') : 'list'
+}
+
 const rangePreset = ref<'today' | '7d' | '30d' | 'custom'>('today')
 const customRange = ref<string[]>([])
 const granularity = ref<'day' | 'hour'>('day')
@@ -1134,6 +1321,8 @@ function onWindowResize() {
 }
 
 watch(activeTab, async (tab) => {
+  sessionStorage.setItem(LOGS_ACTIVE_TAB_KEY, tab)
+  void router.replace({ path: '/logs', query: { ...route.query, tab } })
   await nextTick()
   if (tab !== 'stats') return
   if (statsData.value) {
@@ -1144,11 +1333,29 @@ watch(activeTab, async (tab) => {
   }
 })
 
-onMounted(() => {
+const route = useRoute()
+const router = useRouter()
+
+onMounted(async () => {
+  activeTab.value = readInitialLogsTab(route.query.tab)
   const today = shanghaiDateString(Date.now())
   customRange.value = [today, today]
   window.addEventListener('resize', onWindowResize)
-  void loadList()
+  // 灰色区清单行内跳转（feat-A013 §4.2）：/logs?traceId=xxx → 精确过滤并自动展开该行明细
+  const entryTraceId = typeof route.query.traceId === 'string' ? route.query.traceId.trim() : ''
+  if (entryTraceId) {
+    query.traceId = entryTraceId
+    await loadList()
+    const matched = rows.value.some((row) => row.traceId === entryTraceId)
+    if (matched) {
+      expandedRowKeys.value = [entryTraceId]
+      void ensureDetail(entryTraceId)
+      await nextTick()
+      document.querySelector(`[data-row-key="${entryTraceId}"]`)?.scrollIntoView({ block: 'center' })
+    }
+  } else {
+    void loadList()
+  }
 })
 
 onBeforeUnmount(() => {
@@ -1377,6 +1584,118 @@ onBeforeUnmount(() => {
   line-height: 1.5;
 }
 
+/* ── 缓存判定卡片（feat-A013）── */
+
+.cache-card {
+  padding: 12px 14px;
+  border: 1px solid #e3e9e2;
+  border-radius: 12px;
+  background: #fafbf9;
+}
+
+.cache-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.cache-badge-tag {
+  margin-inline-end: 0;
+}
+
+.cache-judge-time {
+  color: #94a099;
+  font-size: 12px;
+}
+
+.cache-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cache-meta-row {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.cache-meta-label {
+  flex: none;
+  width: 84px;
+  color: #7b8a80;
+}
+
+.cache-meta-value {
+  color: #163c32;
+  word-break: break-all;
+}
+
+.cache-sim {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 灰色区「差点命中谁」：高亮最相近条目原文 */
+.cache-nearest-em {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: #fffbe6;
+  color: #d48806;
+  font-weight: 600;
+}
+
+.cache-formula-line {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #e3e9e2;
+  color: #40544a;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.6;
+}
+
+.cache-mark-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.cache-mark-hint {
+  color: #7b8a80;
+  font-size: 12px;
+}
+
+.cache-mark-input {
+  width: 160px;
+}
+
+.cache-mark-disabled-hint {
+  color: #b3bfb6;
+  font-size: 11px;
+}
+
+/* 缓存命中：检索诊断区替代展示（§4.2，不展示空诊断） */
+.cache-no-retrieval {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #b7eb8f;
+  border-radius: 10px;
+  background: #f6ffed;
+}
+
+.cache-no-retrieval-hint {
+  color: #40544a;
+  font-size: 12px;
+}
+
 .err-text {
   color: #cf1322;
 }
@@ -1539,5 +1858,14 @@ onBeforeUnmount(() => {
 .token-tooltip-title {
   margin-bottom: 2px;
   font-weight: 600;
+}
+
+/* 类型列 hover 缓存行（feat-A013 §4.2）：命中绿 / 未命中灰 */
+.cache-line-hit {
+  color: #389e0d;
+}
+
+.cache-line-miss {
+  color: #8c8c8c;
 }
 </style>
