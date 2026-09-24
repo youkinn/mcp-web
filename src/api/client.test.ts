@@ -17,6 +17,7 @@ import {
   sendChatMessage,
   sendSangoRandom,
   unmarkMisjudge,
+  updateCacheMaxEntries,
   updateCacheStatus,
 } from './client.ts'
 
@@ -329,6 +330,16 @@ describe('缓存控制台接口（feat-A013）', () => {
     })
     const result = await updateCacheStatus(false)
     assert.equal(result.enabled, false)
+  })
+
+  it('updateCacheMaxEntries PUT /v1/cache/max-entries 携带 maxEntries 并解包', async () => {
+    mock.method(apiClient, 'put', async (url: string, body?: unknown) => {
+      assert.equal(url, '/v1/cache/max-entries')
+      assert.deepEqual(body, { maxEntries: 500 })
+      return okEnvelope({ maxEntries: 500 })
+    })
+    const result = await updateCacheMaxEntries(500)
+    assert.equal(result.maxEntries, 500)
   })
 
   it('clearCache POST /v1/cache/clear 返回清除前条目数', async () => {

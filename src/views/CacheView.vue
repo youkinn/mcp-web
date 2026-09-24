@@ -60,6 +60,26 @@
               <span v-if="hitLineHint" class="hitline-hint">{{ hitLineHint }}</span>
               <span v-if="lastHitLineChangeText" class="hitline-last-change">{{ lastHitLineChangeText }}</span>
             </div>
+            <div class="hitline-group">
+              <span class="switch-label">缓存上限</span>
+              <a-input-number
+                v-model:value="maxEntriesInput"
+                class="hitline-input"
+                :precision="0"
+                placeholder="1~5000"
+                :disabled="overview === null"
+                @change="onMaxEntriesInputChange"
+              />
+              <a-button
+                size="small"
+                type="primary"
+                ghost
+                :loading="maxEntriesSaving"
+                :disabled="!maxEntriesDirty"
+                @click="onSaveMaxEntries"
+              >保存</a-button>
+              <span v-if="maxEntriesHint" class="hitline-hint">{{ maxEntriesHint }}</span>
+            </div>
             <div class="status-meta">
               <span>上限 {{ overview?.maxEntries ?? '—' }} 条</span>
               <span>当前条目 {{ overview?.entryCount ?? '—' }}</span>
@@ -444,6 +464,7 @@ import {
   getErrorMessage,
   markMisjudge,
   unmarkMisjudge,
+  updateCacheMaxEntries,
   updateCacheStatus,
   updateHitLine,
   type CacheEntryItem,
@@ -599,6 +620,7 @@ async function loadOverview() {
     overview.value = data
     statusEnabled.value = status.enabled
     if (!hitLineTouched.value) hitLineInput.value = data.hitLine
+    if (!maxEntriesTouched.value) maxEntriesInput.value = data.maxEntries
   } catch (err) {
     message.error(getErrorMessage(err))
   }
@@ -677,6 +699,52 @@ async function onSaveHitLine() {
   }
 }
 
+// ── 缓存上限配置（feat-A013 验收：后端 PUT /v1/cache/max-entries）──
+
+const maxEntriesInput = ref<number | null>(null)
+const maxEntriesSaving = ref(false)
+const maxEntriesTouched = ref(false)
+
+const maxEntriesValid = computed(() => {
+  const value = maxEntriesInput.value
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5000
+})
+
+const maxEntriesDirty = computed(() =>
+  maxEntriesValid.value &&
+  overview.value !== null &&
+  maxEntriesInput.value !== overview.value.maxEntries,
+)
+
+const maxEntriesHint = computed(() => {
+  if (maxEntriesInput.value === null) return ''
+  return maxEntriesValid.value ? '' : '需 1~5000 的整数'
+})
+
+function onMaxEntriesInputChange() {
+  maxEntriesTouched.value = true
+}
+
+async function onSaveMaxEntries() {
+  if (!maxEntriesDirty.value) {
+    if (!maxEntriesValid.value) message.warning('缓存上限需为 1~5000 的整数')
+    return
+  }
+  const next = maxEntriesInput.value!
+  maxEntriesSaving.value = true
+  try {
+    const result = await updateCacheMaxEntries(next)
+    maxEntriesTouched.value = false
+    maxEntriesInput.value = result.maxEntries
+    await loadOverview()
+    message.success(`缓存上限已更新为 ${result.maxEntries}`)
+  } catch (err) {
+    message.error(getErrorMessage(err))
+  } finally {
+    maxEntriesSaving.value = false
+  }
+}
+
 async function onClearCache() {
   clearing.value = true
   try {
@@ -747,7 +815,7 @@ const entriesPagination = computed(() => ({
 }))
 
 function onRefreshEntries() {
-  void loadEntries()
+  void Promise.all([loadOverview(), loadEntries()])
 }
 
 async function onDeleteEntry(id: number) {
@@ -1181,6 +1249,7 @@ async function onGzMark(row: GrayzoneItem) {
     await markMisjudge(row.cacheLogId)
     message.success('已标记为误判')
     await loadGrayzone(true)
+    if (misjudgeData.value !== null) void refreshMisjudge()
   } catch (err) {
     message.error(getErrorMessage(err))
   } finally {
@@ -1194,6 +1263,7 @@ async function onGzUnmark(row: GrayzoneItem) {
     await unmarkMisjudge(row.cacheLogId)
     message.success('已取消误判标记')
     await loadGrayzone(true)
+    if (misjudgeData.value !== null) void refreshMisjudge()
   } catch (err) {
     message.error(getErrorMessage(err))
   } finally {

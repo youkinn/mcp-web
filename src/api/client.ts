@@ -565,6 +565,11 @@ export async function updateHitLine(hitLine: number): Promise<{ hitLine: number 
   return unwrapData(data)
 }
 
+export async function updateCacheMaxEntries(maxEntries: number): Promise<{ maxEntries: number }> {
+  const { data } = await apiClient.put<ApiResponse<{ maxEntries: number }>>('/v1/cache/max-entries', { maxEntries })
+  return unwrapData(data)
+}
+
 export async function clearCache(): Promise<{ cleared: number }> {
   const { data } = await apiClient.post<ApiResponse<{ cleared: number }>>('/v1/cache/clear')
   return unwrapData(data)
