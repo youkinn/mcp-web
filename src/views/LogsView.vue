@@ -131,7 +131,7 @@
                 <template v-else-if="column.key === 'tokens'">
                   <a-tooltip placement="topLeft">
                     <template #title>输入 {{ formatTokens(record.tokens?.input ?? null) }} / 输出 {{ formatTokens(record.tokens?.output ?? null) }}</template>
-                    <span>{{ formatTokens(record.tokens?.input ?? null) }} / {{ formatTokens(record.tokens?.output ?? null) }}</span>
+                    <span>{{ tokenTotalText(record.tokens) }}</span>
                   </a-tooltip>
                 </template>
 
@@ -526,6 +526,12 @@ function formatDuration(ms: number | null | undefined): string {
 function formatTokens(n: number | null | undefined): string {
   if (n === null || n === undefined) return '—'
   return n.toLocaleString('en-US')
+}
+
+function tokenTotalText(tokens: { input: number | null; output: number | null } | null | undefined): string {
+  if (tokens === null || tokens === undefined) return '—'
+  if ((tokens.input === null || tokens.input === undefined) && (tokens.output === null || tokens.output === undefined)) return '—'
+  return formatTokens((tokens.input ?? 0) + (tokens.output ?? 0))
 }
 
 const CALLER_LABELS: Record<string, string> = {
