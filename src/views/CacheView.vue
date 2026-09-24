@@ -131,7 +131,8 @@
                 <template v-else-if="column.key === 'queryText'">
                   <a-tooltip placement="topLeft">
                     <template #title>{{ record.queryText }}</template>
-                    <span class="cell-ellipsis gz-query-link" @click="goLogKeyword(record.queryText)">{{ record.queryText }}</span>
+                    <span v-if="record.traceId" class="cell-ellipsis gz-query-link" @click="goLogDetail(record.traceId)">{{ record.queryText }}</span>
+                    <span v-else class="cell-ellipsis gz-query-link-disabled">{{ record.queryText }}</span>
                   </a-tooltip>
                 </template>
                 <template v-else-if="column.key === 'hitCount'">
@@ -1204,11 +1205,6 @@ function goLogDetail(traceId: string) {
   void router.push({ path: '/logs', query: { traceId, tab: 'list' } })
 }
 
-// 缓存条目「查询（用户输入原文）」跳转：条目无 traceId，用关键词过滤日志列表（feat-A013 验收）
-function goLogKeyword(queryText: string) {
-  void router.push({ path: '/logs', query: { tab: 'list', keyword: queryText } })
-}
-
 // 灰色区清单「复制」：复制 cacheLogId（feat-A013 验收统一「标签: 值」前缀）
 function onCopyGzCacheLogId(cacheLogId: number) {
   void copyText(`cacheLogId: ${cacheLogId}`).then((ok) => {
@@ -1697,6 +1693,11 @@ onBeforeUnmount(() => {
 
 .gz-query-link:hover {
   color: #b17837;
+}
+
+.gz-query-link-disabled {
+  color: rgba(0, 0, 0, 0.25);
+  cursor: default;
 }
 
 .copy-id-btn {

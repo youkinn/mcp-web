@@ -215,6 +215,7 @@ export interface CacheStatus {
 
 export interface CacheEntryItem {
   id: number
+  traceId: string | null
   queryText: string
   answerBytes: number
   embeddingBytes: number
