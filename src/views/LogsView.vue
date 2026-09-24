@@ -273,7 +273,7 @@
                             <template v-if="call.responseAt !== null">
                               <a-tooltip placement="topLeft">
                                 <template #title>{{ formatTime(call.requestAt, true) }} ～ {{ formatTime(call.responseAt, true) }}</template>
-                                <span class="dur-simple">耗时 {{ formatDuration(call.responseAt - call.requestAt) }}</span>
+                                <span class="dur-simple">{{ formatDuration(call.responseAt - call.requestAt) }}</span>
                               </a-tooltip>
                             </template>
                             <div v-else class="sub-meta err-text">未返回</div>
@@ -335,7 +335,7 @@
                                   </template>
                                   <div v-else>{{ formatTime(call.callSentAt, true) }} ～ {{ formatTime(call.callReturnedAt, true) }}</div>
                                 </template>
-                                <span class="dur-simple">耗时 {{ formatDuration(call.callReturnedAt - call.callSentAt) }}</span>
+                                <span class="dur-simple">{{ formatDuration(call.callReturnedAt - call.callSentAt) }}</span>
                               </a-tooltip>
                             </template>
                             <div v-else class="sub-meta err-text">未返回</div>
