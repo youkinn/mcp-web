@@ -956,20 +956,20 @@ function onRefreshDist() {
 const distRowsOpen = ref(false)
 const distRowsBucketIndex = ref<number | null>(null)
 const distRowsPageNo = ref(1)
-const distRowsPageSize = ref(20)
+const distRowsPageSize = ref(10)
 const distRowsData = ref<SimilarityRowData | null>(null)
 const distRowsLoading = ref(false)
 const distRowsMarkBusy = reactive<Record<number, boolean>>({})
 
 const distRowsColumns = [
-  { key: 'userQuery', title: '用户输入原文', width: 200, ellipsis: true },
-  { key: 'nearestQuery', title: '匹配条目原文', width: 200, ellipsis: true },
+  { key: 'userQuery', title: '用户输入原文', width: 170, ellipsis: true },
+  { key: 'nearestQuery', title: '匹配条目原文', width: 170, ellipsis: true },
   { key: 'similarity', title: '相似度', width: 80, align: 'center' },
-  { key: 'hitLine', title: '命中线', width: 80, align: 'center' },
-  { key: 'status', title: '命中状态', width: 120, align: 'center' },
-  { key: 'marked', title: '误判标记', width: 80, align: 'center' },
-  { key: 'time', title: '时间', width: 150 },
-  { key: 'actions', title: '操作', width: 170, align: 'center' },
+  { key: 'hitLine', title: '命中线', width: 70, align: 'center' },
+  { key: 'status', title: '命中状态', width: 110, align: 'center' },
+  { key: 'marked', title: '误判标记', width: 70, align: 'center' },
+  { key: 'time', title: '时间', width: 140 },
+  { key: 'actions', title: '操作', width: 160, align: 'center' },
 ]
 
 const distRowsTitle = computed(() => {
@@ -1016,7 +1016,7 @@ async function loadDistRows(silent = false) {
 
 function onDistRowsTableChange(pagination: { current?: number; pageSize?: number }) {
   distRowsPageNo.value = pagination.current ?? 1
-  distRowsPageSize.value = pagination.pageSize ?? 20
+  distRowsPageSize.value = pagination.pageSize ?? 10
   void loadDistRows()
 }
 
