@@ -330,10 +330,10 @@
                             <template v-if="call.callReturnedAt !== null">
                               <a-tooltip placement="topLeft">
                                 <template #title>
-                                  <div>{{ formatTime(call.callSentAt, true) }} ～ {{ formatTime(call.callReturnedAt, true) }}</div>
                                   <template v-if="timingLinesOf(call)">
                                     <div v-for="line in timingLinesOf(call)" :key="line">{{ line }}</div>
                                   </template>
+                                  <div v-else>{{ formatTime(call.callSentAt, true) }} ～ {{ formatTime(call.callReturnedAt, true) }}</div>
                                 </template>
                                 <span class="dur-simple">耗时 {{ formatDuration(call.callReturnedAt - call.callSentAt) }}</span>
                               </a-tooltip>

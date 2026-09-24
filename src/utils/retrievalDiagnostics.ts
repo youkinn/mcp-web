@@ -255,8 +255,9 @@ export function timingLines(
   timing: RetrievalDiagnostics['timing'],
 ): string[] | null {
   if (!timing) return null
+  // 毫秒显示：2 位小数并去尾零，避免浮点长尾（如 2.394800000001851 → 2.39）
   const ms = (value: number | null | undefined): string =>
-    value === null || value === undefined ? '—' : `${value}ms`
+    value === null || value === undefined ? '—' : `${parseFloat(value.toFixed(2))}ms`
   return [
     `BM25 耗时 ${ms(timing.bm25)}`,
     `向量库查询耗时 ${ms(timing.vector)}`,

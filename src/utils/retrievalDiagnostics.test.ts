@@ -488,6 +488,16 @@ describe('feat-A013 验收：各阶段耗时（timingLines）', () => {
     ])
   })
 
+  it('毫秒去浮点长尾：保留 2 位小数并去尾零（2.3948… → 2.39，3.10 → 3.1）', () => {
+    const lines = timingLines({ bm25: 2.394800000001851, vector: 3.1, label: 5, merge: 0 })
+    assert.deepEqual(lines, [
+      'BM25 耗时 2.39ms',
+      '向量库查询耗时 3.1ms',
+      '标签匹配耗时 5ms',
+      '多路召回合并耗时 0ms',
+    ])
+  })
+
   it('buildDiagnosticsView 透传 timingLines，缺失时为 null', () => {
     const view = buildDiagnosticsView(
       { ...fullDiagnostics, timing: { bm25: 3, vector: 5, label: 2, merge: 1 } },
