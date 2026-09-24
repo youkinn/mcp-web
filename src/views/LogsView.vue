@@ -860,7 +860,7 @@ const llmColumns = [
   { key: 'model', title: '模型', width: 170 },
   { key: 'temperature', title: '温度', width: 70, align: 'center' },
   { key: 'inputTokens', title: '输入 Token', width: 130 },
-  { key: 'outputTokens', title: '输出 Token（completionTokens）', width: 130 },
+  { key: 'outputTokens', title: '输出 Token', width: 130 },
   { key: 'cachedTokens', title: '缓存命中', width: 100 },
   { key: 'time', title: '耗时', width: 110 },
   { key: 'status', title: '状态', width: 140 },
