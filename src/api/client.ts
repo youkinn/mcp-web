@@ -28,6 +28,8 @@ export interface LogDurations {
   server: number | null
   llm: number | null
   tool: number | null
+  /** 缓存判定耗时（feat-A013 验收 7）：毫秒，null=历史行无记录 */
+  cacheLookupMs: number | null
   total: number | null
 }
 
@@ -195,6 +197,8 @@ export type CacheMissReason = 'hit' | 'miss-low' | 'miss-gray' | 'miss-tie' | 'm
 export interface CacheLogRecord {
   hit: boolean
   hitLine: number
+  /** 判定耗时（feat-A013 验收 7）：毫秒，null=历史行无记录 */
+  lookupMs: number | null
   similarity: number | null
   tieHits: number | null
   userQuery: string

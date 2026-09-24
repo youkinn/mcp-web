@@ -192,6 +192,10 @@
                             <span class="cache-meta-label">命中线</span>
                             <span class="cache-meta-value">{{ formatHitLine(cacheOf(record)?.hitLine ?? 0) }}</span>
                           </div>
+                          <div v-if="cacheOf(record)?.lookupMs != null" class="cache-meta-row">
+                            <span class="cache-meta-label">判定耗时</span>
+                            <span class="cache-meta-value">{{ formatDuration(cacheOf(record)?.lookupMs) }}</span>
+                          </div>
                         </div>
                         <div class="cache-formula-line">{{ cacheFormulaTextOf(record) }}</div>
                         <div class="cache-mark-row">
@@ -660,6 +664,9 @@ function durationTooltipLines(record: LogListItem): DurTooltipLine[] {
   ]
   const llmToolSum = (d.llm ?? 0) + (d.tool ?? 0)
   lines.push({ indent: true, text: `LLM + 工具 ${formatDuration(llmToolSum)}` })
+  if (d.cacheLookupMs != null) {
+    lines.push({ indent: true, text: `缓存判定 ${formatDuration(d.cacheLookupMs)}（含首启 embedding 冷启动）` })
+  }
   if (Math.abs((d.server ?? 0) - llmToolSum) >= 100) {
     lines.push({ indent: false, text: `其他 ${formatDuration((d.server ?? 0) - llmToolSum)}（路由 / 落库等）` })
   }

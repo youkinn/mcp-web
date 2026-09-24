@@ -95,6 +95,7 @@ function mkCache(partial: Partial<CacheLogRecord>): CacheLogRecord {
     nearestQuery: '义释严颜是怎么回事',
     reason: 'hit',
     marked: false,
+    lookupMs: null,
     createdAt: 1779408000000,
     ...partial,
   }
