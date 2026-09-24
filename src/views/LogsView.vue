@@ -1338,6 +1338,9 @@ onMounted(async () => {
       document.querySelector(`[data-row-key="${entryTraceId}"]`)?.scrollIntoView({ block: 'center' })
     }
   } else {
+    // 缓存条目原文跳转（feat-A013 验收）：/logs?keyword=xxx → 列表按关键词过滤并回显
+    const entryKeyword = typeof route.query.keyword === 'string' ? route.query.keyword.trim() : ''
+    if (entryKeyword) query.keyword = entryKeyword
     void loadList()
   }
 })

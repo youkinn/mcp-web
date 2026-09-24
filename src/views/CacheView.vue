@@ -89,8 +89,11 @@
             </div>
             <div class="stat-card">
               <div class="stat-num">
-                {{ formatBytes(overview?.approximateBytes) }}
-                <span class="approx-mark">近似</span>
+                <a-tooltip placement="top">
+                  <template #title>答案字节 {{ overview?.answerBytesTotal ?? 0 }}B + embedding {{ overview?.embeddingBytesTotal ?? 0 }}B + 条目数 {{ overview?.entryCount ?? 0 }} × 256 ≈ {{ overview?.approximateBytes ?? 0 }}B</template>
+                  <span>{{ formatBytes(overview?.approximateBytes) }}</span>
+                  <span class="approx-mark">近似</span>
+                </a-tooltip>
               </div>
               <div class="stat-label">近似内存占用</div>
             </div>
@@ -128,7 +131,7 @@
                 <template v-else-if="column.key === 'queryText'">
                   <a-tooltip placement="topLeft">
                     <template #title>{{ record.queryText }}</template>
-                    <span class="cell-ellipsis">{{ record.queryText }}</span>
+                    <span class="cell-ellipsis gz-query-link" @click="goLogKeyword(record.queryText)">{{ record.queryText }}</span>
                   </a-tooltip>
                 </template>
                 <template v-else-if="column.key === 'hitCount'">
@@ -348,7 +351,7 @@
               </div>
               <div class="query-item">
                 <span class="query-label">相似度</span>
-                <a-input v-model:value="gzSimilarity" class="gz-sim-input" placeholder="如 0.85~0.9（0~1），留空不限" @pressEnter="onGzSearch" />
+                <a-input v-model:value="gzSimilarity" class="gz-sim-input" placeholder="如 0.85-0.9（0~1），留空不限" @pressEnter="onGzSearch" />
               </div>
               <div class="query-actions">
                 <a-button type="primary" :loading="gzLoading" @click="onGzSearch">查 询</a-button>
@@ -384,6 +387,7 @@
                 <template v-else-if="column.key === 'similarity'">
                   <span class="tab-num">{{ formatSimilarity(record.similarity) }}</span>
                 </template>
+                <template v-else-if="column.key === 'hitLine'">{{ formatHitLine(record.hitLine) }}</template>
                 <template v-else-if="column.key === 'marked'">
                   <a-tag :color="record.marked ? 'gold' : 'default'">{{ record.marked ? '已标记' : '未标记' }}</a-tag>
                 </template>
@@ -1084,10 +1088,10 @@ const gzLoading = ref(false)
 const gzPageNo = ref(1)
 const gzPageSize = ref(10)
 const gzMarkBusy = reactive<Record<number, boolean>>({})
-// 解析相似度区间输入：支持「下限~上限」（半角波浪线分隔），可省一边或写单个下限；空返回空对象，非法返回 null
+// 解析相似度区间输入：支持「下限-上限」（半角连字符为主分隔，兼容半角/全角「~」），可省一边或写单个下限；空返回空对象，非法返回 null
 
 function parseGzSimilarity(): { similarityMin?: number; similarityMax?: number } | null {
-  const text = gzSimilarity.value.trim().replace(/～/g, '\x7E')
+  const text = gzSimilarity.value.trim().replace(/[～~-]/g, '\x7E')
   if (!text) return {}
   const parts = text.split('\x7E').map((part) => part.trim()).filter(Boolean)
   if (parts.length === 0) return {}
@@ -1105,7 +1109,7 @@ async function loadGrayzone(silent = false) {
   const range = currentRange(gzRangePreset.value, gzCustomRange.value)
   const similarity = parseGzSimilarity()
   if (similarity === null) {
-    message.warning('相似度区间非法：需为 0~1 内的两个数且下限 ≤ 上限，如 0.85~0.9')
+    message.warning('相似度区间非法：需为 0~1 内的两个数且下限 ≤ 上限，如 0.85-0.9')
     return
   }
   if (!silent) gzLoading.value = true
@@ -1197,7 +1201,12 @@ async function onGzUnmark(row: GrayzoneItem) {
 }
 
 function goLogDetail(traceId: string) {
-  void router.push({ path: '/logs', query: { traceId } })
+  void router.push({ path: '/logs', query: { traceId, tab: 'list' } })
+}
+
+// 缓存条目「查询（用户输入原文）」跳转：条目无 traceId，用关键词过滤日志列表（feat-A013 验收）
+function goLogKeyword(queryText: string) {
+  void router.push({ path: '/logs', query: { tab: 'list', keyword: queryText } })
 }
 
 // 灰色区清单「复制」：复制 cacheLogId（feat-A013 验收统一「标签: 值」前缀）
