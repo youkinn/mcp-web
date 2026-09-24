@@ -87,6 +87,7 @@ export interface LlmCallRecord {
   seq: number
   stage: 'routing' | 'generation' | 'classify'
   model: string
+  temperature: number | null
   requestAt: number
   responseAt: number | null
   requestSummary: string
@@ -133,6 +134,8 @@ export interface RetrievalDiagnostics {
   }
   candidates: RetrievalCandidate[]
   nextRank: RetrievalNextRank | null
+  /** 各阶段耗时（feat-A013 验收）：毫秒；历史数据缺失，timing 整体缺失时前端不展示 */
+  timing?: { bm25: number | null; vector: number | null; label: number | null; merge: number | null }
   deathIntent: {
     detected: boolean
     pinned: boolean
@@ -251,6 +254,8 @@ export interface CacheOverview {
   embeddingBytesTotal: number
   approximateBytes: number
   avgAnswerBytes: number
+  /** 最近一次命中线修改（feat-A013 验收）；无记录为 null */
+  lastHitLineChange: { previous: number; current: number; at: number } | null
 }
 
 export interface SimilarityBucket {

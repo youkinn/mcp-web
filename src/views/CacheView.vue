@@ -58,6 +58,7 @@
                 @click="onSaveHitLine"
               >保存</a-button>
               <span v-if="hitLineHint" class="hitline-hint">{{ hitLineHint }}</span>
+              <span v-if="lastHitLineChangeText" class="hitline-last-change">{{ lastHitLineChangeText }}</span>
             </div>
             <div class="status-meta">
               <span>上限 {{ overview?.maxEntries ?? '—' }} 条</span>
@@ -315,6 +316,7 @@
                     :loading="distRowsMarkBusy[record.cacheLogId]"
                     @click="onDistRowMark(record)"
                   >标记误判</a-button>
+                  <a-button size="small" class="copy-id-btn gz-copy-btn" @click="onCopyDistRowCacheLogId(record.cacheLogId)">复制</a-button>
                 </template>
               </template>
             </a-table>
@@ -400,7 +402,7 @@
                     :loading="gzMarkBusy[record.cacheLogId]"
                     @click="onGzMark(record)"
                   >标记误判</a-button>
-                  <a-button size="small" class="copy-id-btn gz-copy-btn" @click="onCopyGzTraceId(record.traceId)">复制</a-button>
+                  <a-button size="small" class="copy-id-btn gz-copy-btn" @click="onCopyGzCacheLogId(record.cacheLogId)">复制</a-button>
                 </template>
               </template>
             </a-table>
@@ -638,6 +640,13 @@ const hitLineHint = computed(() => {
   return hitLineValid.value ? '' : '需 0 < 命中线 ≤ 1'
 })
 
+// 最近命中线修改（feat-A013 验收）：无记录不展示
+const lastHitLineChangeText = computed(() => {
+  const change = overview.value?.lastHitLineChange
+  if (!change) return ''
+  return `最近修改：${formatTime(change.at)}（${change.previous} → ${change.current}）`
+})
+
 function onHitLineInputChange() {
   hitLineTouched.value = true
 }
@@ -750,7 +759,7 @@ async function onDeleteEntry(id: number) {
 }
 
 async function onCopyEntryId(id: number) {
-  void copyText(String(id)).then((ok) => {
+  void copyText(`条目ID: ${id}`).then((ok) => {
     if (ok) {
       message.success('已复制条目 ID')
     } else {
@@ -894,11 +903,7 @@ async function loadDist() {
   distLoading.value = true
   try {
     distData.value = await fetchSimilarityDistribution(range.startAt, range.endAt)
-    try {
-      misjudgeData.value = await fetchMisjudge(range.startAt, range.endAt)
-    } catch (err) {
-      message.error(getErrorMessage(err))
-    }
+    await refreshMisjudge()
     await nextTick()
     renderDistChart(distData.value)
     distChart?.resize()
@@ -906,6 +911,16 @@ async function loadDist() {
     message.error(getErrorMessage(err))
   } finally {
     distLoading.value = false
+  }
+}
+
+// 误判率卡片静默刷新：复用 fetchMisjudge(当前时间窗)，不加整卡遮罩（feat-A013 验收）
+async function refreshMisjudge() {
+  const range = currentRange(distRangePreset.value, distCustomRange.value)
+  try {
+    misjudgeData.value = await fetchMisjudge(range.startAt, range.endAt)
+  } catch (err) {
+    message.error(getErrorMessage(err))
   }
 }
 
@@ -949,7 +964,7 @@ const distRowsColumns = [
   { key: 'status', title: '命中状态', width: 120, align: 'center' },
   { key: 'marked', title: '误判标记', width: 80, align: 'center' },
   { key: 'time', title: '时间', width: 150 },
-  { key: 'actions', title: '操作', width: 110, align: 'center' },
+  { key: 'actions', title: '操作', width: 170, align: 'center' },
 ]
 
 const distRowsTitle = computed(() => {
@@ -1009,7 +1024,7 @@ async function onDistRowMark(row: SimilarityRowItem) {
   try {
     await markMisjudge(row.cacheLogId)
     message.success('已标记为误判')
-    await loadDistRows(true)
+    await Promise.all([loadDistRows(true), refreshMisjudge()])
   } catch (err) {
     message.error(getErrorMessage(err))
   } finally {
@@ -1022,7 +1037,7 @@ async function onDistRowUnmark(row: SimilarityRowItem) {
   try {
     await unmarkMisjudge(row.cacheLogId)
     message.success('已取消误判标记')
-    await loadDistRows(true)
+    await Promise.all([loadDistRows(true), refreshMisjudge()])
   } catch (err) {
     message.error(getErrorMessage(err))
   } finally {
@@ -1185,10 +1200,22 @@ function goLogDetail(traceId: string) {
   void router.push({ path: '/logs', query: { traceId } })
 }
 
-function onCopyGzTraceId(traceId: string) {
-  void copyText(traceId).then((ok) => {
+// 灰色区清单「复制」：复制 cacheLogId（feat-A013 验收统一「标签: 值」前缀）
+function onCopyGzCacheLogId(cacheLogId: number) {
+  void copyText(`cacheLogId: ${cacheLogId}`).then((ok) => {
     if (ok) {
-      message.success('已复制 traceId')
+      message.success('已复制 cacheLogId')
+    } else {
+      message.error('复制失败，请手动选择复制')
+    }
+  })
+}
+
+// 分布下钻弹框「复制」：同灰色区口径复制 cacheLogId
+function onCopyDistRowCacheLogId(cacheLogId: number) {
+  void copyText(`cacheLogId: ${cacheLogId}`).then((ok) => {
+    if (ok) {
+      message.success('已复制 cacheLogId')
     } else {
       message.error('复制失败，请手动选择复制')
     }
@@ -1359,6 +1386,11 @@ onBeforeUnmount(() => {
 
 .hitline-hint {
   color: #b17837;
+  font-size: 12px;
+}
+
+.hitline-last-change {
+  color: #7b8a80;
   font-size: 12px;
 }
 

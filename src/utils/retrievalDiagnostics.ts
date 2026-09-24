@@ -249,6 +249,22 @@ export function buildEnvView(env: RetrievalDiagnostics['env']): EnvView {
   }
 }
 
+// ── 各阶段耗时（feat-A013 验收）：检索侧数据；timing 缺失返回 null（前端不展示），值缺失显示「—」 ──
+
+export function timingLines(
+  timing: RetrievalDiagnostics['timing'],
+): string[] | null {
+  if (!timing) return null
+  const ms = (value: number | null | undefined): string =>
+    value === null || value === undefined ? '—' : `${value}ms`
+  return [
+    `BM25 耗时 ${ms(timing.bm25)}`,
+    `向量库查询耗时 ${ms(timing.vector)}`,
+    `标签匹配耗时 ${ms(timing.label)}`,
+    `多路召回合并耗时 ${ms(timing.merge)}`,
+  ]
+}
+
 // ── 截断标记 / 自洽检查 ──
 
 export function truncatedText(diagnostics: RetrievalDiagnostics): string | null {
@@ -291,6 +307,7 @@ export interface DiagnosticsView {
   nextRank: NextRankView | null
   query: QueryChainView
   env: EnvView
+  timingLines: string[] | null
   deathIntent: {
     detected: boolean
     pinned: boolean
@@ -312,6 +329,7 @@ export function buildDiagnosticsView(
     nextRank: diagnostics.nextRank === null ? null : buildNextRankView(diagnostics.nextRank),
     query: buildQueryChain(diagnostics.query),
     env: buildEnvView(diagnostics.env),
+    timingLines: timingLines(diagnostics.timing),
     deathIntent: {
       detected: diagnostics.deathIntent.detected,
       pinned: diagnostics.deathIntent.pinned,

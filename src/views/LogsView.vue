@@ -215,6 +215,15 @@
                         size="small"
                         class="sub-table"
                       >
+                        <template #headerCell="{ column }">
+                          <template v-if="column.key === 'outputTokens'">
+                            <a-tooltip placement="top">
+                              <template #title>completionTokens = 模型本次调用输出的全部 token 数（含思考 reasoningTokens）</template>
+                              <span>{{ column.title }}</span>
+                            </a-tooltip>
+                          </template>
+                          <template v-else>{{ column.title }}</template>
+                        </template>
                         <template #bodyCell="{ column, record: call }">
                           <template v-if="column.key === 'stage'">
                             <span class="llm-seq">#{{ call.seq }}</span> {{ call.stage }}
@@ -225,6 +234,9 @@
                               <span>{{ call.model }}</span>
                             </a-tooltip>
                             <span v-else>{{ call.model }}</span>
+                          </template>
+                          <template v-else-if="column.key === 'temperature'">
+                            {{ call.temperature ?? '—' }}
                           </template>
                           <template v-else-if="column.key === 'inputTokens'">
                             <a-tooltip v-if="call.inputBreakdown" placement="topLeft">
@@ -317,7 +329,12 @@
                           <template v-else-if="column.key === 'time'">
                             <template v-if="call.callReturnedAt !== null">
                               <a-tooltip placement="topLeft">
-                                <template #title>{{ formatTime(call.callSentAt, true) }} ～ {{ formatTime(call.callReturnedAt, true) }}</template>
+                                <template #title>
+                                  <div>{{ formatTime(call.callSentAt, true) }} ～ {{ formatTime(call.callReturnedAt, true) }}</div>
+                                  <template v-if="timingLinesOf(call)">
+                                    <div v-for="line in timingLinesOf(call)" :key="line">{{ line }}</div>
+                                  </template>
+                                </template>
                                 <span class="dur-simple">耗时 {{ formatDuration(call.callReturnedAt - call.callSentAt) }}</span>
                               </a-tooltip>
                             </template>
@@ -457,11 +474,13 @@ import {
   type LogListItem,
   type LogListQuery,
   type RouteSource,
+  type ToolCallRecord,
   type TokenStatsData,
 } from '../api/client'
 import RetrievalDiagnosticsPanel from '../components/RetrievalDiagnosticsPanel.vue'
 import SangoChapterReader from '../components/SangoChapterReader.vue'
 import { copyText } from '../utils/clipboard'
+import { timingLines } from '../utils/retrievalDiagnostics'
 import {
   cacheBadge,
   cacheFormulaText,
@@ -522,6 +541,11 @@ function callerStageLabel(call: { caller?: string | null; stage?: string | null 
   if (caller && CALLER_LABELS[caller]) parts.push(CALLER_LABELS[caller])
   if (stage && STAGE_LABELS[stage]) parts.push(STAGE_LABELS[stage])
   return parts.length ? parts.join(' · ') : '—'
+}
+
+// 检索分阶段耗时（feat-A013 验收）：timing 缺失返回 null，工具调用耗时 tooltip 不追加 4 行
+function timingLinesOf(call: ToolCallRecord): string[] | null {
+  return timingLines(call.diagnostics?.timing)
 }
 
 // ── 路由来源 / 重试标记（feat-A012）──
@@ -834,8 +858,9 @@ const columns = [
 const llmColumns = [
   { key: 'stage', title: '阶段', width: 120 },
   { key: 'model', title: '模型', width: 170 },
+  { key: 'temperature', title: '温度', width: 70, align: 'center' },
   { key: 'inputTokens', title: '输入 Token', width: 130 },
-  { key: 'outputTokens', title: '输出 Token', width: 130 },
+  { key: 'outputTokens', title: '输出 Token（completionTokens）', width: 130 },
   { key: 'cachedTokens', title: '缓存命中', width: 100 },
   { key: 'time', title: '耗时', width: 110 },
   { key: 'status', title: '状态', width: 140 },
@@ -1040,7 +1065,7 @@ function onOpenReader(target: ReaderTarget) {
 
 // 「操作」列复制 traceId（feat-A010 验收 3）：剪贴板降级路径，成功反馈
 function copyTraceId(traceId: string) {
-  void copyText(traceId).then((ok) => {
+  void copyText(`traceId: ${traceId}`).then((ok) => {
     if (ok) {
       message.success('已复制 traceId')
     } else {
