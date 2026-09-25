@@ -150,22 +150,8 @@
                       <a-tag :color="statusColor(q.status)">{{ statusLabel(q.status) }}</a-tag>
                     </template>
                     <template v-else-if="column.key === 'candidates'">
-                      <div v-if="visibleCandidates(q).length === 0" class="cand-empty">—</div>
-                      <div v-else class="cand-list">
-                        <span v-for="c in visibleCandidates(q)" :key="c.id" class="cand-item">
-                          <span class="cand-id">{{ shortCandidateId(c.id) }}</span>
-                          <a-button type="link" size="small" class="cand-view" @click="openReader(c)">查看</a-button>
-                        </span>
-                        <a-button
-                          v-if="q.candidates.length > CANDIDATE_VISIBLE_LIMIT"
-                          type="link"
-                          size="small"
-                          class="cand-more"
-                          @click="toggleShowAll(q.id)"
-                        >
-                          {{ showAllCandidates[q.id] ? '收起' : `全部 ${q.candidates.length} 个` }}
-                        </a-button>
-                      </div>
+                      <div v-if="q.candidates.length === 0" class="cand-empty">—</div>
+                      <a-button v-else type="link" size="small" @click="openCandidateModal(q)">查看</a-button>
                     </template>
                   </template>
                 </a-table>
@@ -222,6 +208,24 @@
       :chapter-title="readerChapterTitle"
       :chunk-id="readerChunkId"
     />
+    <a-modal
+      v-model:open="candidateModalOpen"
+      :title="`候选（${candidateModalResult?.candidates.length ?? 0} 个）`"
+      :footer="null"
+      width="min(720px, 90vw)"
+    >
+      <ul class="candidate-modal-list">
+        <li
+          v-for="c in candidateModalResult?.candidates ?? []"
+          :key="c.id"
+          class="candidate-modal-item"
+          @click="openReader(c)"
+        >
+          <span class="candidate-modal-id">{{ shortCandidateId(c.id) }}</span>
+          <span class="candidate-modal-title">{{ c.title }}</span>
+        </li>
+      </ul>
+    </a-modal>
   </main>
 </template>
 
@@ -281,7 +285,6 @@ const SERIES_DEFS = [
 
 const BAR_GRID = { left: 56, right: 64, top: 56, bottom: 48 } as const
 const TREND_GRID = { left: 56, right: 24, top: 36, bottom: 44 } as const
-const CANDIDATE_VISIBLE_LIMIT = 10
 
 // ── 状态 ──
 
@@ -293,8 +296,10 @@ const historyLoading = ref(false)
 const runLoading = ref(false)
 const filter = ref<BenchmarkFilter>('all')
 const expandedCategories = ref<string[]>([])
-const showAllCandidates = ref<Record<string, boolean>>({})
 const activeTab = ref<'summary' | 'charts'>('summary')
+
+const candidateModalOpen = ref(false)
+const candidateModalResult = ref<BenchmarkResultItem | null>(null)
 
 const barChartEl = ref<HTMLElement | null>(null)
 const trendChartEl = ref<HTMLElement | null>(null)
@@ -407,21 +412,15 @@ const visibleResults = computed<BenchmarkResultItem[]>(() => {
 const questionColumns = [
   { key: 'seq', title: '序号', width: 56, align: 'center' },
   { key: 'question', title: '问题', width: 260 },
-  { key: 'answer', title: '标准答案', width: 150 },
+  { key: 'answer', title: '参考答案', width: 150 },
   { key: 'evidence', title: '证据', width: 220 },
   { key: 'rank', title: 'rank', width: 80, align: 'center' },
   { key: 'status', title: '状态', width: 90, align: 'center' },
-  { key: 'candidates', title: '候选', width: 300 },
+  { key: 'candidates', title: '候选', width: 90 },
 ]
 
 function detailRowsOf(category: string): BenchmarkResultItem[] {
   return visibleResults.value.filter((r) => categoryOf(r) === category)
-}
-
-function visibleCandidates(item: BenchmarkResultItem): BenchmarkCandidate[] {
-  return showAllCandidates.value[item.id]
-    ? item.candidates
-    : item.candidates.slice(0, CANDIDATE_VISIBLE_LIMIT)
 }
 
 function questionSeq(item: BenchmarkResultItem): number {
@@ -434,8 +433,9 @@ function shortCandidateId(id: string): string {
   return i >= 0 ? id.slice(i + 1) : id
 }
 
-function toggleShowAll(id: string): void {
-  showAllCandidates.value = { ...showAllCandidates.value, [id]: !showAllCandidates.value[id] }
+function openCandidateModal(item: BenchmarkResultItem): void {
+  candidateModalResult.value = item
+  candidateModalOpen.value = true
 }
 
 function onFilterChange(): void {
@@ -691,7 +691,7 @@ async function onRun(): Promise<void> {
     snapshotData.value = data
     selectedRunId.value = data.runId
     expandedCategories.value = []
-    showAllCandidates.value = {}
+    candidateModalOpen.value = false
     message.success(
       `评测完成：通过 ${data.summary.top5}/${data.summary.total}（${formatRatio(data.summary.top5, data.summary.total)}）`,
     )
@@ -736,7 +736,7 @@ async function onHistoryClick(item: BenchmarkHistoryItem): Promise<void> {
     snapshotData.value = data
     selectedRunId.value = item.runId
     expandedCategories.value = []
-    showAllCandidates.value = {}
+    candidateModalOpen.value = false
   } catch (err) {
     message.error(getErrorMessage(err))
   } finally {
@@ -998,35 +998,36 @@ onBeforeUnmount(() => {
   color: #c25b4e;
 }
 
-.cand-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-
 .cand-empty {
   color: #8b9990;
 }
 
-.cand-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
+.candidate-modal-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
-.cand-id {
+.candidate-modal-item {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.candidate-modal-item:hover {
+  background: #f0f5f2;
+}
+
+.candidate-modal-id {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
   font-size: 12px;
   color: #1d2924;
-}
-
-.cand-view {
-  padding: 0 2px;
-}
-
-.cand-more {
-  padding: 0 4px;
+  flex-shrink: 0;
 }
 
 .history-run {
