@@ -10,6 +10,9 @@
           </span>
         </RouterLink>
         <div class="header-actions">
+          <RouterLink to="/benchmark">
+            <a-button size="small">评测控制台</a-button>
+          </RouterLink>
           <RouterLink :to="logsBackTarget">
             <a-button size="small">← 返回日志</a-button>
           </RouterLink>

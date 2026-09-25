@@ -4,6 +4,7 @@ import type { SangoChapterData } from '../api/client'
 import {
   buildCitationReaderTarget,
   centeredScrollTop,
+  chapterFromChunkId,
   findChunkByText,
   isValidChapter,
   SANGO_CHAPTER_MAX,
@@ -117,5 +118,23 @@ describe('验收 6 / 11 / 12：聊天侧入口目标（buildCitationReaderTarget
     assert.equal(target.chunkId, undefined)
     assert.equal(target.chapter, 73)
     assert.equal(target.chapterTitle, chapterData.title)
+  })
+})
+
+describe('feat-A015：候选 chunkId 回号解析（chapterFromChunkId）', () => {
+  it('sango-yanyi:0085:c0011 → 85（回号 4 位零补）', () => {
+    assert.equal(chapterFromChunkId('sango-yanyi:0085:c0011'), 85)
+  })
+
+  it('回号不足 4 位（0001 → 1）与无零补格式均可解析', () => {
+    assert.equal(chapterFromChunkId('sango-yanyi:0001:c0009'), 1)
+    assert.equal(chapterFromChunkId('sango-yanyi:73:c1'), 73)
+  })
+
+  it('格式不符返回 NaN，页面提示无法解析而非抛错', () => {
+    assert.ok(Number.isNaN(chapterFromChunkId('not-a-chunk-id')))
+    assert.ok(Number.isNaN(chapterFromChunkId('sango-yanyi:c0011')))
+    assert.ok(Number.isNaN(chapterFromChunkId('sango-yanyi:abc:c0011')))
+    assert.ok(Number.isNaN(chapterFromChunkId('sango-yanyi:0000:c0011')))
   })
 })

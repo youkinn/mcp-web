@@ -12,6 +12,13 @@ export default defineConfig({
         target: 'http://localhost:3000',
         changeOrigin: true,
       },
+      // feat-A015：sango 本地 dev 评测接口（SANGO_DEV_HTTP_PORT=8787 时由 sango 进程提供）
+      '/sango-bench': {
+        target: 'http://127.0.0.1:8787',
+        changeOrigin: true,
+        // 契约 §3 Base 为 /dev/benchmark，去前缀转发
+        rewrite: (path) => path.replace(/^\/sango-bench/, ''),
+      },
     },
   },
 })
