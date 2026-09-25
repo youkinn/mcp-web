@@ -122,12 +122,11 @@
                   :data-source="detailRowsOf(record.name)"
                   :row-key="(q: BenchmarkResultItem) => q.id"
                   :pagination="false"
-                  :scroll="{ x: 'max-content' }"
                   size="small"
                   class="question-table"
                 >
                   <template #bodyCell="{ column, record: q }">
-                    <template v-if="column.key === 'id'">{{ q.id }}</template>
+                    <template v-if="column.key === 'seq'">{{ questionSeq(q) }}</template>
                     <template v-else-if="column.key === 'question'">
                       <a-tooltip placement="topLeft">
                         <template #title>{{ q.question }}</template>
@@ -155,9 +154,10 @@
                     <template v-else-if="column.key === 'candidates'">
                       <div v-if="visibleCandidates(q).length === 0" class="cand-empty">—</div>
                       <div v-else class="cand-list">
-                        <a-tag v-for="c in visibleCandidates(q)" :key="c.id" class="cand-tag" @click="openReader(c)">
-                          {{ c.id }}
-                        </a-tag>
+                        <span v-for="c in visibleCandidates(q)" :key="c.id" class="cand-item">
+                          <span class="cand-id">{{ shortCandidateId(c.id) }}</span>
+                          <a-button type="link" size="small" class="cand-view" @click="openReader(c)">查看</a-button>
+                        </span>
                         <a-button
                           v-if="q.candidates.length > CANDIDATE_VISIBLE_LIMIT"
                           type="link"
@@ -177,13 +177,13 @@
         </section>
 
         <section class="bench-card">
-          <div class="card-head"><h3>类别分布（点击柱形展开对应类别明细）</h3></div>
+          <div class="card-head"><h3>类别分布</h3></div>
           <div v-if="snapshotLoading" class="chart-state"><a-spin size="small" /><span>快照加载中…</span></div>
           <div v-else ref="barChartEl" class="chart-canvas" />
         </section>
 
         <section class="bench-card">
-          <div class="card-head"><h3>通过率趋势（按 runId 依次展示历史整体对比）</h3></div>
+          <div class="card-head"><h3>通过率趋势（hover 按 runId 依次展示历史整体对比）</h3></div>
           <div v-if="historyLoading && historyItems.length === 0" class="chart-state"><a-spin size="small" /><span>历史加载中…</span></div>
           <div v-else-if="historyItems.length === 0" class="chart-state"><span>暂无历史执行记录</span></div>
           <div v-else ref="trendChartEl" class="chart-canvas" />
@@ -404,13 +404,13 @@ const visibleResults = computed<BenchmarkResultItem[]>(() => {
 })
 
 const questionColumns = [
-  { key: 'id', title: '编号', width: 120 },
+  { key: 'seq', title: '序号', width: 56, align: 'center' },
   { key: 'question', title: '问题', width: 260 },
   { key: 'answer', title: '标准答案', width: 180 },
-  { key: 'evidence', title: '证据', width: 260 },
+  { key: 'evidence', title: '证据', width: 220 },
   { key: 'rank', title: 'rank', width: 80, align: 'center' },
   { key: 'status', title: '状态', width: 90, align: 'center' },
-  { key: 'candidates', title: '候选（点 chunkId 看原文）', width: 340 },
+  { key: 'candidates', title: '候选', width: 300 },
 ]
 
 function detailRowsOf(category: string): BenchmarkResultItem[] {
@@ -421,6 +421,16 @@ function visibleCandidates(item: BenchmarkResultItem): BenchmarkCandidate[] {
   return showAllCandidates.value[item.id]
     ? item.candidates
     : item.candidates.slice(0, CANDIDATE_VISIBLE_LIMIT)
+}
+
+function questionSeq(item: BenchmarkResultItem): number {
+  const idx = snapshotData.value?.results.findIndex((r) => r.id === item.id) ?? -1
+  return idx >= 0 ? idx + 1 : 0
+}
+
+function shortCandidateId(id: string): string {
+  const i = id.indexOf(':')
+  return i >= 0 ? id.slice(i + 1) : id
 }
 
 function toggleShowAll(id: string): void {
@@ -462,6 +472,11 @@ const chartCategoryRows = computed<ChartRow[]>(() => {
 function renderBarChart(): void {
   const el = barChartEl.value
   if (!el || !snapshotData.value) return
+  if (barChart && barChart.getDom() !== el) {
+    barChart.dispose()
+    barChart = null
+    barChartClickBound = false
+  }
   barChart ??= initChart(el)
   if (!barChartClickBound) {
     barChart.getZr().on('click', onBarChartClick)
@@ -529,6 +544,10 @@ function renderBarChart(): void {
 function renderTrendChart(): void {
   const el = trendChartEl.value
   if (!el) return
+  if (trendChart && trendChart.getDom() !== el) {
+    trendChart.dispose()
+    trendChart = null
+  }
   trendChart ??= initChart(el)
   // 接口按时间倒序返回，折线按 runId 从早到晚依次展示
   const items = [...historyItems.value].reverse()
@@ -720,7 +739,7 @@ function openReader(candidate: BenchmarkCandidate): void {
 // ── 生命周期 ──
 
 watch(
-  [snapshotData, filter, historyItems],
+  [snapshotData, snapshotLoading, filter, historyItems],
   async () => {
     await nextTick()
     renderBarChart()
@@ -962,16 +981,20 @@ onBeforeUnmount(() => {
   color: #8b9990;
 }
 
-.cand-tag {
-  margin: 0;
-  cursor: pointer;
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
+.cand-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 
-.cand-tag:hover {
-  border-color: #b17837;
-  color: #b17837;
+.cand-id {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  color: #1d2924;
+}
+
+.cand-view {
+  padding: 0 2px;
 }
 
 .cand-more {
