@@ -60,6 +60,8 @@
           <a-tag color="red">未命中 {{ snapshotData.summary.miss }}</a-tag>
         </div>
 
+        <a-tabs v-model:activeKey="activeTab" class="bench-tabs" @change="onTabChange">
+          <a-tab-pane key="summary" tab="类别汇总">
         <section class="bench-card">
           <div class="card-head">
             <h3>类别汇总</h3>
@@ -86,21 +88,16 @@
                 <span :class="rateClass(record.passRate)">{{ formatRatio(record.top5, record.total) }}</span>
               </template>
               <template v-else-if="column.key === 'hit5'">{{ record.top5 }}</template>
-              <template v-else-if="column.key === 'hit5Rate'">
-                <span :class="rateClass(record.passRate)">{{ formatRatio(record.top5, record.total) }}</span>
-              </template>
             </template>
 
             <template #summary>
               <a-table-summary>
                 <a-table-summary-row>
-                  <a-table-summary-cell :index="0" class="sum-cell-name">合计</a-table-summary-cell>
-                  <a-table-summary-cell :index="1" align="center" class="sum-cell">{{ summaryTotal?.total ?? 0 }}</a-table-summary-cell>
-                  <a-table-summary-cell :index="2" align="center" class="sum-cell">{{ summaryTotal?.top5 ?? 0 }}</a-table-summary-cell>
-                  <a-table-summary-cell :index="3" align="center" class="sum-cell">{{ summaryTotal?.fail ?? 0 }}</a-table-summary-cell>
-                  <a-table-summary-cell :index="4" align="center" class="sum-cell">
-                    {{ formatRatio(summaryTotal?.top5 ?? 0, summaryTotal?.total ?? 0) }}
-                  </a-table-summary-cell>
+                  <a-table-summary-cell :index="0" />
+                  <a-table-summary-cell :index="1" class="sum-cell-name">合计</a-table-summary-cell>
+                  <a-table-summary-cell :index="2" align="center" class="sum-cell">{{ summaryTotal?.total ?? 0 }}</a-table-summary-cell>
+                  <a-table-summary-cell :index="3" align="center" class="sum-cell">{{ summaryTotal?.top5 ?? 0 }}</a-table-summary-cell>
+                  <a-table-summary-cell :index="4" align="center" class="sum-cell">{{ summaryTotal?.fail ?? 0 }}</a-table-summary-cell>
                   <a-table-summary-cell :index="5" align="center" class="sum-cell">{{ summaryTotal?.top5 ?? 0 }}</a-table-summary-cell>
                   <a-table-summary-cell :index="6" align="center" class="sum-cell">
                     {{ formatRatio(summaryTotal?.top5 ?? 0, summaryTotal?.total ?? 0) }}
@@ -123,6 +120,7 @@
                   :row-key="(q: BenchmarkResultItem) => q.id"
                   :pagination="false"
                   size="small"
+                  table-layout="fixed"
                   class="question-table"
                 >
                   <template #bodyCell="{ column, record: q }">
@@ -177,19 +175,6 @@
         </section>
 
         <section class="bench-card">
-          <div class="card-head"><h3>类别分布</h3></div>
-          <div v-if="snapshotLoading" class="chart-state"><a-spin size="small" /><span>快照加载中…</span></div>
-          <div v-else ref="barChartEl" class="chart-canvas" />
-        </section>
-
-        <section class="bench-card">
-          <div class="card-head"><h3>通过率趋势（hover 按 runId 依次展示历史整体对比）</h3></div>
-          <div v-if="historyLoading && historyItems.length === 0" class="chart-state"><a-spin size="small" /><span>历史加载中…</span></div>
-          <div v-else-if="historyItems.length === 0" class="chart-state"><span>暂无历史执行记录</span></div>
-          <div v-else ref="trendChartEl" class="chart-canvas" />
-        </section>
-
-        <section class="bench-card">
           <div class="card-head"><h3>历史快照（点击行切换查看该次执行）</h3></div>
           <a-table
             :columns="historyColumns"
@@ -212,6 +197,22 @@
             </template>
           </a-table>
         </section>
+          </a-tab-pane>
+          <a-tab-pane key="charts" tab="图表">
+        <section class="bench-card">
+          <div class="card-head"><h3>类别分布</h3></div>
+          <div v-if="snapshotLoading" class="chart-state"><a-spin size="small" /><span>快照加载中…</span></div>
+          <div v-else ref="barChartEl" class="chart-canvas" />
+        </section>
+
+        <section class="bench-card">
+          <div class="card-head"><h3>通过率趋势（hover 按 runId 依次展示历史整体对比）</h3></div>
+          <div v-if="historyLoading && historyItems.length === 0" class="chart-state"><a-spin size="small" /><span>历史加载中…</span></div>
+          <div v-else-if="historyItems.length === 0" class="chart-state"><span>暂无历史执行记录</span></div>
+          <div v-else ref="trendChartEl" class="chart-canvas" />
+        </section>
+          </a-tab-pane>
+        </a-tabs>
       </template>
     </div>
 
@@ -293,6 +294,7 @@ const runLoading = ref(false)
 const filter = ref<BenchmarkFilter>('all')
 const expandedCategories = ref<string[]>([])
 const showAllCandidates = ref<Record<string, boolean>>({})
+const activeTab = ref<'summary' | 'charts'>('summary')
 
 const barChartEl = ref<HTMLElement | null>(null)
 const trendChartEl = ref<HTMLElement | null>(null)
@@ -358,9 +360,8 @@ const categoryColumns = [
   { key: 'total', title: '总题数', align: 'center', width: 90 },
   { key: 'top5', title: '通过数', align: 'center', width: 90 },
   { key: 'fail', title: '失败数', align: 'center', width: 90 },
+  { key: 'hit5', title: 'Top命中数', align: 'center', width: 110 },
   { key: 'passRate', title: '通过率', align: 'center', width: 110 },
-  { key: 'hit5', title: 'Hit@5 命中数', align: 'center', width: 140 },
-  { key: 'hit5Rate', title: 'Hit@5 命中率', align: 'center', width: 140 },
 ]
 
 const fullCategoryRows = computed<CategoryRow[]>(() => {
@@ -406,7 +407,7 @@ const visibleResults = computed<BenchmarkResultItem[]>(() => {
 const questionColumns = [
   { key: 'seq', title: '序号', width: 56, align: 'center' },
   { key: 'question', title: '问题', width: 260 },
-  { key: 'answer', title: '标准答案', width: 180 },
+  { key: 'answer', title: '标准答案', width: 150 },
   { key: 'evidence', title: '证据', width: 220 },
   { key: 'rank', title: 'rank', width: 80, align: 'center' },
   { key: 'status', title: '状态', width: 90, align: 'center' },
@@ -622,11 +623,32 @@ function onBarChartClick(event: unknown): void {
 }
 
 function expandCategory(name: string): void {
+  activeTab.value = 'summary'
   if (!expandedCategories.value.includes(name)) {
     expandedCategories.value = [...expandedCategories.value, name]
   }
   void nextTick(() => {
     document.querySelector(`.cat-table [data-row-key="${name}"]`)?.scrollIntoView({ block: 'center' })
+  })
+}
+
+function disposeCharts(): void {
+  barChart?.dispose()
+  barChart = null
+  barChartClickBound = false
+  trendChart?.dispose()
+  trendChart = null
+}
+
+function onTabChange(key: string | number): void {
+  // echarts 在隐藏 tab 中容器尺寸为 0，切回「图表」时 dispose 重建后重绘
+  if (String(key) !== 'charts') return
+  disposeCharts()
+  void nextTick(() => {
+    renderBarChart()
+    renderTrendChart()
+    barChart?.resize()
+    trendChart?.resize()
   })
 }
 
@@ -742,6 +764,8 @@ watch(
   [snapshotData, snapshotLoading, filter, historyItems],
   async () => {
     await nextTick()
+    // 图表 tab 未激活时容器尺寸为 0，跳过绘制；切到「图表」由 onTabChange 重建
+    if (activeTab.value !== 'charts') return
     renderBarChart()
     renderTrendChart()
   },
@@ -884,6 +908,10 @@ onBeforeUnmount(() => {
 
 .filter-select {
   width: 230px;
+}
+
+.bench-tabs :deep(.ant-tabs-nav) {
+  margin-bottom: 0;
 }
 
 .cat-table :deep(.ant-table-thead > tr > th) {
