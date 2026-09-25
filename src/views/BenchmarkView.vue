@@ -192,7 +192,11 @@
         </section>
 
         <section class="bench-card">
-          <div class="card-head"><h3>通过率趋势（hover 按 runId 依次展示历史整体对比）</h3></div>
+          <div class="card-head">
+            <a-tooltip title="按 runId 依次展示历史整体对比">
+              <h3>通过率趋势</h3>
+            </a-tooltip>
+          </div>
           <div v-if="historyLoading && historyItems.length === 0" class="chart-state"><a-spin size="small" /><span>历史加载中…</span></div>
           <div v-else-if="historyItems.length === 0" class="chart-state"><span>暂无历史执行记录</span></div>
           <div v-else ref="trendChartEl" class="chart-canvas" />
@@ -296,7 +300,18 @@ const historyLoading = ref(false)
 const runLoading = ref(false)
 const filter = ref<BenchmarkFilter>('all')
 const expandedCategories = ref<string[]>([])
-const activeTab = ref<'summary' | 'charts'>('summary')
+const ACTIVE_TAB_KEY = 'benchmark-active-tab'
+
+function restoreActiveTab(): 'summary' | 'charts' {
+  try {
+    const saved = sessionStorage.getItem(ACTIVE_TAB_KEY)
+    return saved === 'summary' || saved === 'charts' ? saved : 'summary'
+  } catch {
+    return 'summary'
+  }
+}
+
+const activeTab = ref<'summary' | 'charts'>(restoreActiveTab())
 
 const candidateModalOpen = ref(false)
 const candidateModalResult = ref<BenchmarkResultItem | null>(null)
@@ -365,7 +380,7 @@ const categoryColumns = [
   { key: 'total', title: '总题数', align: 'center', width: 90 },
   { key: 'top5', title: '通过数', align: 'center', width: 90 },
   { key: 'fail', title: '失败数', align: 'center', width: 90 },
-  { key: 'hit5', title: 'Top命中数', align: 'center', width: 110 },
+  { key: 'hit5', title: 'Top5命中数', align: 'center', width: 110 },
   { key: 'passRate', title: '通过率', align: 'center', width: 110 },
 ]
 
@@ -413,8 +428,8 @@ const questionColumns = [
   { key: 'seq', title: '序号', width: 56, align: 'center' },
   { key: 'question', title: '问题', width: 260 },
   { key: 'answer', title: '参考答案', width: 150 },
-  { key: 'evidence', title: '证据', width: 220 },
-  { key: 'rank', title: 'rank', width: 80, align: 'center' },
+  { key: 'evidence', title: '期望命中', width: 220 },
+  { key: 'rank', title: '排名', width: 80, align: 'center' },
   { key: 'status', title: '状态', width: 90, align: 'center' },
   { key: 'candidates', title: '候选', width: 90 },
 ]
@@ -759,6 +774,15 @@ function openReader(candidate: BenchmarkCandidate): void {
 }
 
 // ── 生命周期 ──
+
+// 标签页选择跨刷新 / 重进保持（sessionStorage 持久化，隐私模式等异常静默降级）
+watch(activeTab, (key) => {
+  try {
+    sessionStorage.setItem(ACTIVE_TAB_KEY, key)
+  } catch {
+    // 持久化失败不影响本次会话内标签切换
+  }
+})
 
 watch(
   [snapshotData, snapshotLoading, filter, historyItems],
