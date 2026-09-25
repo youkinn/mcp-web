@@ -2,18 +2,23 @@ import { strict as assert } from 'node:assert'
 import { afterEach, describe, it, mock } from 'node:test'
 import {
   apiClient,
+  benchmarkClient,
   clearCache,
   deleteCacheEntry,
   fetchCacheEntries,
   fetchCacheOverview,
   fetchCacheStatus,
   fetchGrayzone,
+  getBenchmarkHistory,
+  getBenchmarkLatest,
+  getBenchmarkSnapshot,
   fetchLogDetail,
   fetchLogList,
   fetchMisjudge,
   fetchSangoChapter,
   fetchSimilarityDistribution,
   markMisjudge,
+  postBenchmarkRun,
   sendChatMessage,
   sendSangoRandom,
   unmarkMisjudge,
@@ -514,5 +519,60 @@ describe('缓存控制台接口（feat-A013）', () => {
     assert.equal(result.list[0]?.cacheHit, 1)
     assert.equal(result.list[1]?.cacheHit, 0)
     assert.equal(result.list[2]?.cacheHit, null)
+  })
+})
+
+// ── 评测执行（feat-A015）──
+
+describe('评测执行接口（feat-A015）', () => {
+  it('benchmark 客户端基址为 /sango-bench（不挂 /api 前缀，超时放宽供完整回归）', () => {
+    assert.equal(benchmarkClient.defaults.baseURL, '/sango-bench')
+    assert.equal(benchmarkClient.defaults.timeout, 120_000)
+  })
+
+  it('postBenchmarkRun POST /sango-bench/dev/benchmark/run 并解包完整快照', async () => {
+    mock.method(benchmarkClient, 'post', async (url: string) => {
+      assert.equal(url, '/dev/benchmark/run')
+      return okEnvelope({ runId: 'feat-A015-2026-09-25-1451', time: 't', summary: { total: 10, top5: 6 }, results: [] })
+    })
+    const result = await postBenchmarkRun()
+    assert.equal(result.runId, 'feat-A015-2026-09-25-1451')
+    assert.equal(result.summary.top5, 6)
+  })
+
+  it('getBenchmarkHistory GET /sango-bench/dev/benchmark/history 并解包列表', async () => {
+    mock.method(benchmarkClient, 'get', async (url: string) => {
+      assert.equal(url, '/dev/benchmark/history')
+      return okEnvelope([{ runId: 'feat-A015-2026-09-25-1451', time: 't', summary: { total: 10, top5: 6 } }])
+    })
+    const result = await getBenchmarkHistory()
+    assert.equal(result[0]?.runId, 'feat-A015-2026-09-25-1451')
+  })
+
+  it('getBenchmarkSnapshot 携带 runId 查询参数', async () => {
+    mock.method(benchmarkClient, 'get', async (url: string, config?: { params?: Record<string, unknown> }) => {
+      assert.equal(url, '/dev/benchmark/snapshot')
+      assert.deepEqual(config?.params, { runId: 'feat-A015-2026-09-25-1451' })
+      return okEnvelope({ runId: 'feat-A015-2026-09-25-1451', time: 't', summary: null, results: [] })
+    })
+    const result = await getBenchmarkSnapshot('feat-A015-2026-09-25-1451')
+    assert.equal(result?.runId, 'feat-A015-2026-09-25-1451')
+  })
+
+  it('getBenchmarkLatest 无快照 data:null 返回 null 不抛错（页面空态）', async () => {
+    mock.method(benchmarkClient, 'get', async (url: string) => {
+      assert.equal(url, '/dev/benchmark/latest')
+      return okEnvelope(null)
+    })
+    const result = await getBenchmarkLatest()
+    assert.equal(result, null)
+  })
+
+  it('latest 接口 code 非 200 抛出 message（异常可见）', async () => {
+    mock.method(benchmarkClient, 'get', async () => ({
+      data: { code: 500, data: null, message: '评测集文件缺失' },
+      headers: {},
+    }))
+    await assert.rejects(() => getBenchmarkLatest(), /评测集文件缺失/)
   })
 })

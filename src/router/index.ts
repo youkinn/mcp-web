@@ -25,6 +25,11 @@ const router = createRouter({
       name: 'cache',
       component: () => import('../views/CacheView.vue'),
     },
+    {
+      path: '/benchmark',
+      name: 'benchmark',
+      component: () => import('../views/BenchmarkView.vue'),
+    },
   ],
 })
 

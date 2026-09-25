@@ -354,8 +354,26 @@ export const apiClient = axios.create({
   },
 })
 
+// 导出供 node:test 单测以 mock.method 打桩；dev 评测接口独立旁路：基址走 VITE_BENCHMARK_API_BASE（默认 /sango-bench，不挂 /api 前缀）
+export const benchmarkClient = axios.create({
+  baseURL: import.meta.env?.VITE_BENCHMARK_API_BASE || '/sango-bench',
+  // 完整回归可达数十秒，超出 apiClient 的 30s 常规超时
+  timeout: 120_000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
 function unwrapData<T>(body: ApiResponse<T>): T {
   if (body.code !== 200 || body.data === null) {
+    throw new Error(body.message || '请求失败，请稍后重试。')
+  }
+  return body.data
+}
+
+/** data 允许为 null 的拆包：只校验 code（feat-A015 latest/snapshot 无快照场景 data:null），失败仍抛 message */
+function unwrapNullable<T>(body: ApiResponse<T>): T | null {
+  if (body.code !== 200) {
     throw new Error(body.message || '请求失败，请稍后重试。')
   }
   return body.data
@@ -664,6 +682,106 @@ export async function fetchMisjudge(startAt: number, endAt: number): Promise<Mis
     params: { startAt, endAt },
   })
   return unwrapData(data)
+}
+
+// ── 评测执行（feat-A015）──
+
+export interface BenchmarkCategorySummary {
+  total: number
+  top5: number
+  tail: number
+  miss: number
+}
+
+export interface BenchmarkSummary {
+  tool: string
+  version: string
+  time: string
+  benchmark: string
+  engine: unknown
+  total: number
+  top5: number
+  tail: number
+  miss: number
+  top3: number
+  top10: number
+  inPool50: number
+  noAnchorCount: number
+  noAnchor: string[]
+  category: Record<string, BenchmarkCategorySummary>
+  runId: string
+}
+
+/** 单题判定：rank 1–5 判对 top5；6–10 兜底 tail；>10 或未召回（rank=0）为 miss */
+export type BenchmarkStatus = 'top5' | 'tail' | 'miss'
+
+export interface BenchmarkCandidate {
+  id: string
+  chapter: number
+  title: string
+}
+
+export interface BenchmarkHit extends BenchmarkCandidate {
+  text: string
+}
+
+/** 回目锚：titleAnchors 元素 */
+export interface BenchmarkAnchorRef {
+  chapter: number
+  title: string
+}
+
+export interface BenchmarkResultItem {
+  id: string
+  question: string
+  answer: string
+  evidence: string
+  textAnchors: string[]
+  titleAnchors: BenchmarkAnchorRef[]
+  chapterRefs: number[]
+  rank: number
+  status: BenchmarkStatus
+  hit: BenchmarkHit | null
+  candidates: BenchmarkCandidate[]
+}
+
+export interface BenchmarkData {
+  runId: string
+  time: string
+  summary: BenchmarkSummary
+  results: BenchmarkResultItem[]
+}
+
+/** 历史列表条目：只带摘要（summary 含 runId），明细按 runId 拉取快照 */
+export interface BenchmarkHistoryItem {
+  runId: string
+  time: string
+  summary: BenchmarkSummary
+}
+
+/** POST run：同步返回完整快照形状（runId + summary + results），执行中页面等待 */
+export async function postBenchmarkRun(): Promise<BenchmarkData> {
+  const { data } = await benchmarkClient.post<ApiResponse<BenchmarkData>>('/dev/benchmark/run')
+  return unwrapData(data)
+}
+
+/** 最近一次快照；无快照时后端 200 + data:null，返回 null（页面空态） */
+export async function getBenchmarkLatest(): Promise<BenchmarkData | null> {
+  const { data } = await benchmarkClient.get<ApiResponse<BenchmarkData>>('/dev/benchmark/latest')
+  return unwrapNullable(data)
+}
+
+export async function getBenchmarkHistory(): Promise<BenchmarkHistoryItem[]> {
+  const { data } = await benchmarkClient.get<ApiResponse<BenchmarkHistoryItem[]>>('/dev/benchmark/history')
+  return unwrapData(data)
+}
+
+/** 指定 runId 快照；runId 不存在后端 404，无快照 200 + data:null → null */
+export async function getBenchmarkSnapshot(runId: string): Promise<BenchmarkData | null> {
+  const { data } = await benchmarkClient.get<ApiResponse<BenchmarkData>>('/dev/benchmark/snapshot', {
+    params: { runId },
+  })
+  return unwrapNullable(data)
 }
 
 export function getErrorMessage(error: unknown): string {

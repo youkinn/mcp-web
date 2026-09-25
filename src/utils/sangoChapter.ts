@@ -54,3 +54,11 @@ export function buildCitationReaderTarget(
   const chunk = findChunkByText(data.chunks, text)
   return { chapter, chapterTitle: title, chunkId: chunk?.chunkId }
 }
+
+/** 候选 chunkId → 回号：`sango-yanyi:0085:c0011` → 85；格式不符返回 NaN（feat-A015 评测页点候选看原文） */
+export function chapterFromChunkId(chunkId: string): number {
+  const parts = chunkId.split(':')
+  if (parts.length < 2) return NaN
+  const chapter = Number(parts[1])
+  return Number.isInteger(chapter) && chapter > 0 ? chapter : NaN
+}
