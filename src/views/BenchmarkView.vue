@@ -214,7 +214,7 @@
     />
     <a-modal
       v-model:open="candidateModalOpen"
-      :title="`候选（${candidateModalResult?.candidates.length ?? 0} 个）`"
+      :title="`召回列表（${candidateModalResult?.candidates.length ?? 0} 个）`"
       :footer="null"
       width="min(720px, 90vw)"
     >
@@ -431,7 +431,7 @@ const questionColumns = [
   { key: 'evidence', title: '期望命中', width: 220 },
   { key: 'rank', title: '排名', width: 80, align: 'center' },
   { key: 'status', title: '状态', width: 90, align: 'center' },
-  { key: 'candidates', title: '候选', width: 90 },
+  { key: 'candidates', title: '召回列表', width: 90, align: 'center' },
 ]
 
 function detailRowsOf(category: string): BenchmarkResultItem[] {
