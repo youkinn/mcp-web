@@ -640,6 +640,7 @@ async function onStatusChange(checked: boolean) {
     const status = await updateCacheStatus(checked)
     statusEnabled.value = status.enabled
     if (overview.value) overview.value.enabled = status.enabled
+    void Promise.all([loadOverview(), loadEntries()])
     message.success(status.enabled ? '缓存已开启' : '缓存已停用')
   } catch (err) {
     statusEnabled.value = overview.value?.enabled ?? false
