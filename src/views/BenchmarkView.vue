@@ -161,13 +161,17 @@
         </section>
 
         <section class="bench-card">
-          <div class="card-head"><h3>历史快照（点击行切换查看该次执行）</h3></div>
+          <div class="card-head">
+            <a-tooltip title="鼠标移入展示 点击行切换查看该次执行">
+              <h3>历史快照</h3>
+            </a-tooltip>
+          </div>
           <a-table
             :columns="historyColumns"
             :data-source="historyItems"
             :row-key="(item: BenchmarkHistoryItem) => item.runId"
             :loading="historyLoading"
-            :pagination="false"
+            :pagination="{ pageSize: 5 }"
             size="small"
             :row-class-name="historyRowClass"
             :custom-row="historyRowHandlers"
@@ -176,7 +180,6 @@
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'runId'">
                 <span class="history-run">{{ record.runId }}</span>
-                <a-tag v-if="record.runId === selectedRunId" class="history-current-tag" color="green">当前</a-tag>
               </template>
               <template v-else-if="column.key === 'time'">{{ formatBenchmarkTime(record.time) }}</template>
               <template v-else-if="column.key === 'summary'">{{ historySummaryText(record) }}</template>
@@ -283,8 +286,8 @@ const filterOptions = [
 
 const SERIES_DEFS = [
   { key: 'top5', name: '通过', color: '#2e6d56' },
-  { key: 'tail', name: '兜底', color: '#b17837' },
-  { key: 'miss', name: '未命中', color: '#c25b4e' },
+  { key: 'tail', name: '兜底', color: '#7caf9b' },
+  { key: 'miss', name: '未命中', color: '#d9d9d9' },
 ] as const
 
 const BAR_GRID = { left: 56, right: 64, top: 56, bottom: 48 } as const
@@ -571,6 +574,9 @@ function renderTrendChart(): void {
     trendChart.clear()
     return
   }
+  // 首次执行（历史最旧一条）通过率作为基线参考线
+  const first = items[0]
+  const baseline = first.summary.total > 0 ? (first.summary.top5 / first.summary.total) * 100 : null
   trendChart.setOption(
     {
       tooltip: {
@@ -579,7 +585,14 @@ function renderTrendChart(): void {
           const array = Array.isArray(params) ? params : [params]
           const first = array[0] as { dataIndex?: number } | undefined
           const item = items[first?.dataIndex ?? 0]
-          return item ? `${shortRunId(item.runId)}：<b>${formatRatio(item.summary.top5, item.summary.total)}</b>` : ''
+          if (!item) return ''
+          const s = item.summary
+          return [
+            `<b>${shortRunId(item.runId)}</b>`,
+            `时间：${formatBenchmarkTime(item.time)}`,
+            `通过 ${s.top5}/${s.total} · 兜底 ${s.tail} · 未命中 ${s.miss}`,
+            `通过率 ${formatRatio(s.top5, s.total)}`,
+          ].join('<br/>')
         },
       },
       grid: TREND_GRID,
@@ -611,6 +624,21 @@ function renderTrendChart(): void {
           itemStyle: { color: '#2e6d56' },
           areaStyle: { color: 'rgba(46,109,86,0.08)' },
           data: items.map((i) => (i.summary.total > 0 ? (i.summary.top5 / i.summary.total) * 100 : null)),
+          markLine:
+            baseline === null
+              ? undefined
+              : {
+                  symbol: 'none',
+                  silent: true,
+                  lineStyle: { type: 'dashed', color: '#8b9990', width: 1 },
+                  label: {
+                    formatter: `首跑基线 ${formatPercent(baseline / 100)}`,
+                    position: 'insideEndTop',
+                    color: '#8b9990',
+                    fontSize: 11,
+                  },
+                  data: [{ yAxis: baseline }],
+                },
         },
       ],
     },
@@ -1059,11 +1087,16 @@ onBeforeUnmount(() => {
   color: #163c32;
 }
 
-.history-current-tag {
-  margin-left: 6px;
+.history-table :deep(.history-row-current > td) {
+  background: #fff3cd !important;
 }
 
-.history-row-current > td {
-  background: #eef4ec !important;
+.history-table :deep(.ant-table-row) {
+  cursor: pointer;
+}
+
+.history-table :deep(.history-row-current .history-run) {
+  font-weight: 700;
+  color: #333;
 }
 </style>
