@@ -16,7 +16,7 @@ import {
   finalScoreFormula,
   formatScore,
   MERGED_CANDIDATES_HINT,
-  rewriteStageValueText,
+  REWRITE_STAGE_HINT,
   SCORING_FORMULA_NOTE,
   scoreRowClass,
   sourceMeta,
@@ -135,7 +135,7 @@ describe('buildDiagnosticsView 汇总视图', () => {
     assert.equal(view.funnel.pre.key, 'rewrite')
     assert.equal(view.funnel.pre.label, '归一化改写')
     assert.equal(view.funnel.pre.value, 1)
-    assert.equal(view.funnel.pre.hint, 'embed 前')
+    assert.equal(view.funnel.pre.hint, REWRITE_STAGE_HINT)
     assert.equal(view.deathIntent.detected, true)
     assert.equal(view.deathIntent.chunkIds[0], 'sanguo-yanyi:0001:c0001')
   })
@@ -173,16 +173,17 @@ describe('buildDiagnosticsView 汇总视图', () => {
 })
 
 describe('feat-A016 验收 8：归一化改写可观测（rewrites / normVersion / 漏斗预置环节）', () => {
-  it('漏斗 pre 预置环节：key / label / value=rewrites 命中数 / hint「embed 前」，位于语料 chunk 之前', () => {
+  it('漏斗 pre 预置环节：value=rewrites 命中数 / hint=环节 tooltip（改写先于检索，无 embed 术语），位于语料 chunk 之前', () => {
     const funnel = buildFunnel(fullDiagnostics.funnel, 3)
     assert.equal(funnel.pre.key, 'rewrite')
     assert.equal(funnel.pre.label, '归一化改写')
     assert.equal(funnel.pre.value, 3)
-    assert.equal(funnel.pre.hint, 'embed 前')
+    assert.equal(funnel.pre.hint, REWRITE_STAGE_HINT)
+    assert.ok(!/embed/i.test(funnel.pre.hint))
     assert.equal(funnel.lead.key, 'corpus')
     assert.equal(funnel.lead.label, '语料 chunk')
-    // 预置环节位于 lead 之前：hints 首条即「embed 前」，随后才是合并候选口径说明
-    assert.deepEqual(funnel.hints, ['embed 前', MERGED_CANDIDATES_HINT])
+    // 归一化改写提示只挂环节 tooltip，不进漏斗下方提示行；下方仅剩合并候选口径说明
+    assert.deepEqual(funnel.hints, [MERGED_CANDIDATES_HINT])
   })
 
   it('rewriteCount 缺省按 0（老用例 / 无改写），不产生残留环节', () => {
@@ -190,10 +191,11 @@ describe('feat-A016 验收 8：归一化改写可观测（rewrites / normVersion
     assert.equal(funnel.pre.value, 0)
   })
 
-  it('归一化改写环节展示文本：命中数 > 0 显示数字，0 显示「无改写」', () => {
-    assert.equal(rewriteStageValueText(0), '无改写')
-    assert.equal(rewriteStageValueText(1), '1')
-    assert.equal(rewriteStageValueText(3), '3')
+  it('漏斗不出现「无改写」文案：pre 环节仅承载数字命中数（无改写 = 0），「无改写」只在 Query 区改写明细', () => {
+    const funnel = buildFunnel(fullDiagnostics.funnel)
+    assert.equal(funnel.pre.value, 0)
+    const funnelText = [funnel.pre.label, funnel.pre.hint, ...funnel.hints].join('')
+    assert.ok(!funnelText.includes('无改写'))
   })
 
   it('query 链透传改写明细（原文片段 → 规范形），历史 trace 无字段缺省 []', () => {
@@ -388,17 +390,19 @@ describe('验收修复：被引用标记与口径说明（feat-A009 / story-A009
 
   it('漏斗给出合并候选口径说明：三路并集去重、非相加', () => {
     const funnel = buildFunnel(fullDiagnostics.funnel)
-    assert.equal(funnel.hints.length, 2)
-    assert.equal(funnel.hints[0], 'embed 前')
-    assert.equal(funnel.hints[1], MERGED_CANDIDATES_HINT)
-    assert.match(funnel.hints[1], /并集去重/)
-    assert.match(funnel.hints[1], /非相加/)
+    assert.equal(funnel.hints.length, 1)
+    assert.equal(funnel.hints[0], MERGED_CANDIDATES_HINT)
+    assert.match(funnel.hints[0], /并集去重/)
+    assert.match(funnel.hints[0], /非相加/)
+    assert.match(funnel.hints[0], /词法/)
+    assert.match(funnel.hints[0], /向量/)
+    assert.match(funnel.hints[0], /标签/)
     assert.equal(
       funnel.tail.find((stage) => stage.key === 'merged')?.hint,
       MERGED_CANDIDATES_HINT,
     )
     const partial = buildFunnel({ ...fullDiagnostics.funnel, injected: null, cited: null })
-    assert.equal(partial.hints.length, 2)
+    assert.equal(partial.hints.length, 1)
   })
 
   it('计分口径说明非空、含三路权重与取值区间，并随汇总视图下发', () => {

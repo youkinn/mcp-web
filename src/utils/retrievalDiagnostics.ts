@@ -28,6 +28,9 @@ export function citedTag(cited: boolean | null): SourceTag | null {
 // 口径说明文案：收敛于此，组件只渲染（验收打回 B / C）
 export const MERGED_CANDIDATES_HINT = '合并候选 = 词法 / 向量 / 标签三路候选并集去重，非相加'
 
+// 「归一化改写」环节 tooltip（feat-A016 验收 8 二轮）：直白表述改写先于检索，不使用 embed 术语
+export const REWRITE_STAGE_HINT = '改写发生在检索之前，检索与缓存均用改写后的文本'
+
 export const SCORING_FORMULA_NOTE =
   '最终得分计分口径：finalScore = round3( 0.3 × bm25归一化 + 0.6 × 向量映射((cosine+1)/2) + 0.1 × 标签命中 )；三路分量均在 [0,1]，cosine 为 null 时向量映射按 0'
 
@@ -92,7 +95,7 @@ export interface FunnelStage {
 }
 
 export interface FunnelView {
-  /** 归一化改写预置环节（feat-A016 验收 8）：位于语料 chunk 前，value = rewrites 命中数，hint 标注「embed 前」 */
+  /** 归一化改写预置环节（feat-A016 验收 8 二轮）：位于语料 chunk 前，value = rewrites 命中数；hint 为环节 tooltip（改写先于检索），不进漏斗下方提示行 */
   pre: FunnelStage
   lead: FunnelStage
   branch: FunnelStage[]
@@ -104,7 +107,7 @@ export function buildFunnel(
   funnel: RetrievalDiagnostics['funnel'],
   rewriteCount = 0,
 ): FunnelView {
-  const pre: FunnelStage = { key: 'rewrite', label: '归一化改写', value: rewriteCount, hint: 'embed 前' }
+  const pre: FunnelStage = { key: 'rewrite', label: '归一化改写', value: rewriteCount, hint: REWRITE_STAGE_HINT }
   const lead: FunnelStage = { key: 'corpus', label: '语料 chunk', value: funnel.corpusChunks }
   const branch: FunnelStage[] = [
     { key: 'lexical', label: '词法命中', value: funnel.lexicalHits },
@@ -118,13 +121,9 @@ export function buildFunnel(
   // sango 产出阶段 injected / cited 为 null，不进入漏斗展示
   if (funnel.injected !== null) tail.push({ key: 'injected', label: '进注入视图', value: funnel.injected })
   if (funnel.cited !== null) tail.push({ key: 'cited', label: '被引用', value: funnel.cited })
-  const hints = [pre, lead, ...branch, ...tail].flatMap((stage) => (stage.hint ? [stage.hint] : []))
+  // 归一化改写提示只挂环节 tooltip，不进漏斗下方提示行（feat-A016 验收 8 二轮）
+  const hints = [lead, ...branch, ...tail].flatMap((stage) => (stage.hint ? [stage.hint] : []))
   return { pre, lead, branch, tail, hints }
-}
-
-/** 归一化改写环节展示文本（feat-A016 验收 8）：命中数 > 0 显示数字，0 显示「无改写」 */
-export function rewriteStageValueText(value: number): string {
-  return value > 0 ? String(value) : '无改写'
 }
 
 // ── 候选分数表 ──
