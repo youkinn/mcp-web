@@ -1,13 +1,24 @@
 <template>
   <a-modal
     :open="open"
-    title="草稿台 · 注入实验台"
-    width="min(1280px, 96vw)"
-    wrap-class-name="draftbench-modal-wrap"
+    :width="fullscreen ? '100vw' : 'min(1280px, 96vw)'"
+    :wrap-class-name="fullscreen ? 'draftbench-modal-wrap draftbench-fullscreen' : 'draftbench-modal-wrap'"
     :footer="null"
     :body-style="{ maxHeight: '70vh', overflowY: 'auto' }"
     @update:open="onOpenChange"
   >
+    <template #title>
+      <div class="draftbench-title-row">
+        <span class="draftbench-title-text">草稿台 · 注入实验台</span>
+        <a-button class="draftbench-fullscreen-btn" size="small" type="text" @click="fullscreen = !fullscreen">
+          <template #icon>
+            <FullscreenOutlined v-if="!fullscreen" />
+            <FullscreenExitOutlined v-else />
+          </template>
+          {{ fullscreen ? '退出全屏' : '全屏' }}
+        </a-button>
+      </div>
+    </template>
     <div class="draftbench-body">
       <!-- ① traceId 拉取（验收 5 步骤 1~2） -->
       <div class="trace-bar">
@@ -59,7 +70,7 @@
               <p class="candidate-preview" :title="candidate.preview">{{ candidate.preview }}</p>
               <div class="candidate-actions">
                 <a-button size="small" type="primary" ghost @click="addCandidate(candidate)">添加到清单</a-button>
-                <a-button size="small" type="link" @click="openReaderForCandidate(candidate)">看整回</a-button>
+                <a-button size="small" type="link" @click="openReaderForCandidate(candidate)">查看原文</a-button>
               </div>
             </div>
           </div>
@@ -104,7 +115,7 @@
               </div>
               <p class="chunk-item-text" :title="item.text">{{ truncate(item.text, 90) }}</p>
               <div v-if="item.chunkId" class="chunk-item-actions">
-                <a-button size="small" type="link" @click="openReaderForItem(item)">看整回</a-button>
+                <a-button size="small" type="link" @click="openReaderForItem(item)">查看原文</a-button>
               </div>
             </div>
             <a-empty v-if="chunkItems.length === 0" description="从左侧拖入候选，或手增片段" />
@@ -113,7 +124,44 @@
         </div>
       </div>
 
-      <!-- ③ 发送操作 -->
+      <!-- 本次参数（请求级覆盖）：拉取 traceId 后默认带出该请求线上实际配置为默认值；query 可编辑微调 -->
+      <div class="draft-params">
+        <div class="draft-params-head">
+          <span class="draft-params-title">本次参数（请求级覆盖）</span>
+          <span class="draft-params-hint">拉取 traceId 后默认带出该请求线上实际配置为默认值</span>
+        </div>
+        <div class="draft-params-query">
+          <span class="draft-params-label">query</span>
+          <a-textarea
+            v-model:value="draftQuery"
+            class="draft-params-query-input"
+            :rows="2"
+            placeholder="输入要发送的查询（1~300 字）"
+            :maxlength="300"
+            show-count
+          />
+        </div>
+        <div class="draft-params-grid">
+          <div class="draft-param-item">
+            <span class="draft-param-label">温度 temperature</span>
+            <a-input-number v-model:value="draftParams.temperature" class="draft-param-input" :min="0" :max="1" :step="0.1" :precision="2" />
+          </div>
+          <div class="draft-param-item">
+            <span class="draft-param-label">topK</span>
+            <a-input-number v-model:value="draftParams.topK" class="draft-param-input" :min="1" :max="20" :precision="0" />
+          </div>
+          <div class="draft-param-item">
+            <span class="draft-param-label">注入保底数 guarantee</span>
+            <a-input-number v-model:value="draftParams.guarantee" class="draft-param-input" :min="0" :max="draftParams.topK" :precision="0" />
+          </div>
+          <div class="draft-param-item">
+            <span class="draft-param-label">注入总预算 budget</span>
+            <a-input-number v-model:value="draftParams.budget" class="draft-param-input" :min="1" :max="20000" :precision="0" />
+          </div>
+        </div>
+      </div>
+
+      <!-- ④ 发送操作 -->
       <div class="action-bar">
         <div class="action-summary">
           <span v-if="chunkItems.length">清单 {{ chunkItems.length }} 条 · 共 {{ totalChars }} 字</span>
@@ -245,6 +293,7 @@ import {
   type DraftbenchSendParams,
 } from '../api/client'
 import SangoChapterReader from './SangoChapterReader.vue'
+import { FullscreenExitOutlined, FullscreenOutlined } from '@ant-design/icons-vue'
 import { shortChunkId } from '../utils/sangoChapter'
 
 const props = defineProps<{
@@ -254,6 +303,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:open', open: boolean): void
 }>()
+
+// ── 弹框全屏（提测反馈：关闭 X 左侧全屏按钮）──
+const fullscreen = ref(false)
 
 // ── 常量（§3.2 / §4.1 / §4.2 客户端先行拦截口径，与服务端文案一致）──
 
@@ -713,11 +765,12 @@ watch(
   margin-bottom: 0;
 }
 
-/* ② 双栏 */
+/* ② 双栏（固定可视高度，两栏内部各自独立滚动，可滚动区填满容器） */
 .workspace {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
+  height: min(46vh, 460px);
 }
 
 .col {
@@ -764,8 +817,9 @@ watch(
 .candidate-list {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 8px;
-  max-height: 300px;
+  min-height: 0;
   padding: 10px;
   overflow-y: auto;
   scrollbar-gutter: stable;
@@ -858,10 +912,10 @@ watch(
 
 .chunk-list {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 8px;
-  min-height: 120px;
-  max-height: 300px;
+  min-height: 0;
   margin: 10px;
   padding: 10px;
   border: 2px dashed #cfd9cf;
@@ -938,7 +992,80 @@ watch(
   padding: 0 12px 10px;
   color: #9aa69e;
   font-size: 11px;
-}/* ③ 操作条 */
+}/* 弹框标题行（全屏按钮，预留关闭 X 位置） */
+.draftbench-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.draftbench-fullscreen-btn {
+  color: #43524b;
+}
+
+/* 本次参数（请求级覆盖） */
+.draft-params {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #d7e0d7;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.draft-params-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.draft-params-title {
+  color: #163c32;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.draft-params-hint {
+  color: #9aa69e;
+  font-size: 11px;
+}
+
+.draft-params-query {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.draft-params-label {
+  color: #43524b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.draft-params-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.draft-param-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.draft-param-label {
+  color: #718078;
+  font-size: 12px;
+}
+
+.draft-param-input {
+  width: 100%;
+}
+
+/* ③ 操作条 */
 .action-bar {
   display: flex;
   align-items: center;
@@ -1071,4 +1198,39 @@ watch(
 .draftbench-confirm-wrap.ant-modal-wrap {
   overscroll-behavior: contain;
 }
+
+/* 全屏按钮与关闭 X 并排：header 右侧预留（X 绝对定位在 content 右上角） */
+.draftbench-modal-wrap .ant-modal-header {
+  padding-right: 72px;
+}
+
+/* 全屏形态：弹框铺满视口，body 占满剩余高度并内部滚动 */
+.draftbench-modal-wrap.draftbench-fullscreen.ant-modal-wrap {
+  padding: 0;
+}
+
+.draftbench-modal-wrap.draftbench-fullscreen .ant-modal {
+  top: 0 !important;
+  margin: 0;
+  width: 100vw;
+  max-width: 100vw;
+  height: 100vh;
+}
+
+.draftbench-modal-wrap.draftbench-fullscreen .ant-modal-content {
+  display: flex;
+  height: 100vh;
+  flex-direction: column;
+  border-radius: 0;
+}
+
+.draftbench-modal-wrap.draftbench-fullscreen .ant-modal-body {
+  flex: 1;
+  max-height: none !important;
+}
 </style>
+
+
+
+
+
