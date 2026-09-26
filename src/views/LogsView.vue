@@ -16,6 +16,7 @@
           <RouterLink to="/cache">
             <a-button size="small">缓存控制台</a-button>
           </RouterLink>
+          <a-button size="small" @click="draftbenchOpen = true">草稿台</a-button>
           <RouterLink to="/chat">
             <a-button size="small">← 返回聊天</a-button>
           </RouterLink>
@@ -29,6 +30,13 @@
 
           <div class="query-card">
             <div class="query-row">
+              <div class="query-item">
+                <span class="query-label">来源</span>
+                <a-select v-model:value="query.source" class="query-control query-select">
+                  <a-select-option value="production">生产</a-select-option>
+                  <a-select-option value="draftbench">草稿台</a-select-option>
+                </a-select>
+              </div>
               <div class="query-item">
                 <span class="query-label">类型</span>
                 <a-select v-model:value="query.logType" class="query-control query-select">
@@ -102,6 +110,12 @@
                     </template>
                     <a-tag class="log-type-tag">{{ LOG_TYPE_LABELS[record.logType] ?? record.logType }}</a-tag>
                   </a-tooltip>
+                </template>
+
+                <template v-else-if="column.key === 'source'">
+                  <a-tag :color="record.source === 'draftbench' ? 'gold' : 'green'" size="small">
+                    {{ record.source === 'draftbench' ? '草稿台' : '生产' }}
+                  </a-tag>
                 </template>
 
                 <template v-else-if="column.key === 'userInput'">
@@ -454,6 +468,8 @@
         :chapter-title="readerTarget.chapterTitle"
         :chunk-id="readerTarget.chunkId"
       />
+
+      <DraftbenchModal v-model:open="draftbenchOpen" />
     </div>
   </main>
 </template>
@@ -483,12 +499,14 @@ import {
   type LlmCallRecord,
   type LogListItem,
   type LogListQuery,
+  type LogSource,
   type RouteSource,
   type ToolCallRecord,
   type TokenStatsData,
 } from '../api/client'
 import RetrievalDiagnosticsPanel from '../components/RetrievalDiagnosticsPanel.vue'
 import SangoChapterReader from '../components/SangoChapterReader.vue'
+import DraftbenchModal from '../components/DraftbenchModal.vue'
 import { copyText } from '../utils/clipboard'
 import { timingLines } from '../utils/retrievalDiagnostics'
 import {
@@ -866,6 +884,7 @@ function tryParseJson(raw: string): unknown {
 const columns = [
   { key: 'time', title: '时间', width: 165 },
   { key: 'logType', title: '类型', width: 80 },
+  { key: 'source', title: '来源', width: 84, align: 'center' },
   { key: 'userInput', title: '用户输入', width: 240, ellipsis: true },
   { key: 'domain', title: '域', width: 110 },
   { key: 'status', title: '状态', width: 150 },
@@ -910,6 +929,7 @@ const pageSize = ref(10)
 const listLoading = ref(false)
 
 const query = reactive<{
+  source: LogSource
   logType: string
   domain: string
   dateRange: string[]
@@ -918,6 +938,7 @@ const query = reactive<{
   status: string
   responseCode: number | null
 }>({
+  source: 'production',
   logType: '',
   domain: '',
   dateRange: [],
@@ -1011,6 +1032,8 @@ function buildListQuery(): LogListQuery {
   if (query.keyword.trim()) listQuery.keyword = query.keyword.trim()
   if (query.status) listQuery.status = query.status
   if (query.responseCode !== null) listQuery.responseCode = query.responseCode
+  // 来源（feat-A017 §3.5）：缺省仅生产；production 不携带参数，保持原契约请求逐字节不变
+  if (query.source !== 'production') listQuery.source = query.source
   if (Array.isArray(query.dateRange) && query.dateRange.length === 2 && query.dateRange[0] && query.dateRange[1]) {
     listQuery.startAt = parseShanghaiDate(query.dateRange[0])
     listQuery.endAt = parseShanghaiDate(query.dateRange[1]) + DAY_MS - 1
@@ -1038,6 +1061,7 @@ function onSearch() {
 }
 
 function onReset() {
+  query.source = 'production'
   query.logType = ''
   query.domain = ''
   query.dateRange = []
@@ -1049,6 +1073,27 @@ function onReset() {
   resetExpansion()
   void loadList()
 }
+
+// 草稿台结果 traceId 跳日志详情（feat-A017 §5）：来源筛到草稿台，命中行自动展开明细（复用既有分析视图）
+async function openTraceInLogs(traceId: string) {
+  query.traceId = traceId
+  query.source = 'draftbench'
+  pageNo.value = 1
+  resetExpansion()
+  await loadList()
+  const matched = rows.value.some((row) => row.traceId === traceId)
+  if (matched) {
+    expandedRowKeys.value = [traceId]
+    void ensureDetail(traceId)
+    await nextTick()
+    document.querySelector(`[data-row-key="${traceId}"]`)?.scrollIntoView({ block: 'center' })
+  } else {
+    message.warning('未在草稿台日志中找到该 traceId，可能已按保留期轮转')
+  }
+}
+
+// 草稿台弹框入口（feat-A017 §5）
+const draftbenchOpen = ref(false)
 
 function onTableChange(pagination: { current?: number; pageSize?: number }) {
   pageNo.value = pagination.current ?? 1
@@ -1344,18 +1389,15 @@ onMounted(async () => {
   const today = shanghaiDateString(Date.now())
   customRange.value = [today, today]
   window.addEventListener('resize', onWindowResize)
+  // 来源筛选（feat-A017 §3.5）：route.query.source 合法值生效（草稿台 traceId 深链等）
+  const routeSource = typeof route.query.source === 'string' ? route.query.source : ''
+  if (routeSource === 'production' || routeSource === 'draftbench') {
+    query.source = routeSource
+  }
   // 灰色区清单行内跳转（feat-A013 §4.2）：/logs?traceId=xxx → 精确过滤并自动展开该行明细
   const entryTraceId = typeof route.query.traceId === 'string' ? route.query.traceId.trim() : ''
   if (entryTraceId) {
-    query.traceId = entryTraceId
-    await loadList()
-    const matched = rows.value.some((row) => row.traceId === entryTraceId)
-    if (matched) {
-      expandedRowKeys.value = [entryTraceId]
-      void ensureDetail(entryTraceId)
-      await nextTick()
-      document.querySelector(`[data-row-key="${entryTraceId}"]`)?.scrollIntoView({ block: 'center' })
-    }
+    await openTraceInLogs(entryTraceId)
   } else {
     void loadList()
   }

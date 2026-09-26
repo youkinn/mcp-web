@@ -6,6 +6,9 @@ export interface ApiResponse<T> {
   message: string
 }
 
+/** 日志来源（feat-A017）：production 生产 / draftbench 草稿台；缺省仅生产 */
+export type LogSource = 'production' | 'draftbench'
+
 export interface Citation {
   text: string
   chapter: number
@@ -48,6 +51,8 @@ export interface LogListItem {
   hasRetry: boolean
   /** 缓存判定结果（feat-A013）：1 命中 / 0 未命中 / null 非 sango-novel、开关关闭、降级旁路或历史行 */
   cacheHit: number | null
+  /** 日志来源（feat-A017 §3.5）：production / draftbench */
+  source: LogSource
 }
 
 export interface LogListData {
@@ -74,6 +79,8 @@ export interface LogDetailMain {
   citations: string | null
   createdAt: number
   routeSource: RouteSource | null
+  /** 日志来源（feat-A017 §3.5）：production / draftbench */
+  source: LogSource
 }
 
 /** 输入分段 token 估算（feat-A012）：本地启发式折算，与 prompt_tokens 不对账 */
@@ -397,12 +404,12 @@ function reportFrontendEnd(traceId: string, clientReceivedAt: number): void {
     })
 }
 
-async function postChatForAnswer(
-  payload: Record<string, string>,
+async function postChatForAnswer<T = ChatData>(
+  payload: Record<string, unknown>,
   traceId: string,
   clientSentAt: number,
-): Promise<ChatData> {
-  const { data, headers } = await apiClient.post<ApiResponse<ChatData>>('/chat', payload, {
+): Promise<T> {
+  const { data, headers } = await apiClient.post<ApiResponse<T>>('/chat', payload, {
     headers: {
       'X-Trace-Id': traceId,
       'X-Client-Sent-At': String(clientSentAt),
@@ -420,7 +427,7 @@ export function sendChatMessage(
   message: string,
   domain?: 'fengyunsanguo' | 'sango-novel',
 ): Promise<ChatData> {
-  const payload: Record<string, string> = { message }
+  const payload: Record<string, unknown> = { message }
   if (domain) payload.domain = domain
   chatTraceId = crypto.randomUUID()
   const traceId = chatTraceId
@@ -430,7 +437,7 @@ export function sendChatMessage(
 }
 
 export function sendSangoRandom(message: string, sessionId?: string): Promise<ChatData> {
-  const payload: Record<string, string> = { message }
+  const payload: Record<string, unknown> = { message }
   if (sessionId) payload.sessionId = sessionId
   sangoRandomTraceId = crypto.randomUUID()
   const traceId = sangoRandomTraceId
@@ -464,6 +471,8 @@ export interface LogListQuery {
   status?: string
   responseCode?: number
   keyword?: string
+  /** 来源筛选（feat-A017 §3.5）：缺省仅生产 */
+  source?: LogSource
 }
 
 export async function fetchLogList(query: LogListQuery = {}): Promise<LogListData> {
@@ -477,6 +486,164 @@ export async function fetchLogList(query: LogListQuery = {}): Promise<LogListDat
 
 export async function fetchLogDetail(traceId: string): Promise<LogDetail> {
   const { data } = await apiClient.get<ApiResponse<LogDetail>>(`/v1/logs/${encodeURIComponent(traceId)}`)
+  return unwrapData(data)
+}
+
+// ── 草稿台（feat-A017）──
+
+/** 本次发送参数（§4.2）：temperature / topK / guarantee / budget，四值一次过目 */
+export interface DraftbenchSendParams {
+  temperature: number
+  topK: number
+  guarantee: number
+  budget: number
+}
+
+/** §3.1 params：线上生成轮实测 + 生产常量；tailFallback 只读展示、不可覆盖 */
+export interface DraftbenchTraceParams extends DraftbenchSendParams {
+  tailFallback: boolean
+}
+
+/** §3.2 / §3.4 chunks 条目：手增片段可无 chunkId / chapter / title */
+export interface DraftbenchChunkInput {
+  chunkId?: string | null
+  text: string
+  chapter?: number | null
+  title?: string | null
+}
+
+/** §3.1 左栏只读源：召回候选条目 */
+export interface DraftbenchCandidate {
+  chunkId: string
+  rank: number
+  chapter: number
+  title: string
+  segFrom: number
+  segTo: number
+  preview: string
+  injected: boolean
+  cited: boolean
+  sources: string[]
+  finalScore: number
+}
+
+/** §3.1 GET /api/v1/draftbench/trace/:traceId 响应 data */
+export interface DraftbenchTrace {
+  traceId: string
+  userQuery: string
+  routeSource: RouteSource | null
+  serverReceivedAt: number
+  params: DraftbenchTraceParams
+  chunks: {
+    candidates: DraftbenchCandidate[]
+    injectedCount: number
+    citedCount: number
+  }
+}
+
+/** §4.4 差异三态：consistent / missing 为发送清单条目序号（1 基）；extra 为清单外引用 */
+export interface DraftbenchDiff {
+  consistent: number[]
+  missing: number[]
+  extra: Citation[]
+}
+
+/** §3.2 草稿台发送成功响应 data：生产 ChatData + traceId / 实际生效参数 / 差异 */
+export interface DraftbenchChatData extends ChatData {
+  traceId: string
+  params: DraftbenchSendParams
+  diff: DraftbenchDiff
+}
+
+/** §3.2 草稿台发送入参 */
+export interface DraftbenchSendInput {
+  query: string
+  chunks: DraftbenchChunkInput[]
+  params: DraftbenchSendParams
+}
+
+/** 草稿台手动发送（§3.2）：复用 /api/chat 通道，source='draftbench' + 清单 + 本次参数 */
+export function sendDraftbenchChat(input: DraftbenchSendInput): Promise<DraftbenchChatData> {
+  const payload: Record<string, unknown> = {
+    message: input.query,
+    domain: 'sango-novel',
+    source: 'draftbench',
+    chunks: input.chunks.map((chunk) => {
+      const entry: Record<string, unknown> = { text: chunk.text }
+      if (chunk.chunkId) entry.chunkId = chunk.chunkId
+      if (chunk.chapter !== undefined && chunk.chapter !== null) entry.chapter = chunk.chapter
+      if (chunk.title) entry.title = chunk.title
+      return entry
+    }),
+    params: input.params,
+  }
+  chatTraceId = crypto.randomUUID()
+  const traceId = chatTraceId
+  return postChatForAnswer<DraftbenchChatData>(payload, traceId, Date.now()).finally(() => {
+    if (chatTraceId === traceId) chatTraceId = null
+  })
+}
+
+/** §3.1 拉取 traceId 的候选 / 注入 chunks + 线上实际参数（弹框左栏只读源） */
+export async function fetchDraftbenchTrace(traceId: string): Promise<DraftbenchTrace> {
+  const { data } = await apiClient.get<ApiResponse<DraftbenchTrace>>(
+    `/v1/draftbench/trace/${encodeURIComponent(traceId)}`,
+  )
+  return unwrapData(data)
+}
+
+export interface DraftbenchRecordsQuery {
+  pageNo?: number
+  pageSize?: number
+}
+
+/** §3.3 草稿台发送记录列表（仅草稿台，时间倒序） */
+export async function fetchDraftbenchRecords(query: DraftbenchRecordsQuery = {}): Promise<DraftbenchRecordListData> {
+  const params: Record<string, string | number> = {}
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') params[key] = value
+  })
+  const { data } = await apiClient.get<ApiResponse<DraftbenchRecordListData>>('/v1/draftbench/records', { params })
+  return unwrapData(data)
+}
+
+/** §3.3 列表行 */
+export interface DraftbenchRecord {
+  traceId: string
+  time: number
+  query: string
+  status: 'success' | 'failed'
+  errorMessage: string
+  params: DraftbenchSendParams
+  chunkCount: number
+  result: { answer: string | null; citationCount: number } | null
+}
+
+export interface DraftbenchRecordListData {
+  list: DraftbenchRecord[]
+  total: number
+  pageNo: number
+  pageSize: number
+}
+
+/** §3.4 记录详情：载入（清单 + 本次参数）+ 差异三态 + 结果，供继续编辑 */
+export interface DraftbenchRecordDetail {
+  traceId: string
+  time: number
+  query: string
+  status: 'success' | 'failed'
+  errorMessage: string
+  params: DraftbenchSendParams
+  chunks: DraftbenchChunkInput[]
+  result: { answer: string | null; citations: Citation[] } | null
+  diff: DraftbenchDiff
+}
+
+/** §3.4 载入记录详情 */
+export async function fetchDraftbenchRecordDetail(traceId: string): Promise<DraftbenchRecordDetail> {
+  const { data } = await apiClient.get<ApiResponse<DraftbenchRecordDetail>>(
+    `/v1/draftbench/records/${encodeURIComponent(traceId)}`,
+  )
   return unwrapData(data)
 }
 
