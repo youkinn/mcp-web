@@ -1,7 +1,7 @@
 <template>
   <a-modal
     :open="open"
-    :width="fullscreen ? '100vw' : 'min(1280px, 96vw)'"
+    :width="fullscreen ? '100%' : 'min(1280px, 96vw)'"
     :wrap-class-name="fullscreen ? 'draftbench-modal-wrap draftbench-fullscreen' : 'draftbench-modal-wrap'"
     :footer="null"
     :body-style="{ maxHeight: '70vh', overflowY: 'auto' }"
@@ -19,7 +19,7 @@
         </a-button>
       </div>
     </template>
-    <div class="draftbench-body">
+    <div class="draftbench-body" :class="{ 'draftbench-body-fullscreen': fullscreen }">
       <!-- ① traceId 拉取（验收 5 步骤 1~2） -->
       <div class="trace-bar">
         <span class="trace-label">traceId</span>
@@ -49,7 +49,12 @@
           <div v-if="traceLoading" class="col-state"><a-spin size="small" /> 拉取中…</div>
           <a-empty v-else-if="!trace" description="输入 traceId 拉取后展示候选" />
           <a-empty v-else-if="trace.chunks.candidates.length === 0" description="该请求无召回候选（检索未命中），可在右侧手增片段后发送" />
-          <div v-else class="candidate-list">
+          <template v-else>
+            <div class="candidate-toolbar">
+              <span class="candidate-toolbar-hint">已入清单 {{ addedCandidateCount }}/{{ trace.chunks.candidates.length }}</span>
+              <a-button size="small" type="dashed" @click="addAllCandidates">一键全部移入发送清单</a-button>
+            </div>
+            <div class="candidate-list">
             <div
               v-for="candidate in trace.chunks.candidates"
               :key="candidate.chunkId"
@@ -73,7 +78,8 @@
                 <a-button size="small" type="link" @click="openReaderForCandidate(candidate)">查看原文</a-button>
               </div>
             </div>
-          </div>
+            </div>
+          </template>
         </div>
 
         <div class="col col-right">
@@ -124,44 +130,8 @@
         </div>
       </div>
 
-      <!-- 本次参数（请求级覆盖）：拉取 traceId 后默认带出该请求线上实际配置为默认值；query 可编辑微调 -->
-      <div class="draft-params">
-        <div class="draft-params-head">
-          <span class="draft-params-title">本次参数（请求级覆盖）</span>
-          <span class="draft-params-hint">拉取 traceId 后默认带出该请求线上实际配置为默认值</span>
-        </div>
-        <div class="draft-params-query">
-          <span class="draft-params-label">query</span>
-          <a-textarea
-            v-model:value="draftQuery"
-            class="draft-params-query-input"
-            :rows="2"
-            placeholder="输入要发送的查询（1~300 字）"
-            :maxlength="300"
-            show-count
-          />
-        </div>
-        <div class="draft-params-grid">
-          <div class="draft-param-item">
-            <span class="draft-param-label">温度 temperature</span>
-            <a-input-number v-model:value="draftParams.temperature" class="draft-param-input" :min="0" :max="1" :step="0.1" :precision="2" />
-          </div>
-          <div class="draft-param-item">
-            <span class="draft-param-label">topK</span>
-            <a-input-number v-model:value="draftParams.topK" class="draft-param-input" :min="1" :max="20" :precision="0" />
-          </div>
-          <div class="draft-param-item">
-            <span class="draft-param-label">注入保底数 guarantee</span>
-            <a-input-number v-model:value="draftParams.guarantee" class="draft-param-input" :min="0" :max="draftParams.topK" :precision="0" />
-          </div>
-          <div class="draft-param-item">
-            <span class="draft-param-label">注入总预算 budget</span>
-            <a-input-number v-model:value="draftParams.budget" class="draft-param-input" :min="1" :max="20000" :precision="0" />
-          </div>
-        </div>
-      </div>
+      <!-- ③ 发送操作 -->
 
-      <!-- ④ 发送操作 -->
       <div class="action-bar">
         <div class="action-summary">
           <span v-if="chunkItems.length">清单 {{ chunkItems.length }} 条 · 共 {{ totalChars }} 字</span>
@@ -190,6 +160,7 @@
           class="records-table"
           :row-class-name="rowClassOf"
           :custom-row="rowPropsOf"
+          :scroll="recordsTableScroll"
           @change="onRecordTableChange"
         >
           <template #bodyCell="{ column, record }">
@@ -392,6 +363,10 @@ function containsChunkId(chunkId: string): boolean {
   return chunkItems.value.some((item) => item.chunkId === chunkId)
 }
 
+const addedCandidateCount = computed(() =>
+  (trace.value?.chunks.candidates ?? []).filter((candidate) => containsChunkId(candidate.chunkId)).length,
+)
+
 function itemKey(item: ListItem, index: number): string {
   return item.chunkId ?? `manual-${index}`
 }
@@ -418,6 +393,40 @@ function addCandidate(candidate: DraftbenchCandidate) {
     chapter: candidate.chapter,
     title: candidate.title,
   })
+}
+
+function addAllCandidates() {
+  const candidates = trace.value?.chunks.candidates ?? []
+  if (candidates.length === 0) return
+  if (chunkItems.value.length >= MAX_CHUNKS) {
+    message.warning('发送清单已满（最多 20 条）')
+    return
+  }
+  let added = 0
+  let already = 0
+  for (const candidate of candidates) {
+    if (chunkItems.value.length >= MAX_CHUNKS) break
+    if (containsChunkId(candidate.chunkId)) {
+      already += 1
+      continue
+    }
+    chunkItems.value.push({
+      chunkId: candidate.chunkId,
+      text: candidate.preview,
+      chapter: candidate.chapter,
+      title: candidate.title,
+    })
+    added += 1
+  }
+  if (added === 0) {
+    message.info('候选均已加入发送清单')
+  } else if (chunkItems.value.length >= MAX_CHUNKS) {
+    message.warning(`已移入 ${added} 条；发送清单已满（最多 20 条），其余候选未加入`)
+  } else if (already > 0) {
+    message.success(`已移入 ${added} 条（另有 ${already} 条已在清单中）`)
+  } else {
+    message.success(`已全部移入发送清单（${added} 条）`)
+  }
 }
 
 function removeItem(index: number) {
@@ -621,6 +630,11 @@ const recordPageNo = ref(1)
 const recordPageSize = ref(10)
 const recordTotal = ref(0)
 
+// 全屏下发送记录压缩为独立滚动区（antd sticky 表头）；普通形态保持弹框整体滚动
+const recordsTableScroll = computed(() =>
+  fullscreen.value ? { y: Math.max(90, Math.round(window.innerHeight * 0.24) - 100) } : undefined,
+)
+
 function paramsText(p: DraftbenchSendParams): string {
   return `T ${p.temperature} · K ${p.topK} · G ${p.guarantee} · B ${p.budget}`
 }
@@ -770,7 +784,7 @@ watch(
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
-  height: min(46vh, 460px);
+  height: min(52vh, 620px);
 }
 
 .col {
@@ -839,6 +853,41 @@ watch(
 
 .candidate-item:hover {
   border-color: #b17837;
+}
+
+.candidate-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e5eae5;
+  background: rgba(242, 246, 241, 0.6);
+}
+
+.candidate-toolbar-hint {
+  color: #718078;
+  font-size: 12px;
+}
+
+/* 全屏形态：弹框 body 内收敛滚动，工作区占满剩余高度，发送记录压缩为独立滚动栏 */
+.draftbench-body-fullscreen {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.draftbench-body-fullscreen .workspace {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.draftbench-body-fullscreen .records-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  max-height: 24vh;
 }
 
 .candidate-item.candidate-added {
@@ -1004,67 +1053,6 @@ watch(
   color: #43524b;
 }
 
-/* 本次参数（请求级覆盖） */
-.draft-params {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid #d7e0d7;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.82);
-}
-
-.draft-params-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.draft-params-title {
-  color: #163c32;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.draft-params-hint {
-  color: #9aa69e;
-  font-size: 11px;
-}
-
-.draft-params-query {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.draft-params-label {
-  color: #43524b;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.draft-params-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-}
-
-.draft-param-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.draft-param-label {
-  color: #718078;
-  font-size: 12px;
-}
-
-.draft-param-input {
-  width: 100%;
-}
-
 /* ③ 操作条 */
 .action-bar {
   display: flex;
@@ -1204,17 +1192,19 @@ watch(
   padding-right: 72px;
 }
 
-/* 全屏形态：弹框铺满视口，body 占满剩余高度并内部滚动 */
+/* 全屏形态：弹框铺满视口；wrap/content/body 均不再滚动，纵向滚动收敛到工作区内部列表（问题 5） */
 .draftbench-modal-wrap.draftbench-fullscreen.ant-modal-wrap {
   padding: 0;
+  overflow: hidden;
 }
 
 .draftbench-modal-wrap.draftbench-fullscreen .ant-modal {
   top: 0 !important;
   margin: 0;
-  width: 100vw;
-  max-width: 100vw;
-  height: 100vh;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  height: 100%;
 }
 
 .draftbench-modal-wrap.draftbench-fullscreen .ant-modal-content {
@@ -1222,11 +1212,16 @@ watch(
   height: 100vh;
   flex-direction: column;
   border-radius: 0;
+  overflow: hidden;
 }
 
 .draftbench-modal-wrap.draftbench-fullscreen .ant-modal-body {
+  display: flex;
+  flex-direction: column;
   flex: 1;
+  min-height: 0;
   max-height: none !important;
+  overflow: hidden !important;
 }
 </style>
 
