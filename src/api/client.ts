@@ -116,6 +116,8 @@ export interface RetrievalDiagnostics {
     raw: string
     normalized: string
     tokens: string[]
+    /** 归一化改写明细（feat-A016 验收 8）：原文片段 → 规范形；历史 trace 无该字段 */
+    rewrites?: { from: string; to: string }[]
   }
   env: {
     vectorScheme: string | null
@@ -123,6 +125,8 @@ export interface RetrievalDiagnostics {
     corpusChunks: number
     aliasCount: number
     vectorDim: number | null
+    /** 实体表内容 hash（feat-A016 验收 8）；表加载失败 / 历史 trace 为空串或缺失 */
+    normVersion?: string
   }
   funnel: {
     corpusChunks: number
