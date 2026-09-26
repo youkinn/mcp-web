@@ -7,6 +7,7 @@ import {
   buildEnvView,
   buildFunnel,
   buildNextRankView,
+  buildQueryChain,
   buildScoreRow,
   buildScoreRows,
   buildSelfConsistency,
@@ -15,6 +16,7 @@ import {
   finalScoreFormula,
   formatScore,
   MERGED_CANDIDATES_HINT,
+  rewriteStageValueText,
   SCORING_FORMULA_NOTE,
   scoreRowClass,
   sourceMeta,
@@ -29,9 +31,10 @@ const fullDiagnostics: RetrievalDiagnostics = {
   truncated: false,
   truncatedCount: 0,
   query: {
-    raw: '关羽千里走单骑的经过',
+    raw: '云长千里走单骑的经过',
     normalized: '关羽 千里走单骑 经过',
     tokens: ['关羽', '千里', '走单骑', '经过'],
+    rewrites: [{ from: '云长', to: '关羽' }],
   },
   env: {
     vectorScheme: 'bge-m3',
@@ -39,6 +42,7 @@ const fullDiagnostics: RetrievalDiagnostics = {
     corpusChunks: 2344,
     aliasCount: 87,
     vectorDim: 1024,
+    normVersion: 'a1b2c3d4e5',
   },
   funnel: {
     corpusChunks: 2344,
@@ -121,11 +125,17 @@ describe('buildDiagnosticsView 汇总视图', () => {
     assert.equal(view.scoreRows[0].chapterText, '第 73 回 玄德进位汉中王　云长攻拔襄阳郡')
     assert.equal(view.scoreRows[0].sources.length, 2)
     assert.equal(view.nextRank?.gapToTopNText, '0.19')
-    assert.equal(view.query.raw, '关羽千里走单骑的经过')
+    assert.equal(view.query.raw, '云长千里走单骑的经过')
+    assert.deepEqual(view.query.rewrites, [{ from: '云长', to: '关羽' }])
     assert.equal(view.env.vectorSchemeText, 'bge-m3')
     assert.equal(view.env.corpusChunks, 2344)
     assert.equal(view.env.aliasCount, 87)
     assert.equal(view.env.vectorDimText, '1024')
+    assert.equal(view.env.normVersion, 'a1b2c3d4e5')
+    assert.equal(view.funnel.pre.key, 'rewrite')
+    assert.equal(view.funnel.pre.label, '归一化改写')
+    assert.equal(view.funnel.pre.value, 1)
+    assert.equal(view.funnel.pre.hint, 'embed 前')
     assert.equal(view.deathIntent.detected, true)
     assert.equal(view.deathIntent.chunkIds[0], 'sanguo-yanyi:0001:c0001')
   })
@@ -159,6 +169,61 @@ describe('buildDiagnosticsView 汇总视图', () => {
     const view = buildDiagnosticsView({ ...fullDiagnostics, funnel: { ...fullDiagnostics.funnel, injected: null, cited: null } }, null)
     assert.ok(view)
     assert.equal(view.funnel.tail.length, 2)
+  })
+})
+
+describe('feat-A016 验收 8：归一化改写可观测（rewrites / normVersion / 漏斗预置环节）', () => {
+  it('漏斗 pre 预置环节：key / label / value=rewrites 命中数 / hint「embed 前」，位于语料 chunk 之前', () => {
+    const funnel = buildFunnel(fullDiagnostics.funnel, 3)
+    assert.equal(funnel.pre.key, 'rewrite')
+    assert.equal(funnel.pre.label, '归一化改写')
+    assert.equal(funnel.pre.value, 3)
+    assert.equal(funnel.pre.hint, 'embed 前')
+    assert.equal(funnel.lead.key, 'corpus')
+    assert.equal(funnel.lead.label, '语料 chunk')
+    // 预置环节位于 lead 之前：hints 首条即「embed 前」，随后才是合并候选口径说明
+    assert.deepEqual(funnel.hints, ['embed 前', MERGED_CANDIDATES_HINT])
+  })
+
+  it('rewriteCount 缺省按 0（老用例 / 无改写），不产生残留环节', () => {
+    const funnel = buildFunnel(fullDiagnostics.funnel)
+    assert.equal(funnel.pre.value, 0)
+  })
+
+  it('归一化改写环节展示文本：命中数 > 0 显示数字，0 显示「无改写」', () => {
+    assert.equal(rewriteStageValueText(0), '无改写')
+    assert.equal(rewriteStageValueText(1), '1')
+    assert.equal(rewriteStageValueText(3), '3')
+  })
+
+  it('query 链透传改写明细（原文片段 → 规范形），历史 trace 无字段缺省 []', () => {
+    assert.deepEqual(buildQueryChain(fullDiagnostics.query).rewrites, [{ from: '云长', to: '关羽' }])
+    const legacy = buildQueryChain({ raw: 'x', normalized: 'y', tokens: [] })
+    assert.deepEqual(legacy.rewrites, [])
+  })
+
+  it('env 透传 normVersion，历史 trace 无字段缺省空串', () => {
+    assert.equal(buildEnvView(fullDiagnostics.env).normVersion, 'a1b2c3d4e5')
+    const legacy = buildEnvView({ vectorScheme: null, degradedBm25Only: false, corpusChunks: 2344, aliasCount: 87, vectorDim: null })
+    assert.equal(legacy.normVersion, '')
+  })
+
+  it('汇总视图联动：rewrites 命中数注入漏斗 pre.value，历史 trace 整体缺省（pre=0 / rewrites=[] / normVersion=""）', () => {
+    const view = buildDiagnosticsView(fullDiagnostics, null)
+    assert.ok(view)
+    assert.equal(view.funnel.pre.value, fullDiagnostics.query.rewrites!.length)
+    const legacy = buildDiagnosticsView(
+      {
+        ...fullDiagnostics,
+        query: { raw: 'x', normalized: 'y', tokens: [] },
+        env: { vectorScheme: null, degradedBm25Only: false, corpusChunks: 2344, aliasCount: 87, vectorDim: null },
+      },
+      null,
+    )
+    assert.ok(legacy)
+    assert.equal(legacy.funnel.pre.value, 0)
+    assert.deepEqual(legacy.query.rewrites, [])
+    assert.equal(legacy.env.normVersion, '')
   })
 })
 
@@ -323,16 +388,17 @@ describe('验收修复：被引用标记与口径说明（feat-A009 / story-A009
 
   it('漏斗给出合并候选口径说明：三路并集去重、非相加', () => {
     const funnel = buildFunnel(fullDiagnostics.funnel)
-    assert.equal(funnel.hints.length, 1)
-    assert.equal(funnel.hints[0], MERGED_CANDIDATES_HINT)
-    assert.match(funnel.hints[0], /并集去重/)
-    assert.match(funnel.hints[0], /非相加/)
+    assert.equal(funnel.hints.length, 2)
+    assert.equal(funnel.hints[0], 'embed 前')
+    assert.equal(funnel.hints[1], MERGED_CANDIDATES_HINT)
+    assert.match(funnel.hints[1], /并集去重/)
+    assert.match(funnel.hints[1], /非相加/)
     assert.equal(
       funnel.tail.find((stage) => stage.key === 'merged')?.hint,
       MERGED_CANDIDATES_HINT,
     )
     const partial = buildFunnel({ ...fullDiagnostics.funnel, injected: null, cited: null })
-    assert.equal(partial.hints.length, 1)
+    assert.equal(partial.hints.length, 2)
   })
 
   it('计分口径说明非空、含三路权重与取值区间，并随汇总视图下发', () => {

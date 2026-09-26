@@ -92,13 +92,19 @@ export interface FunnelStage {
 }
 
 export interface FunnelView {
+  /** 归一化改写预置环节（feat-A016 验收 8）：位于语料 chunk 前，value = rewrites 命中数，hint 标注「embed 前」 */
+  pre: FunnelStage
   lead: FunnelStage
   branch: FunnelStage[]
   tail: FunnelStage[]
   hints: string[]
 }
 
-export function buildFunnel(funnel: RetrievalDiagnostics['funnel']): FunnelView {
+export function buildFunnel(
+  funnel: RetrievalDiagnostics['funnel'],
+  rewriteCount = 0,
+): FunnelView {
+  const pre: FunnelStage = { key: 'rewrite', label: '归一化改写', value: rewriteCount, hint: 'embed 前' }
   const lead: FunnelStage = { key: 'corpus', label: '语料 chunk', value: funnel.corpusChunks }
   const branch: FunnelStage[] = [
     { key: 'lexical', label: '词法命中', value: funnel.lexicalHits },
@@ -112,8 +118,13 @@ export function buildFunnel(funnel: RetrievalDiagnostics['funnel']): FunnelView 
   // sango 产出阶段 injected / cited 为 null，不进入漏斗展示
   if (funnel.injected !== null) tail.push({ key: 'injected', label: '进注入视图', value: funnel.injected })
   if (funnel.cited !== null) tail.push({ key: 'cited', label: '被引用', value: funnel.cited })
-  const hints = [lead, ...branch, ...tail].flatMap((stage) => (stage.hint ? [stage.hint] : []))
-  return { lead, branch, tail, hints }
+  const hints = [pre, lead, ...branch, ...tail].flatMap((stage) => (stage.hint ? [stage.hint] : []))
+  return { pre, lead, branch, tail, hints }
+}
+
+/** 归一化改写环节展示文本（feat-A016 验收 8）：命中数 > 0 显示数字，0 显示「无改写」 */
+export function rewriteStageValueText(value: number): string {
+  return value > 0 ? String(value) : '无改写'
 }
 
 // ── 候选分数表 ──
@@ -221,14 +232,21 @@ export function buildNextRankView(nextRank: NonNullable<RetrievalDiagnostics['ne
 
 // ── query 处理链 / 环境与降级 ──
 
+export interface RewriteItem {
+  from: string
+  to: string
+}
+
 export interface QueryChainView {
   raw: string
   normalized: string
   tokens: string[]
+  /** 归一化改写明细（feat-A016 验收 8）：原文片段 → 规范形；历史 trace 缺省 [] */
+  rewrites: RewriteItem[]
 }
 
 export function buildQueryChain(query: RetrievalDiagnostics['query']): QueryChainView {
-  return { raw: query.raw, normalized: query.normalized, tokens: query.tokens }
+  return { raw: query.raw, normalized: query.normalized, tokens: query.tokens, rewrites: query.rewrites ?? [] }
 }
 
 export interface EnvView {
@@ -237,6 +255,8 @@ export interface EnvView {
   corpusChunks: number
   aliasCount: number
   vectorDimText: string
+  /** 实体表内容 hash（feat-A016 验收 8）；表加载失败 / 历史 trace 为空串，展示「—」 */
+  normVersion: string
 }
 
 export function buildEnvView(env: RetrievalDiagnostics['env']): EnvView {
@@ -246,6 +266,7 @@ export function buildEnvView(env: RetrievalDiagnostics['env']): EnvView {
     corpusChunks: env.corpusChunks,
     aliasCount: env.aliasCount,
     vectorDimText: env.vectorDim === null ? '—' : String(env.vectorDim),
+    normVersion: env.normVersion ?? '',
   }
 }
 
@@ -324,7 +345,7 @@ export function buildDiagnosticsView(
   if (diagnostics === null) return null
   return {
     truncatedText: truncatedText(diagnostics),
-    funnel: buildFunnel(diagnostics.funnel),
+    funnel: buildFunnel(diagnostics.funnel, diagnostics.query.rewrites?.length ?? 0),
     scoringNote: SCORING_FORMULA_NOTE,
     scoreRows: buildScoreRows(diagnostics.candidates, diagnostics.funnel.topN),
     nextRank: diagnostics.nextRank === null ? null : buildNextRankView(diagnostics.nextRank),
