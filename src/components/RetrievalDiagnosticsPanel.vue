@@ -25,10 +25,13 @@
       <section class="detail-section">
         <h4 class="detail-section-title">召回漏斗</h4>
         <div class="funnel-flow">
-          <div class="funnel-stage" :title="view.funnel.pre.hint">
-            <div class="funnel-num">{{ view.funnel.pre.value }}</div>
-            <div class="funnel-label">{{ view.funnel.pre.label }}</div>
-          </div>
+          <a-tooltip placement="top">
+            <template #title>{{ view.funnel.pre.hint }}</template>
+            <div class="funnel-stage">
+              <div class="funnel-num">{{ view.funnel.pre.value }}</div>
+              <div class="funnel-label">{{ view.funnel.pre.label }}</div>
+            </div>
+          </a-tooltip>
           <span class="funnel-arrow">→</span>
           <div class="funnel-stage">
             <div class="funnel-num">{{ view.funnel.lead.value }}</div>
