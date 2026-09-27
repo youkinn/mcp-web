@@ -25,6 +25,14 @@
       <section class="detail-section">
         <h4 class="detail-section-title">召回漏斗</h4>
         <div class="funnel-flow">
+          <a-tooltip placement="top">
+            <template #title>{{ view.funnel.pre.hint }}</template>
+            <div class="funnel-stage">
+              <div class="funnel-num">{{ view.funnel.pre.value }}</div>
+              <div class="funnel-label">{{ view.funnel.pre.label }}</div>
+            </div>
+          </a-tooltip>
+          <span class="funnel-arrow">→</span>
           <div class="funnel-stage">
             <div class="funnel-num">{{ view.funnel.lead.value }}</div>
             <div class="funnel-label">{{ view.funnel.lead.label }}</div>
@@ -47,9 +55,56 @@
         <div v-for="hint in view.funnel.hints" :key="hint" class="diag-note">{{ hint }}</div>
       </section>
 
+      <!-- query 处理链 -->
+      <section class="detail-section">
+        <h4 class="detail-section-title">Query 处理链</h4>
+        <div class="query-chain">
+          <div class="chain-step">
+            <div class="chain-label">原始 query</div>
+            <div class="chain-value">{{ view.query.raw }}</div>
+          </div>
+          <span class="funnel-arrow">→</span>
+          <div class="chain-step">
+            <div class="chain-label">alias 归一化</div>
+            <div class="chain-value">{{ view.query.normalized }}</div>
+          </div>
+          <span class="funnel-arrow">→</span>
+          <div class="chain-step">
+            <div class="chain-label">分词 tokens</div>
+            <div class="chain-value">
+              <a-tag
+                v-for="token in view.query.tokens"
+                :key="token"
+                color="blue"
+                size="small"
+                class="diag-token"
+              >
+                {{ token }}
+              </a-tag>
+              <span v-if="view.query.tokens.length === 0" class="diag-muted">（无）</span>
+            </div>
+          </div>
+        </div>
+        <div class="rewrite-detail">
+          <span class="rewrite-label">改写明细</span>
+          <div v-if="view.query.rewrites.length > 0" class="rewrite-items">
+            <div
+              v-for="(rw, index) in view.query.rewrites"
+              :key="`${rw.from}-${rw.to}-${index}`"
+              class="rewrite-item"
+            >
+              <span class="rewrite-from">{{ rw.from }}</span>
+              <span class="funnel-arrow">→</span>
+              <span class="rewrite-to">{{ rw.to }}</span>
+            </div>
+          </div>
+          <span v-else class="diag-muted">无改写</span>
+        </div>
+      </section>
+
       <!-- 候选分数表 -->
       <section class="detail-section">
-        <h4 class="detail-section-title mt-1!">候选分数</h4>
+        <h4 class="detail-section-title">候选分数</h4>
         <div class="diag-note">{{ view.scoringNote }}</div>
         <a-table
           :columns="scoreColumns"
@@ -169,38 +224,6 @@
         </div>
       </section>
 
-      <!-- query 处理链 -->
-      <section class="detail-section">
-        <h4 class="detail-section-title">Query 处理链</h4>
-        <div class="query-chain">
-          <div class="chain-step">
-            <div class="chain-label">原始 query</div>
-            <div class="chain-value">{{ view.query.raw }}</div>
-          </div>
-          <span class="funnel-arrow">→</span>
-          <div class="chain-step">
-            <div class="chain-label">alias 归一化</div>
-            <div class="chain-value">{{ view.query.normalized }}</div>
-          </div>
-          <span class="funnel-arrow">→</span>
-          <div class="chain-step">
-            <div class="chain-label">分词 tokens</div>
-            <div class="chain-value">
-              <a-tag
-                v-for="token in view.query.tokens"
-                :key="token"
-                color="blue"
-                size="small"
-                class="diag-token"
-              >
-                {{ token }}
-              </a-tag>
-              <span v-if="view.query.tokens.length === 0" class="diag-muted">（无）</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <!-- 环境与降级 -->
       <section class="detail-section">
         <h4 class="detail-section-title">环境与降级</h4>
@@ -216,6 +239,10 @@
           <div class="env-item">
             <span class="env-label">alias 条数</span>
             <span class="env-value">{{ view.env.aliasCount }}</span>
+          </div>
+          <div class="env-item">
+            <span class="env-label">normVersion</span>
+            <span class="env-value">{{ view.env.normVersion || '—' }}</span>
           </div>
           <div class="env-item">
             <span class="env-label">向量维度</span>
@@ -271,7 +298,11 @@
 import { computed } from 'vue'
 import { message } from 'ant-design-vue'
 import type { RetrievalDiagnostics } from '../api/client'
-import { buildDiagnosticsView, scoreRowClass, type ScoreRowView } from '../utils/retrievalDiagnostics'
+import {
+  buildDiagnosticsView,
+  scoreRowClass,
+  type ScoreRowView,
+} from '../utils/retrievalDiagnostics'
 import { copyText } from '../utils/clipboard'
 
 const props = defineProps<{
@@ -337,6 +368,11 @@ function onCopyChunkId(record: ScoreRowView) {
   padding: 6px 0;
   color: #9aa69e;
   font-size: 12px;
+}
+
+/* 区块间隔（feat-A016 验收 8 二轮）：相邻区块留 16px 上边距，标题不再与上方内容粘连 */
+.detail-section + .detail-section {
+  margin-top: 16px;
 }
 
 /* 召回漏斗 */
@@ -521,6 +557,45 @@ function onCopyChunkId(record: ScoreRowView) {
 .diag-muted {
   color: #9aa69e;
   font-size: 12px;
+}
+
+/* 改写明细（feat-A016 验收 8）：原文片段 → 规范形，无改写显示「无改写」 */
+.rewrite-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: #fafbf9;
+  border: 1px solid #e3e9e2;
+  border-radius: 10px;
+}
+
+.rewrite-label {
+  color: #7b8a80;
+  font-size: 11px;
+}
+
+.rewrite-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rewrite-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.rewrite-from {
+  color: #7b8a80;
+}
+
+.rewrite-to {
+  color: #163c32;
+  font-weight: 600;
 }
 
 /* 环境与降级 */
