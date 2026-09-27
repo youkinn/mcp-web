@@ -390,8 +390,35 @@
               @press-enter="onPickerJump"
             />
             <a-button size="small" @click="onPickerJump">跳转</a-button>
+            <a-button size="small" @click="pickerTocOpen = !pickerTocOpen">章节目录</a-button>
           </div>
           <a-button size="small" :disabled="!pickerChapterData?.next" @click="goPickerNext">下一回</a-button>
+        </div>
+        <div v-if="pickerTocOpen" class="picker-toc">
+          <a-input
+            v-model:value="pickerTocSearch"
+            class="picker-toc-search"
+            placeholder="搜索回号 / 回目"
+            allow-clear
+          >
+            <template #prefix>
+              <SearchOutlined />
+            </template>
+          </a-input>
+          <div class="picker-toc-list">
+            <div
+              v-for="row in filteredPickerToc"
+              :key="row.chapter"
+              class="picker-toc-row"
+              :class="{ 'is-current': row.chapter === pickerChapter }"
+              @click="pickFromToc(row)"
+            >
+              <span class="picker-toc-no">第 {{ row.chapter }} 回</span>
+              <span class="picker-toc-title">{{ row.title }}</span>
+              <span v-if="row.chapter === pickerChapter" class="picker-toc-current">当前</span>
+            </div>
+            <a-empty v-if="filteredPickerToc.length === 0" description="无匹配回目" />
+          </div>
         </div>
         <div v-if="pickerChapterLoading" class="picker-state">
           <a-spin size="small" />
@@ -446,6 +473,7 @@ import {
 import SangoChapterReader from './SangoChapterReader.vue'
 import { FullscreenExitOutlined, FullscreenOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import { isValidChapter, SANGO_CHAPTER_MAX, SANGO_CHAPTER_MIN, shortChunkId } from '../utils/sangoChapter'
+import { SANGO_CHAPTER_TITLES, type SangoChapterTitle } from '../utils/sangoContents'
 
 const props = defineProps<{
   open: boolean
@@ -984,11 +1012,15 @@ const pickerChapterData = ref<SangoChapterData | null>(null)
 const pickerChapterLoading = ref(false)
 const pickerChapterError = ref('')
 const pickerJump = ref<number | null>(SANGO_CHAPTER_MIN)
+const pickerTocOpen = ref(false)
+const pickerTocSearch = ref('')
 
 // 初始展示该请求召回候选；首次进章节态默认落在首个候选所在回（无候选则第 1 回）
 function openPicker() {
   pickerTab.value = 'candidates'
   pickerSearch.value = ''
+  pickerTocOpen.value = false
+  pickerTocSearch.value = ''
   expandedCandidateId.value = null
   candidateExpandedData.value = null
   candidateExpandedError.value = ''
@@ -998,7 +1030,12 @@ function openPicker() {
 }
 
 function onPickerTabChange(e: { target: { value: unknown } }) {
-  pickerTab.value = e.target.value === 'chapters' ? 'chapters' : 'candidates'
+  const nextTab = e.target.value === 'chapters' ? 'chapters' : 'candidates'
+  pickerTab.value = nextTab
+  if (nextTab === 'candidates') {
+    pickerTocOpen.value = false
+    pickerTocSearch.value = ''
+  }
   if (pickerTab.value === 'chapters' && !pickerChapterData.value && !pickerChapterLoading.value) {
     void loadPickerChapter(pickerChapter.value)
   }
@@ -1077,6 +1114,22 @@ function onPickerJump() {
     return
   }
   goPickerTo(next)
+}
+
+// 章节目录：回号 / 回目关键字过滤 SANGO_CHAPTER_TITLES（120 回固定数据，见 utils/sangoContents.ts）
+const filteredPickerToc = computed(() => {
+  const q = pickerTocSearch.value.trim().toLowerCase()
+  if (!q) return SANGO_CHAPTER_TITLES
+  return SANGO_CHAPTER_TITLES.filter(
+    (row) => String(row.chapter).includes(q) || row.title.toLowerCase().includes(q),
+  )
+})
+
+// 目录点击某回：复用 goPickerTo 跳转，关闭目录并清空搜索
+function pickFromToc(row: SangoChapterTitle) {
+  goPickerTo(row.chapter)
+  pickerTocOpen.value = false
+  pickerTocSearch.value = ''
 }
 
 // 点击候选选段 / 章节片段 → 回填手增表单（chunkId + 正文），可再编辑后确认加入
@@ -1806,6 +1859,72 @@ watch(
 
 .picker-jump-input {
   width: 88px;
+}
+
+.picker-toc {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dde5dd;
+  border-radius: 9px;
+  background: #fbfcf9;
+}
+
+.picker-toc-search {
+  flex: 0 0 auto;
+}
+
+.picker-toc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.picker-toc-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.picker-toc-row:hover {
+  background: #eef5ef;
+}
+
+.picker-toc-row.is-current {
+  background: #e2efe6;
+  box-shadow: inset 0 0 0 1px #2e6d56;
+}
+
+.picker-toc-no {
+  flex: 0 0 58px;
+  color: #a0885a;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 12px;
+  text-align: right;
+}
+
+.picker-toc-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #2b2418;
+  font-size: 13px;
+}
+
+.picker-toc-current {
+  flex: 0 0 auto;
+  color: #2e6d56;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .picker-state {
