@@ -458,7 +458,7 @@
     :chunk-id="readerTarget.chunkId"
   />
 </template><script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   deleteDraftbenchRecord,
@@ -1160,15 +1160,35 @@ function onOpenChange(open: boolean) {
   emit('update:open', open)
 }
 
+// 第 14 条：全屏时锁死页面级滚动——背景页内容撑出的 html 滚动条会残留在全屏形态右缘且滚不动；
+// 退出全屏 / 关闭弹框时恢复，普通形态页面滚动保持既有行为
+let prevHtmlOverflow = ''
+function syncPageScrollLock() {
+  const root = document.documentElement
+  const locked = props.open && fullscreen.value
+  if (locked && root.style.overflow !== 'hidden') {
+    prevHtmlOverflow = root.style.overflow
+    root.style.overflow = 'hidden'
+  } else if (!locked && root.style.overflow === 'hidden') {
+    root.style.overflow = prevHtmlOverflow
+  }
+}
 watch(
   () => props.open,
   (open) => {
     if (open) {
       fullscreen.value = true
-      void reloadRecords()
     }
+    syncPageScrollLock()
+    void reloadRecords()
   },
 )
+watch(fullscreen, syncPageScrollLock)
+onBeforeUnmount(() => {
+  if (document.documentElement.style.overflow === 'hidden') {
+    document.documentElement.style.overflow = prevHtmlOverflow
+  }
+})
 </script><style scoped>
 .draftbench-body {
   display: flex;
@@ -1280,6 +1300,21 @@ watch(
 
 /* 去掉 ant 空态默认 description 的底部 margin：否则 flex 按含尾部的整行居中，视觉块偏高 */
 .col-left :deep(.ant-empty-description) {
+  margin-bottom: 0;
+}
+
+/* 右栏发送清单空态：与左栏候选空态一致的插图+文案整体居中（仅空态渲染，不影响列表形态） */
+.col-right :deep(.ant-empty) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 16px 0;
+}
+
+.col-right :deep(.ant-empty-description) {
   margin-bottom: 0;
 }
 
@@ -1900,7 +1935,7 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 300px;
+  max-height: calc(100vh - 347px);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
