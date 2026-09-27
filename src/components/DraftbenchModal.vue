@@ -4,7 +4,6 @@
     :width="fullscreen ? '100%' : 'min(1280px, 96vw)'"
     :wrap-class-name="fullscreen ? 'draftbench-modal-wrap draftbench-fullscreen' : 'draftbench-modal-wrap'"
     :footer="null"
-    :body-style="{ maxHeight: '70vh', overflowY: 'auto' }"
     @update:open="onOpenChange"
   >
     <template #title>
@@ -52,7 +51,10 @@
           <template v-else>
             <div class="candidate-toolbar">
               <span class="candidate-toolbar-hint">已入清单 {{ addedCandidateCount }}/{{ trace.chunks.candidates.length }}</span>
-              <a-button size="small" type="dashed" @click="addAllCandidates">一键全部移入发送清单</a-button>
+              <span class="candidate-toolbar-actions">
+                <a-button size="small" :disabled="chunkItems.length === 0" @click="clearList">清空发送清单</a-button>
+                <a-button size="small" type="dashed" @click="addAllCandidates">一键全部移入发送清单</a-button>
+              </span>
             </div>
             <div class="candidate-list">
             <div
@@ -74,7 +76,15 @@
               <div class="candidate-meta">回 {{ candidate.chapter }} · 段 {{ candidate.segFrom }}~{{ candidate.segTo }} · 得分 {{ candidate.finalScore }}</div>
               <p class="candidate-preview" :title="candidate.preview">{{ candidate.preview }}</p>
               <div class="candidate-actions">
-                <a-button size="small" type="primary" ghost @click="addCandidate(candidate)">添加到清单</a-button>
+                <a-button
+                  size="small"
+                  type="primary"
+                  ghost
+                  :disabled="containsChunkId(candidate.chunkId)"
+                  @click="addCandidate(candidate)"
+                >
+                  添加到清单
+                </a-button>
                 <a-button size="small" type="link" @click="openReaderForCandidate(candidate)">查看原文</a-button>
               </div>
             </div>
@@ -88,14 +98,22 @@
             <span v-if="chunkItems.length" class="col-meta">{{ chunkItems.length }} 条 · {{ totalChars }} 字</span>
           </div>
           <div class="manual-add">
-            <a-textarea
-              v-model:value="manualText"
-              class="manual-input"
-              :rows="2"
-              placeholder="手增片段原文（1~2000 字）；也可从左侧拖入候选后拖拽排序"
+            <div class="manual-add-row">
+              <a-textarea
+                v-model:value="manualText"
+                class="manual-input"
+                :rows="2"
+                placeholder="手增片段原文（1~2000 字）；也可从左侧拖入候选后拖拽排序"
+                allow-clear
+              />
+              <a-button type="dashed" class="manual-btn" @click="onManualAdd">手增片段</a-button>
+            </div>
+            <a-input
+              v-model:value="manualChunkId"
+              class="manual-chunkid"
+              placeholder="可选：chunkId（填写后参与去重，展示片段标签）"
               allow-clear
             />
-            <a-button type="dashed" class="manual-btn" @click="onManualAdd">手增片段</a-button>
           </div>
           <div
             ref="chunkListRef"
@@ -120,7 +138,7 @@
                 <a-button size="small" type="text" danger class="chunk-item-remove" @click="removeItem(index)">移除</a-button>
               </div>
               <p class="chunk-item-text" :title="item.text">{{ truncate(item.text, 90) }}</p>
-              <div v-if="item.chunkId" class="chunk-item-actions">
+              <div v-if="item.chunkId && item.chapter != null" class="chunk-item-actions">
                 <a-button size="small" type="link" @click="openReaderForItem(item)">查看原文</a-button>
               </div>
             </div>
@@ -188,6 +206,17 @@
                 <span class="record-error">{{ truncate(record.errorMessage, 30) }}</span>
               </a-tooltip>
             </template>
+            <template v-else-if="column.key === 'operation'">
+              <a-popconfirm
+                title="物理删除，不可恢复"
+                ok-text="删除"
+                cancel-text="取消"
+                :ok-button-props="{ loading: deletingTraceId === record.traceId }"
+                @confirm="onDeleteRecord(record)"
+              >
+                <a-button size="small" type="text" danger @click.stop>删除</a-button>
+              </a-popconfirm>
+            </template>
           </template>
         </a-table>
       </div>
@@ -254,6 +283,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
+  deleteDraftbenchRecord,
   fetchDraftbenchRecordDetail,
   fetchDraftbenchRecords,
   fetchDraftbenchTrace,
@@ -355,6 +385,7 @@ interface ListItem {
 
 const chunkItems = ref<ListItem[]>([])
 const manualText = ref('')
+const manualChunkId = ref('')
 const chunkListRef = ref<HTMLElement | null>(null)
 
 const totalChars = computed(() => chunkItems.value.reduce((sum, item) => sum + item.text.length, 0))
@@ -387,7 +418,7 @@ function addCandidate(candidate: DraftbenchCandidate) {
     message.warning('发送清单最多 20 条')
     return
   }
-  chunkItems.value.push({
+  chunkItems.value.unshift({
     chunkId: candidate.chunkId,
     text: candidate.preview,
     chapter: candidate.chapter,
@@ -447,12 +478,18 @@ function onManualAdd() {
     message.error('单条片段不能超过 2000 字')
     return
   }
+  const chunkId = manualChunkId.value.trim() || undefined
+  if (chunkId && containsChunkId(chunkId)) {
+    message.warning('该 chunkId 已在发送清单中')
+    return
+  }
   if (chunkItems.value.length >= MAX_CHUNKS) {
     message.warning('发送清单最多 20 条')
     return
   }
-  chunkItems.value.push({ text })
+  chunkItems.value.push({ chunkId, text })
   manualText.value = ''
+  manualChunkId.value = ''
 }
 
 // ── 拖拽：左拖右添加 / 右内排序 ──
@@ -646,6 +683,7 @@ const recordColumns = [
   { key: 'params', title: '本次参数', width: 170 },
   { key: 'chunkCount', title: '片段数', width: 70, align: 'center' },
   { key: 'result', title: '结果', width: 190 },
+  { key: 'operation', title: '操作', width: 80, align: 'center' },
 ]
 
 const recordPagination = computed(() => ({
@@ -706,6 +744,26 @@ async function onRecordRowClick(record: DraftbenchRecord) {
     message.success('已载入草稿台记录，可继续编辑')
   } catch (err) {
     message.error(getErrorMessage(err))
+  }
+}
+
+const deletingTraceId = ref<string | null>(null)
+
+async function onDeleteRecord(record: DraftbenchRecord) {
+  if (deletingTraceId.value) return
+  deletingTraceId.value = record.traceId
+  try {
+    await deleteDraftbenchRecord(record.traceId)
+    message.success('记录已删除')
+    // 当前页删空且非第一页时回退一页，避免停留在空页
+    if (records.value.length === 1 && recordPageNo.value > 1) {
+      recordPageNo.value -= 1
+    }
+    await reloadRecords()
+  } catch (err) {
+    message.error(getErrorMessage(err))
+  } finally {
+    deletingTraceId.value = null
   }
 }
 
@@ -784,7 +842,9 @@ watch(
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
-  height: min(52vh, 620px);
+  /* 普通形态：不设高度上限，弹框随内容长高、页面可竖直滚动（第三轮验收第 7 条）；
+     内容不足时保底一个工作高度，两栏内部列表在容器内各自滚动 */
+  min-height: min(52vh, 620px);
 }
 
 .col {
@@ -870,6 +930,12 @@ watch(
   font-size: 12px;
 }
 
+.candidate-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* 全屏形态：弹框 body 内收敛滚动，工作区占满剩余高度，发送记录压缩为独立滚动栏 */
 .draftbench-body-fullscreen {
   flex: 1;
@@ -946,8 +1012,18 @@ watch(
 /* 右侧清单 */
 .manual-add {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   padding: 10px 10px 0;
+}
+
+.manual-add-row {
+  display: flex;
+  gap: 8px;
+}
+
+.manual-chunkid {
+  width: 100%;
 }
 
 .manual-input {
@@ -1068,6 +1144,12 @@ watch(
 
 .muted {
   color: #9aa69e;
+}
+
+.action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 /* ⑤ 记录 */

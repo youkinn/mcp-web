@@ -647,6 +647,14 @@ export async function fetchDraftbenchRecordDetail(traceId: string): Promise<Draf
   return unwrapData(data)
 }
 
+/** 删除草稿台发送记录（物理删除，不可恢复）；DELETE /api/v1/draftbench/records/:traceId（删除接口后端并行实现中） */
+export async function deleteDraftbenchRecord(traceId: string): Promise<void> {
+  const { data } = await apiClient.delete<ApiResponse<unknown>>(
+    `/v1/draftbench/records/${encodeURIComponent(traceId)}`,
+  )
+  unwrapNullable(data)
+}
+
 // ── 三国演义原文（feat-A010）──
 
 export interface SangoChapterChunk {
