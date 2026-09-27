@@ -65,6 +65,7 @@
               draggable="true"
               @dragstart="onCandidateDragStart($event, candidate)"
               @dragend="onDragEnd"
+              @click="onCandidateCardClick(candidate)"
             >
               <div class="candidate-head">
                 <span class="candidate-rank">#{{ candidate.rank }}</span>
@@ -81,11 +82,11 @@
                   type="primary"
                   ghost
                   :disabled="containsChunkId(candidate.chunkId)"
-                  @click="addCandidate(candidate)"
+                  @click.stop="addCandidate(candidate)"
                 >
                   添加到清单
                 </a-button>
-                <a-button size="small" type="link" @click="openReaderForCandidate(candidate)">查看原文</a-button>
+                <a-button size="small" type="link" @click.stop="openReaderForCandidate(candidate)">查看原文</a-button>
               </div>
             </div>
             </div>
@@ -98,22 +99,8 @@
             <span v-if="chunkItems.length" class="col-meta">{{ chunkItems.length }} 条 · {{ totalChars }} 字</span>
           </div>
           <div class="manual-add">
-            <div class="manual-add-row">
-              <a-textarea
-                v-model:value="manualText"
-                class="manual-input"
-                :rows="2"
-                placeholder="手增片段原文（1~2000 字）；也可从左侧拖入候选后拖拽排序"
-                allow-clear
-              />
-              <a-button type="dashed" class="manual-btn" @click="onManualAdd">手增片段</a-button>
-            </div>
-            <a-input
-              v-model:value="manualChunkId"
-              class="manual-chunkid"
-              placeholder="可选：chunkId（填写后参与去重，展示片段标签）"
-              allow-clear
-            />
+            <a-button type="dashed" class="manual-btn" @click="openManualAdd">手增片段</a-button>
+            <span class="manual-tip">弹窗填写：正文 1~2000 字 + 可选 chunkId；也可「从原文选择」片段回填后编辑</span>
           </div>
           <div
             ref="chunkListRef"
@@ -272,6 +259,166 @@
     </div>
   </a-modal>
 
+  <!-- 手增片段弹框（第四轮：主区域输入收敛进弹窗，一次填完确认加入；从原文选择片段回填后可再编辑） -->
+  <a-modal
+    v-model:open="manualOpen"
+    title="手增片段"
+    width="560px"
+    wrap-class-name="draftbench-manual-wrap"
+    :footer="null"
+    :keyboard="false"
+  >
+    <div class="manual-body">
+      <div class="manual-field">
+        <div class="manual-label-row">
+          <span class="manual-label">正文</span>
+          <span class="manual-hint">必填，1~2000 字</span>
+        </div>
+        <a-textarea
+          v-model:value="manualText"
+          :rows="6"
+          placeholder="输入要注入的片段原文（1~2000 字）"
+          show-count
+        />
+      </div>
+      <div class="manual-field">
+        <div class="manual-label-row">
+          <span class="manual-label">chunkId</span>
+          <span class="manual-hint">选填：填写后参与去重，清单条目展示片段标签</span>
+        </div>
+        <a-input
+          v-model:value="manualChunkId"
+          placeholder="如 sanguo-yanyi:0085:c0011"
+          allow-clear
+        />
+      </div>
+      <div class="manual-actions">
+        <a-button @click="openPicker">从原文选择</a-button>
+        <span class="manual-actions-gap" />
+        <a-button @click="manualOpen = false">取消</a-button>
+        <a-button type="primary" @click="confirmManualAdd">确认加入</a-button>
+      </div>
+    </div>
+  </a-modal>
+
+  <!-- 原文选段选择器（第四轮：召回候选 / 按章节浏览两态，点击片段回填手增表单） -->
+  <a-modal
+    v-model:open="pickerOpen"
+    title="从原文选择片段"
+    width="860px"
+    wrap-class-name="draftbench-picker-wrap"
+    :footer="null"
+    :keyboard="false"
+  >
+    <div class="picker-body">
+      <a-radio-group :value="pickerTab" size="small" @change="onPickerTabChange">
+        <a-radio-button value="candidates">召回候选</a-radio-button>
+        <a-radio-button value="chapters">按章节浏览</a-radio-button>
+      </a-radio-group>
+
+      <!-- 候选态：搜索 + 展开看完整原文与选段 -->
+      <div v-if="pickerTab === 'candidates'" class="picker-pane">
+        <a-input
+          v-model:value="pickerSearch"
+          class="picker-search"
+          placeholder="搜索回目 / 标题 / chunkId"
+          allow-clear
+        >
+          <template #prefix>
+            <SearchOutlined />
+          </template>
+        </a-input>
+        <div class="picker-candidate-list">
+          <a-empty
+            v-if="filteredPickerCandidates.length === 0"
+            description="无匹配候选；可切到「按章节浏览」选任意片段"
+          />
+          <div
+            v-for="candidate in filteredPickerCandidates"
+            :key="candidate.chunkId"
+            class="picker-candidate"
+            :class="{ expanded: expandedCandidateId === candidate.chunkId }"
+            @click="toggleCandidateExpand(candidate)"
+          >
+            <div class="picker-candidate-head">
+              <span class="picker-candidate-rank">#{{ candidate.rank }}</span>
+              <span class="picker-candidate-title" :title="candidate.title">{{ truncate(candidate.title, 30) }}</span>
+              <span class="picker-candidate-meta">{{ shortChunkId(candidate.chunkId) }} · 回 {{ candidate.chapter }} · 段 {{ candidate.segFrom }}~{{ candidate.segTo }}</span>
+            </div>
+            <p class="picker-candidate-preview">{{ candidate.preview }}</p>
+            <div v-if="expandedCandidateId === candidate.chunkId" class="picker-candidate-detail">
+              <div class="picker-passage-bar">
+                <span class="picker-passage-label">选段</span>
+                <p class="picker-passage-text">{{ candidate.preview }}</p>
+                <a-button size="small" type="primary" @click.stop="fillBackFromCandidate(candidate)">选此段回填</a-button>
+              </div>
+              <div v-if="candidateExpandedLoading" class="picker-detail-state">
+                <a-spin size="small" />
+                <span>原文加载中…</span>
+              </div>
+              <a-alert v-else-if="candidateExpandedError" type="error" show-icon :message="candidateExpandedError" />
+              <div v-else-if="candidateExpandedData" class="picker-chunk-list">
+                <div class="picker-chunk-title">
+                  第 {{ candidateExpandedData.chapter }} 回 {{ candidateExpandedData.title }} · 完整原文
+                </div>
+                <div
+                  v-for="chunk in candidateExpandedData.chunks"
+                  :key="chunk.chunkId"
+                  class="picker-chunk-row"
+                  :class="{ 'is-target': chunk.chunkId === candidate.chunkId }"
+                >
+                  <span class="picker-chunk-no">{{ shortChunkId(chunk.chunkId) }}</span>
+                  <p class="picker-chunk-text">{{ chunk.text }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 章节态：翻回 + 任意片段点击回填 -->
+      <div v-else class="picker-pane">
+        <div class="picker-chapter-toolbar">
+          <a-button size="small" :disabled="!pickerChapterData?.prev" @click="goPickerPrev">上一回</a-button>
+          <div class="picker-jump">
+            <span class="picker-jump-label">回号</span>
+            <a-input-number
+              v-model:value="pickerJump"
+              :controls="false"
+              class="picker-jump-input"
+              placeholder="1~120"
+              @press-enter="onPickerJump"
+            />
+            <a-button size="small" @click="onPickerJump">跳转</a-button>
+          </div>
+          <a-button size="small" :disabled="!pickerChapterData?.next" @click="goPickerNext">下一回</a-button>
+        </div>
+        <div v-if="pickerChapterLoading" class="picker-state">
+          <a-spin size="small" />
+          <span>原文加载中…</span>
+        </div>
+        <a-alert v-else-if="pickerChapterError" type="error" show-icon :message="pickerChapterError" />
+        <div v-else-if="pickerChapterData" class="picker-chapter-body">
+          <div class="picker-chapter-title">第 {{ pickerChapterData.chapter }} 回 {{ pickerChapterData.title }}</div>
+          <div class="picker-snippet-list">
+            <div
+              v-for="chunk in pickerChapterData.chunks"
+              :key="chunk.chunkId"
+              class="picker-snippet"
+              :class="{ 'is-in-list': containsChunkId(chunk.chunkId) }"
+              @click="fillBackFromChapterChunk(chunk)"
+            >
+              <span class="picker-snippet-no">{{ shortChunkId(chunk.chunkId) }}</span>
+              <span class="picker-snippet-seg">段 {{ chunk.segFrom }}~{{ chunk.segTo }}</span>
+              <p class="picker-snippet-text">{{ chunk.text }}</p>
+            </div>
+          </div>
+          <div class="picker-select-hint">点击任意片段回填手增表单的 chunkId + 正文，可再编辑后确认加入</div>
+        </div>
+      </div>
+    </div>
+  </a-modal>
+
   <SangoChapterReader
     v-if="readerTarget"
     v-model:open="readerOpen"
@@ -287,15 +434,18 @@ import {
   fetchDraftbenchRecordDetail,
   fetchDraftbenchRecords,
   fetchDraftbenchTrace,
+  fetchSangoChapter,
   getErrorMessage,
   sendDraftbenchChat,
   type DraftbenchCandidate,
   type DraftbenchRecord,
   type DraftbenchSendParams,
+  type SangoChapterChunk,
+  type SangoChapterData,
 } from '../api/client'
 import SangoChapterReader from './SangoChapterReader.vue'
-import { FullscreenExitOutlined, FullscreenOutlined } from '@ant-design/icons-vue'
-import { shortChunkId } from '../utils/sangoChapter'
+import { FullscreenExitOutlined, FullscreenOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import { isValidChapter, SANGO_CHAPTER_MAX, SANGO_CHAPTER_MIN, shortChunkId } from '../utils/sangoChapter'
 
 const props = defineProps<{
   open: boolean
@@ -386,6 +536,8 @@ interface ListItem {
 const chunkItems = ref<ListItem[]>([])
 const manualText = ref('')
 const manualChunkId = ref('')
+const manualOpen = ref(false)
+const manualSource = ref<{ chunkId: string; chapter: number; title: string } | null>(null)
 const chunkListRef = ref<HTMLElement | null>(null)
 
 const totalChars = computed(() => chunkItems.value.reduce((sum, item) => sum + item.text.length, 0))
@@ -468,7 +620,14 @@ function clearList() {
   chunkItems.value = []
 }
 
-function onManualAdd() {
+function openManualAdd() {
+  manualText.value = ''
+  manualChunkId.value = ''
+  manualSource.value = null
+  manualOpen.value = true
+}
+
+function confirmManualAdd() {
   const text = manualText.value.trim()
   if (!text) {
     message.warning('片段文本不能为空')
@@ -487,23 +646,41 @@ function onManualAdd() {
     message.warning('发送清单最多 20 条')
     return
   }
-  chunkItems.value.push({ chunkId, text })
+  const item: ListItem = { chunkId, text }
+  // 原文选择器回填的片段：chunkId 未被改动才带上章节信息，清单条目可跳原文（手增表单仍只填正文 + chunkId）
+  if (chunkId && manualSource.value && manualSource.value.chunkId === chunkId) {
+    item.chapter = manualSource.value.chapter
+    item.title = manualSource.value.title
+  }
+  // 负责人 9.3 口径：新增到清单默认放最前面（候选单加 / 手增弹窗 / 原文选段回填均 unshift）；一键全部移入保持候选顺序 push
+  chunkItems.value.unshift(item)
   manualText.value = ''
   manualChunkId.value = ''
+  manualSource.value = null
+  manualOpen.value = false
 }
 
 // ── 拖拽：左拖右添加 / 右内排序 ──
 
 const dragState = ref<{ kind: 'candidate'; candidate: DraftbenchCandidate } | { kind: 'item'; index: number } | null>(null)
 const dragOverIndex = ref<number | null>(null)
+// 整条可点看原文（拖拽后松开会在同元素触发 click）：拖拽开始记时，400ms 内的 click 视为拖拽残留，跳过
+let lastCandidateDragAt = 0
 
 function onCandidateDragStart(e: DragEvent, candidate: DraftbenchCandidate) {
+  lastCandidateDragAt = Date.now()
   dragState.value = { kind: 'candidate', candidate }
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'copy'
     e.dataTransfer.setData('text/plain', candidate.chunkId)
   }
   dragOverIndex.value = null
+}
+
+// 整条点击打开原文阅读器（辅助找原文）；内部按钮各自 @click.stop 避免冒泡
+function onCandidateCardClick(candidate: DraftbenchCandidate) {
+  if (Date.now() - lastCandidateDragAt < 400) return
+  openReaderForCandidate(candidate)
 }
 
 function onItemDragStart(e: DragEvent, index: number) {
@@ -789,6 +966,139 @@ function openReaderForItem(item: ListItem) {
   readerOpen.value = true
 }
 
+// ── 原文选段选择器（第四轮：手增表单「从原文选择」入口）──
+
+const pickerOpen = ref(false)
+const pickerTab = ref<'candidates' | 'chapters'>('candidates')
+const pickerSearch = ref('')
+
+// 候选态：展开条目看完整原文 + 选段
+const expandedCandidateId = ref<string | null>(null)
+const candidateExpandedData = ref<SangoChapterData | null>(null)
+const candidateExpandedLoading = ref(false)
+const candidateExpandedError = ref('')
+
+// 章节态：任意章节片段列表（复用 A010 fetchSangoChapter，缓存模块级共享）
+const pickerChapter = ref(SANGO_CHAPTER_MIN)
+const pickerChapterData = ref<SangoChapterData | null>(null)
+const pickerChapterLoading = ref(false)
+const pickerChapterError = ref('')
+const pickerJump = ref<number | null>(SANGO_CHAPTER_MIN)
+
+// 初始展示该请求召回候选；首次进章节态默认落在首个候选所在回（无候选则第 1 回）
+function openPicker() {
+  pickerTab.value = 'candidates'
+  pickerSearch.value = ''
+  expandedCandidateId.value = null
+  candidateExpandedData.value = null
+  candidateExpandedError.value = ''
+  const startChapter = (trace.value?.chunks.candidates ?? [])[0]?.chapter ?? SANGO_CHAPTER_MIN
+  pickerOpen.value = true
+  goPickerTo(startChapter)
+}
+
+function onPickerTabChange(e: { target: { value: unknown } }) {
+  pickerTab.value = e.target.value === 'chapters' ? 'chapters' : 'candidates'
+  if (pickerTab.value === 'chapters' && !pickerChapterData.value && !pickerChapterLoading.value) {
+    void loadPickerChapter(pickerChapter.value)
+  }
+}
+
+const filteredPickerCandidates = computed(() => {
+  const q = pickerSearch.value.trim().toLowerCase()
+  const candidates = trace.value?.chunks.candidates ?? []
+  if (!q) return candidates
+  return candidates.filter(
+    (c) =>
+      c.title.toLowerCase().includes(q) ||
+      String(c.chapter).includes(q) ||
+      c.chunkId.toLowerCase().includes(q) ||
+      shortChunkId(c.chunkId).toLowerCase().includes(q),
+  )
+})
+
+async function toggleCandidateExpand(candidate: DraftbenchCandidate) {
+  if (expandedCandidateId.value === candidate.chunkId) {
+    expandedCandidateId.value = null
+    candidateExpandedData.value = null
+    candidateExpandedError.value = ''
+    return
+  }
+  expandedCandidateId.value = candidate.chunkId
+  candidateExpandedLoading.value = true
+  candidateExpandedError.value = ''
+  try {
+    const result = await fetchSangoChapter(candidate.chapter)
+    if (expandedCandidateId.value !== candidate.chunkId) return // 已切到别的候选，丢弃过期结果
+    candidateExpandedData.value = result
+  } catch (err) {
+    if (expandedCandidateId.value !== candidate.chunkId) return
+    candidateExpandedError.value = getErrorMessage(err)
+  } finally {
+    if (expandedCandidateId.value === candidate.chunkId) candidateExpandedLoading.value = false
+  }
+}
+
+async function loadPickerChapter(chapter: number) {
+  pickerChapterLoading.value = true
+  try {
+    const result = await fetchSangoChapter(chapter)
+    if (pickerChapter.value !== chapter) return // 已切回，丢弃过期结果
+    pickerChapterData.value = result
+  } catch (err) {
+    if (pickerChapter.value !== chapter) return
+    pickerChapterError.value = getErrorMessage(err)
+  } finally {
+    if (pickerChapter.value === chapter) pickerChapterLoading.value = false
+  }
+}
+
+function goPickerTo(chapter: number) {
+  if (chapter === pickerChapter.value && pickerChapterData.value) return
+  pickerChapter.value = chapter
+  pickerJump.value = chapter
+  pickerChapterData.value = null
+  pickerChapterError.value = ''
+  void loadPickerChapter(chapter)
+}
+
+function goPickerPrev() {
+  if (pickerChapterData.value?.prev) goPickerTo(pickerChapterData.value.prev.chapter)
+}
+
+function goPickerNext() {
+  if (pickerChapterData.value?.next) goPickerTo(pickerChapterData.value.next.chapter)
+}
+
+function onPickerJump() {
+  const next = pickerJump.value
+  if (!isValidChapter(next)) {
+    message.warning(`回号需为 ${SANGO_CHAPTER_MIN}~${SANGO_CHAPTER_MAX} 的整数`)
+    return
+  }
+  goPickerTo(next)
+}
+
+// 点击候选选段 / 章节片段 → 回填手增表单（chunkId + 正文），可再编辑后确认加入
+function fillBackFromCandidate(candidate: DraftbenchCandidate) {
+  manualChunkId.value = candidate.chunkId
+  manualText.value = candidate.preview
+  manualSource.value = { chunkId: candidate.chunkId, chapter: candidate.chapter, title: candidate.title }
+  pickerOpen.value = false
+}
+
+function fillBackFromChapterChunk(chunk: SangoChapterChunk) {
+  if (!pickerChapterData.value) return
+  manualChunkId.value = chunk.chunkId
+  manualText.value = chunk.text
+  manualSource.value = {
+    chunkId: chunk.chunkId,
+    chapter: pickerChapterData.value.chapter,
+    title: pickerChapterData.value.title,
+  }
+  pickerOpen.value = false
+}
+
 // ── 开关 ──
 
 function onOpenChange(open: boolean) {
@@ -1012,27 +1322,20 @@ watch(
 /* 右侧清单 */
 .manual-add {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 10px;
   padding: 10px 10px 0;
-}
-
-.manual-add-row {
-  display: flex;
-  gap: 8px;
-}
-
-.manual-chunkid {
-  width: 100%;
-}
-
-.manual-input {
-  flex: 1;
 }
 
 .manual-btn {
   flex: 0 0 auto;
-  align-self: flex-start;
+}
+
+.manual-tip {
+  flex: 1;
+  color: #9aa69e;
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .chunk-list {
@@ -1260,12 +1563,341 @@ watch(
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* 手增弹框 + 原文选择器（第四轮） */
+.manual-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.manual-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.manual-label-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.manual-label {
+  color: #43524b;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.manual-hint {
+  color: #9aa69e;
+  font-size: 11px;
+}
+
+.manual-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.manual-actions-gap {
+  flex: 1;
+}
+
+.picker-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.picker-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.picker-search {
+  flex: 0 0 auto;
+}
+
+.picker-candidate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: calc(100vh - 340px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.picker-candidate {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 12px;
+  border: 1px solid #dde5dd;
+  border-radius: 9px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.picker-candidate:hover {
+  border-color: #b17837;
+}
+
+.picker-candidate.expanded {
+  border-color: #2e6d56;
+  background: #f7fbf8;
+}
+
+.picker-candidate-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.picker-candidate-rank {
+  flex: 0 0 auto;
+  color: #a0885a;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 12px;
+}
+
+.picker-candidate-title {
+  overflow: hidden;
+  flex: 1;
+  color: #163c32;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-candidate-meta {
+  flex: 0 0 auto;
+  color: #718078;
+  font-size: 11px;
+}
+
+.picker-candidate-preview {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: #43524b;
+  font-size: 12px;
+  line-height: 1.6;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.picker-candidate-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.picker-passage-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px dashed #c9b78a;
+  border-radius: 8px;
+  background: #fffaf0;
+}
+
+.picker-passage-label {
+  flex: 0 0 auto;
+  padding-top: 2px;
+  color: #a0885a;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.picker-passage-text {
+  flex: 1;
+  max-height: 96px;
+  margin: 0;
+  overflow-y: auto;
+  color: #5a4a2a;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.picker-detail-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 18px 0;
+  color: #718078;
+  font-size: 13px;
+}
+
+.picker-chunk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 300px;
+  padding: 4px 6px;
+  border: 1px solid #e5eae5;
+  border-radius: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.picker-chunk-title {
+  padding: 6px 4px;
+  color: #718078;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.picker-chunk-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.picker-chunk-row.is-target {
+  background: #fff3cd;
+  box-shadow: inset 0 0 0 2px #f0c36d;
+}
+
+.picker-chunk-no {
+  flex: 0 0 52px;
+  padding-top: 2px;
+  color: #a0885a;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 11px;
+  text-align: right;
+}
+
+.picker-chunk-text {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  text-align: justify;
+}
+
+.picker-chapter-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.picker-jump {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.picker-jump-label {
+  color: #718078;
+  font-size: 12px;
+}
+
+.picker-jump-input {
+  width: 88px;
+}
+
+.picker-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 28px 0;
+  color: #718078;
+  font-size: 13px;
+}
+
+.picker-chapter-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.picker-chapter-title {
+  color: #163c32;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.picker-snippet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: calc(100vh - 380px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.picker-snippet {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #dde5dd;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.picker-snippet:hover {
+  border-color: #2e6d56;
+  background: #f4faf6;
+}
+
+.picker-snippet.is-in-list {
+  opacity: 0.62;
+}
+
+.picker-snippet-no {
+  flex: 0 0 52px;
+  padding-top: 1px;
+  color: #a0885a;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 11px;
+  text-align: right;
+}
+
+.picker-snippet-seg {
+  flex: 0 0 auto;
+  padding-top: 1px;
+  color: #718078;
+  font-size: 11px;
+}
+
+.picker-snippet-text {
+  flex: 1;
+  margin: 0;
+  color: #2b2418;
+  font-size: 13px;
+  line-height: 1.7;
+  text-align: justify;
+}
+
+.picker-select-hint {
+  color: #9aa69e;
+  font-size: 11px;
+}
 </style>
 
 <!-- 弹框 teleport 到 body，scoped 选择器够不到 .ant-modal，故用 wrapClassName 挂载的非 scoped 样式块；选择器统一挂在 wrap class 下，不外泄 -->
 <style>
 .draftbench-modal-wrap.ant-modal-wrap,
-.draftbench-confirm-wrap.ant-modal-wrap {
+.draftbench-confirm-wrap.ant-modal-wrap,
+.draftbench-manual-wrap.ant-modal-wrap,
+.draftbench-picker-wrap.ant-modal-wrap {
   overscroll-behavior: contain;
 }
 
