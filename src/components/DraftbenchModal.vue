@@ -301,7 +301,7 @@
     </div>
   </a-modal>
 
-  <!-- 原文选段选择器（第四轮：召回候选 / 按章节浏览两态，点击片段回填手增表单） -->
+  <!-- 原文选段选择器（召回候选 / 按章节浏览 / 章节目录三态，点击片段回填手增表单） -->
   <a-modal
     v-model:open="pickerOpen"
     title="从原文选择片段"
@@ -314,6 +314,7 @@
       <a-radio-group :value="pickerTab" size="small" @change="onPickerTabChange">
         <a-radio-button value="candidates">召回候选</a-radio-button>
         <a-radio-button value="chapters">按章节浏览</a-radio-button>
+        <a-radio-button value="toc">章节目录</a-radio-button>
       </a-radio-group>
 
       <!-- 候选态：搜索 + 展开看完整原文与选段 -->
@@ -377,7 +378,7 @@
       </div>
 
       <!-- 章节态：翻回 + 任意片段点击回填 -->
-      <div v-else class="picker-pane">
+      <div v-else-if="pickerTab === 'chapters'" class="picker-pane">
         <div class="picker-chapter-toolbar">
           <a-button size="small" :disabled="!pickerChapterData?.prev" @click="goPickerPrev">上一回</a-button>
           <div class="picker-jump">
@@ -390,11 +391,36 @@
               @press-enter="onPickerJump"
             />
             <a-button size="small" @click="onPickerJump">跳转</a-button>
-            <a-button size="small" @click="pickerTocOpen = !pickerTocOpen">章节目录</a-button>
           </div>
           <a-button size="small" :disabled="!pickerChapterData?.next" @click="goPickerNext">下一回</a-button>
         </div>
-        <div v-if="pickerTocOpen" class="picker-toc">
+        <div v-if="pickerChapterLoading" class="picker-state">
+          <a-spin size="small" />
+          <span>原文加载中…</span>
+        </div>
+        <a-alert v-else-if="pickerChapterError" type="error" show-icon :message="pickerChapterError" />
+        <div v-else-if="pickerChapterData" class="picker-chapter-body">
+          <div class="picker-chapter-title">第 {{ pickerChapterData.chapter }} 回 {{ pickerChapterData.title }}</div>
+          <div class="picker-snippet-list">
+            <div
+              v-for="chunk in pickerChapterData.chunks"
+              :key="chunk.chunkId"
+              class="picker-snippet"
+              :class="{ 'is-in-list': containsChunkId(chunk.chunkId) }"
+              @click="fillBackFromChapterChunk(chunk)"
+            >
+              <span class="picker-snippet-no">{{ shortChunkId(chunk.chunkId) }}</span>
+              <span class="picker-snippet-seg">段 {{ chunk.segFrom }}~{{ chunk.segTo }}</span>
+              <p class="picker-snippet-text">{{ chunk.text }}</p>
+            </div>
+          </div>
+          <div class="picker-select-hint">点击任意片段回填手增表单的 chunkId + 正文，可再编辑后确认加入</div>
+        </div>
+      </div>
+
+      <!-- 目录态：搜索回号 / 回目，点击某回跳转后切回「按章节浏览」展示正文 -->
+      <div v-else class="picker-pane">
+        <div class="picker-toc">
           <a-input
             v-model:value="pickerTocSearch"
             class="picker-toc-search"
@@ -419,28 +445,6 @@
             </div>
             <a-empty v-if="filteredPickerToc.length === 0" description="无匹配回目" />
           </div>
-        </div>
-        <div v-if="pickerChapterLoading" class="picker-state">
-          <a-spin size="small" />
-          <span>原文加载中…</span>
-        </div>
-        <a-alert v-else-if="pickerChapterError" type="error" show-icon :message="pickerChapterError" />
-        <div v-else-if="pickerChapterData" class="picker-chapter-body">
-          <div class="picker-chapter-title">第 {{ pickerChapterData.chapter }} 回 {{ pickerChapterData.title }}</div>
-          <div class="picker-snippet-list">
-            <div
-              v-for="chunk in pickerChapterData.chunks"
-              :key="chunk.chunkId"
-              class="picker-snippet"
-              :class="{ 'is-in-list': containsChunkId(chunk.chunkId) }"
-              @click="fillBackFromChapterChunk(chunk)"
-            >
-              <span class="picker-snippet-no">{{ shortChunkId(chunk.chunkId) }}</span>
-              <span class="picker-snippet-seg">段 {{ chunk.segFrom }}~{{ chunk.segTo }}</span>
-              <p class="picker-snippet-text">{{ chunk.text }}</p>
-            </div>
-          </div>
-          <div class="picker-select-hint">点击任意片段回填手增表单的 chunkId + 正文，可再编辑后确认加入</div>
         </div>
       </div>
     </div>
@@ -997,7 +1001,7 @@ function openReaderForItem(item: ListItem) {
 // ── 原文选段选择器（第四轮：手增表单「从原文选择」入口）──
 
 const pickerOpen = ref(false)
-const pickerTab = ref<'candidates' | 'chapters'>('candidates')
+const pickerTab = ref<'candidates' | 'chapters' | 'toc'>('candidates')
 const pickerSearch = ref('')
 
 // 候选态：展开条目看完整原文 + 选段
@@ -1012,14 +1016,12 @@ const pickerChapterData = ref<SangoChapterData | null>(null)
 const pickerChapterLoading = ref(false)
 const pickerChapterError = ref('')
 const pickerJump = ref<number | null>(SANGO_CHAPTER_MIN)
-const pickerTocOpen = ref(false)
 const pickerTocSearch = ref('')
 
 // 初始展示该请求召回候选；首次进章节态默认落在首个候选所在回（无候选则第 1 回）
 function openPicker() {
   pickerTab.value = 'candidates'
   pickerSearch.value = ''
-  pickerTocOpen.value = false
   pickerTocSearch.value = ''
   expandedCandidateId.value = null
   candidateExpandedData.value = null
@@ -1030,10 +1032,10 @@ function openPicker() {
 }
 
 function onPickerTabChange(e: { target: { value: unknown } }) {
-  const nextTab = e.target.value === 'chapters' ? 'chapters' : 'candidates'
+  const raw = e.target.value
+  const nextTab = raw === 'chapters' ? 'chapters' : raw === 'toc' ? 'toc' : 'candidates'
   pickerTab.value = nextTab
   if (nextTab === 'candidates') {
-    pickerTocOpen.value = false
     pickerTocSearch.value = ''
   }
   if (pickerTab.value === 'chapters' && !pickerChapterData.value && !pickerChapterLoading.value) {
@@ -1125,10 +1127,10 @@ const filteredPickerToc = computed(() => {
   )
 })
 
-// 目录点击某回：复用 goPickerTo 跳转，关闭目录并清空搜索
+// 目录点击某回：复用 goPickerTo 跳转，切回「按章节浏览」展示正文并清空搜索
 function pickFromToc(row: SangoChapterTitle) {
   goPickerTo(row.chapter)
-  pickerTocOpen.value = false
+  pickerTab.value = 'chapters'
   pickerTocSearch.value = ''
 }
 
