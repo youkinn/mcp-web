@@ -313,8 +313,8 @@
     <div class="picker-body">
       <a-radio-group :value="pickerTab" size="small" @change="onPickerTabChange">
         <a-radio-button value="candidates">召回候选</a-radio-button>
-        <a-radio-button value="chapters">按章节浏览</a-radio-button>
         <a-radio-button value="toc">章节目录</a-radio-button>
+        <a-radio-button value="chapters">按章节浏览</a-radio-button>
       </a-radio-group>
 
       <!-- 候选态：搜索 + 展开看完整原文与选段 -->
@@ -487,7 +487,7 @@ const emit = defineEmits<{
   (e: 'update:open', open: boolean): void
 }>()
 
-// ── 弹框全屏（提测反馈：关闭 X 左侧全屏按钮）──
+// ── 弹框全屏（提测反馈：关闭 X 左侧全屏按钮；打开默认全屏，每次打开置 true，可随时退出）──
 const fullscreen = ref(false)
 
 // ── 常量（§3.2 / §4.1 / §4.2 客户端先行拦截口径，与服务端文案一致）──
@@ -1163,7 +1163,10 @@ function onOpenChange(open: boolean) {
 watch(
   () => props.open,
   (open) => {
-    if (open) void reloadRecords()
+    if (open) {
+      fullscreen.value = true
+      void reloadRecords()
+    }
   },
 )
 </script><style scoped>
@@ -1262,6 +1265,22 @@ watch(
   padding: 10px;
   overflow-y: auto;
   scrollbar-gutter: stable;
+}
+
+/* 候选列空态：插图 + 文案整体在容器内水平 + 垂直居中（仅空态渲染，不影响列表形态） */
+.col-left :deep(.ant-empty) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 16px 0;
+}
+
+/* 去掉 ant 空态默认 description 的底部 margin：否则 flex 按含尾部的整行居中，视觉块偏高 */
+.col-left :deep(.ant-empty-description) {
+  margin-bottom: 0;
 }
 
 .candidate-item {
