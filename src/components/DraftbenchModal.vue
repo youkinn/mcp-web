@@ -131,7 +131,6 @@
             </div>
             <a-empty v-if="chunkItems.length === 0" description="从左侧拖入候选，或手增片段" />
           </div>
-          <div class="list-tip">拖拽候选到下方空白处添加；清单内上下拖动排序</div>
         </div>
       </div>
 
@@ -233,19 +232,27 @@
       <div class="confirm-meta">片段 {{ chunkItems.length }} 条 · 总字数 {{ totalChars }} 字</div>
       <div class="params-grid">
         <div class="param-item">
-          <span class="param-label">temperature</span>
+          <a-tooltip title="生成温度（0~1）">
+            <span class="param-label">temperature</span>
+          </a-tooltip>
           <a-input-number v-model:value="draftParams.temperature" class="param-input" :min="0" :max="1" :step="0.1" :precision="2" />
         </div>
         <div class="param-item">
-          <span class="param-label">topK</span>
+          <a-tooltip title="注入条数上限">
+            <span class="param-label">topK</span>
+          </a-tooltip>
           <a-input-number v-model:value="draftParams.topK" class="param-input" :min="1" :max="20" :precision="0" />
         </div>
         <div class="param-item">
-          <span class="param-label">guarantee</span>
+          <a-tooltip title="注入保底数">
+            <span class="param-label">guarantee</span>
+          </a-tooltip>
           <a-input-number v-model:value="draftParams.guarantee" class="param-input" :min="0" :max="draftParams.topK" :precision="0" />
         </div>
         <div class="param-item">
-          <span class="param-label">budget</span>
+          <a-tooltip title="注入总预算">
+            <span class="param-label">budget</span>
+          </a-tooltip>
           <a-input-number v-model:value="draftParams.budget" class="param-input" :min="1" :max="20000" :precision="0" />
         </div>
       </div>
@@ -1160,6 +1167,41 @@ function onOpenChange(open: boolean) {
   emit('update:open', open)
 }
 
+// 验收 20：关闭草稿台后重置编辑状态（traceId / 拉取结果 / 发送清单 / 手增 / 本次参数 / query / 错误提示 / 选择器），
+// 发送记录列表与页码不重置（重新打开时 reloadRecords 加载最新）；fullscreen 交由既有 watch 每次打开置 true
+function resetDraftState() {
+  traceIdInput.value = ''
+  traceLoading.value = false
+  traceError.value = ''
+  trace.value = null
+  chunkItems.value = []
+  manualText.value = ''
+  manualChunkId.value = ''
+  manualSource.value = null
+  manualOpen.value = false
+  confirmOpen.value = false
+  sending.value = false
+  draftQuery.value = ''
+  Object.assign(draftParams, DEFAULT_PARAMS)
+  dragState.value = null
+  dragOverIndex.value = null
+  readerOpen.value = false
+  readerTarget.value = null
+  pickerOpen.value = false
+  pickerTab.value = 'candidates'
+  pickerSearch.value = ''
+  pickerTocSearch.value = ''
+  expandedCandidateId.value = null
+  candidateExpandedData.value = null
+  candidateExpandedLoading.value = false
+  candidateExpandedError.value = ''
+  pickerChapter.value = SANGO_CHAPTER_MIN
+  pickerChapterData.value = null
+  pickerChapterLoading.value = false
+  pickerChapterError.value = ''
+  pickerJump.value = SANGO_CHAPTER_MIN
+}
+
 // 第 14 条：全屏时锁死页面级滚动——背景页内容撑出的 html 滚动条会残留在全屏形态右缘且滚不动；
 // 退出全屏 / 关闭弹框时恢复，普通形态页面滚动保持既有行为
 let prevHtmlOverflow = ''
@@ -1178,6 +1220,8 @@ watch(
   (open) => {
     if (open) {
       fullscreen.value = true
+    } else {
+      resetDraftState()
     }
     syncPageScrollLock()
     void reloadRecords()
@@ -1525,11 +1569,7 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
 }
 
-.list-tip {
-  padding: 0 12px 10px;
-  color: #9aa69e;
-  font-size: 11px;
-}/* 弹框标题行（全屏按钮，预留关闭 X 位置） */
+/* 弹框标题行（全屏按钮，预留关闭 X 位置） */
 .draftbench-title-row {
   display: flex;
   align-items: center;
