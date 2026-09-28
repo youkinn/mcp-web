@@ -58,6 +58,7 @@
           <a-tag color="green">通过 {{ snapshotData.summary.top5 }}/{{ snapshotData.summary.total }}</a-tag>
           <a-tag color="gold">兜底 {{ snapshotData.summary.tail }}</a-tag>
           <a-tag color="red">未命中 {{ snapshotData.summary.miss }}</a-tag>
+          <a-tag v-if="runElapsedMs !== null" color="blue">耗时 {{ formatRunElapsed(runElapsedMs) }}</a-tag>
         </div>
 
         <a-tabs v-model:activeKey="activeTab" class="bench-tabs" @change="onTabChange">
@@ -73,7 +74,7 @@
             :row-key="(record: { name: string }) => record.name"
             v-model:expandedRowKeys="expandedCategories"
             :pagination="false"
-            :loading="snapshotLoading"
+            :loading="snapshotLoading || runLoading"
             size="middle"
             class="cat-table"
           >
@@ -302,6 +303,8 @@ const selectedRunId = ref<string | null>(null)
 const historyItems = ref<BenchmarkHistoryItem[]>([])
 const historyLoading = ref(false)
 const runLoading = ref(false)
+/** 本次执行整体耗时（点击执行 → 执行结束，含检索/写入/历史刷新全部环节，非单题耗时）；null=未执行本次 */
+const runElapsedMs = ref<number | null>(null)
 const filter = ref<BenchmarkFilter>('all')
 const expandedCategories = ref<string[]>([])
 const ACTIVE_TAB_KEY = 'benchmark-active-tab'
@@ -354,10 +357,22 @@ function shortRunId(runId: string): string {
   return runId.replace(/^feat-A015-/, '')
 }
 
-/** 快照时间展示：ISO 串去 T/Z 后缀（UTC 直显），其余原样（sango 后端格式未定契约） */
+/** 快照时间展示：ISO UTC 串按本地时区（Asia/Shanghai）显示；非 ISO / 无法解析原样（sango 后端格式兼容） */
 function formatBenchmarkTime(raw: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(raw)
-  return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : raw
+  if (!raw) return raw
+  const date = new Date(raw)
+  if (Number.isNaN(date.getTime())) return raw
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+/** 整体耗时展示：<60s 显示 X.Xs，≥60s 显示 Xm Ys（口径：点击执行 → 执行结束） */
+function formatRunElapsed(ms: number): string {
+  const seconds = ms / 1000
+  if (seconds < 60) return `${seconds.toFixed(1)}s`
+  const minutes = Math.floor(seconds / 60)
+  const restSeconds = Math.round(seconds % 60)
+  return `${minutes}m ${restSeconds}s`
 }
 
 const filterLabel = computed(() => filterOptions.find((o) => o.value === filter.value)?.label ?? '')
@@ -736,6 +751,8 @@ async function loadHistory(): Promise<void> {
 async function onRun(): Promise<void> {
   if (runLoading.value) return
   runLoading.value = true
+  runElapsedMs.value = null
+  const startedAt = Date.now()
   try {
     const data = await postBenchmarkRun()
     snapshotData.value = data
@@ -749,6 +766,7 @@ async function onRun(): Promise<void> {
   } catch (err) {
     message.error(getErrorMessage(err))
   } finally {
+    runElapsedMs.value = Date.now() - startedAt
     runLoading.value = false
   }
 }
@@ -785,6 +803,7 @@ async function onHistoryClick(item: BenchmarkHistoryItem): Promise<void> {
     }
     snapshotData.value = data
     selectedRunId.value = item.runId
+    runElapsedMs.value = null
     expandedCategories.value = []
     candidateModalOpen.value = false
   } catch (err) {
