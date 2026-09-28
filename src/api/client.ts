@@ -148,7 +148,17 @@ export interface RetrievalDiagnostics {
   candidates: RetrievalCandidate[]
   nextRank: RetrievalNextRank | null
   /** 各阶段耗时（feat-A013 验收）：毫秒；历史数据缺失，timing 整体缺失时前端不展示 */
-  timing?: { bm25: number | null; vector: number | null; label: number | null; merge: number | null }
+  /** 重排段耗时（feat-A018 验收）：毫秒；未接入 / 未参与时为 null，历史 trace 无该字段 */
+  timing?: { bm25: number | null; vector: number | null; label: number | null; merge: number | null; rerank?: number | null }
+  /** 重排可观测（feat-A018 验收）：历史 trace 无该字段，容错 undefined */
+  rerank?: {
+    enabled: boolean
+    window: number
+    considered: number
+    skippedPinned: number
+    applied: boolean
+    reason: string | null
+  }
   deathIntent: {
     detected: boolean
     pinned: boolean

@@ -31,6 +31,10 @@ export const MERGED_CANDIDATES_HINT = '合并候选 = 词法 / 向量 / 标签�
 // 「归一化改写」环节 tooltip（feat-A016 验收 8 二轮）：直白表述改写先于检索，不使用 embed 术语
 export const REWRITE_STAGE_HINT = '改写发生在检索之前，检索与缓存均用改写后的文本'
 
+// 重排阶段口径说明（feat-A018 验收）：直白表述重排发生的位置、保证区排除规则与事件路归属
+export const RERANK_STAGE_HINT =
+  '重排阶段：规则序并池之后、取窗之前；保证区（死亡意图 ∪ L3 锚点）不参与重排；事件路增强查询重排计入「多路召回合并耗时」'
+
 export const SCORING_FORMULA_NOTE =
   '最终得分计分口径：finalScore = round3( 0.3 × bm25归一化 + 0.6 × 向量映射((cosine+1)/2) + 0.1 × 标签命中 )；三路分量均在 [0,1]，cosine 为 null 时向量映射按 0'
 
@@ -270,6 +274,7 @@ export function buildEnvView(env: RetrievalDiagnostics['env']): EnvView {
 }
 
 // ── 各阶段耗时（feat-A013 验收）：检索侧数据；timing 缺失返回 null（前端不展示），值缺失显示「—」 ──
+// feat-A018：新增重排段耗时 timing.rerank（未接入 / 未参与时为 null，老诊断无该字段）
 
 export function timingLines(
   timing: RetrievalDiagnostics['timing'],
@@ -283,6 +288,24 @@ export function timingLines(
     `向量库查询耗时 ${ms(timing.vector)}`,
     `标签匹配耗时 ${ms(timing.label)}`,
     `多路召回合并耗时 ${ms(timing.merge)}`,
+    `重排耗时 ${ms(timing.rerank)}`,
+  ]
+}
+
+// ── 重排阶段（feat-A018 验收）：契约类型为 RetrievalDiagnostics['rerank']；老诊断无该字段，容错 undefined ──
+
+export function rerankLines(rerank: RetrievalDiagnostics['rerank'] | null): string[] | null {
+  if (rerank === null || rerank === undefined) return null
+  if (rerank.applied) {
+    return [
+      `重排窗口 ${rerank.window}：参与重排 ${rerank.considered} 条，保证区跳过 ${rerank.skippedPinned} 条 → 已按重排分改写池序`,
+    ]
+  }
+  if (!rerank.enabled) {
+    return ['重排未接入（原因：未接入重排打分器）']
+  }
+  return [
+    `重排窗口 ${rerank.window}：参与重排 ${rerank.considered} 条，保证区跳过 ${rerank.skippedPinned} 条 → 跳过（原因：${rerank.reason ?? '窗口内无参与候选'}）`,
   ]
 }
 
@@ -329,6 +352,8 @@ export interface DiagnosticsView {
   query: QueryChainView
   env: EnvView
   timingLines: string[] | null
+  rerankLines: string[] | null
+  rerankStageHint: string
   deathIntent: {
     detected: boolean
     pinned: boolean
@@ -351,6 +376,8 @@ export function buildDiagnosticsView(
     query: buildQueryChain(diagnostics.query),
     env: buildEnvView(diagnostics.env),
     timingLines: timingLines(diagnostics.timing),
+    rerankLines: rerankLines(diagnostics.rerank),
+    rerankStageHint: RERANK_STAGE_HINT,
     deathIntent: {
       detected: diagnostics.deathIntent.detected,
       pinned: diagnostics.deathIntent.pinned,

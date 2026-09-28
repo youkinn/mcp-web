@@ -16,10 +16,12 @@ import {
   finalScoreFormula,
   formatScore,
   MERGED_CANDIDATES_HINT,
+  RERANK_STAGE_HINT,
   REWRITE_STAGE_HINT,
   SCORING_FORMULA_NOTE,
   scoreRowClass,
   sourceMeta,
+  rerankLines,
   timingLines,
   truncatedText,
   vectorMap,
@@ -555,6 +557,7 @@ describe('feat-A013 验收：各阶段耗时（timingLines）', () => {
       '向量库查询耗时 —',
       '标签匹配耗时 0ms',
       '多路召回合并耗时 1.5ms',
+      '重排耗时 —',
     ])
   })
 
@@ -565,6 +568,7 @@ describe('feat-A013 验收：各阶段耗时（timingLines）', () => {
       '向量库查询耗时 3.1ms',
       '标签匹配耗时 5ms',
       '多路召回合并耗时 0ms',
+      '重排耗时 —',
     ])
   })
 
@@ -574,9 +578,99 @@ describe('feat-A013 验收：各阶段耗时（timingLines）', () => {
       null,
     )
     assert.ok(view)
-    assert.deepEqual(view.timingLines, ['BM25 耗时 3ms', '向量库查询耗时 5ms', '标签匹配耗时 2ms', '多路召回合并耗时 1ms'])
+    assert.deepEqual(view.timingLines, ['BM25 耗时 3ms', '向量库查询耗时 5ms', '标签匹配耗时 2ms', '多路召回合并耗时 1ms', '重排耗时 —'])
     const legacy = buildDiagnosticsView(fullDiagnostics, null)
     assert.ok(legacy)
     assert.equal(legacy.timingLines, null)
+  })
+})
+
+describe('feat-A018 验收：重排可观测（timing.rerank / rerankLines / 阶段提示）', () => {
+  it('已重排（applied=true）：窗口 / 参与 / 保证区跳过 → 已按重排分改写池序', () => {
+    const lines = rerankLines({
+      enabled: true,
+      window: 20,
+      considered: 18,
+      skippedPinned: 2,
+      applied: true,
+      reason: null,
+    })
+    assert.deepEqual(lines, ['重排窗口 20：参与重排 18 条，保证区跳过 2 条 → 已按重排分改写池序'])
+  })
+
+  it('未接入（enabled=false）：重排未接入（原因：未接入重排打分器）', () => {
+    const lines = rerankLines({
+      enabled: false,
+      window: 20,
+      considered: 0,
+      skippedPinned: 0,
+      applied: false,
+      reason: '未接入重排打分器',
+    })
+    assert.deepEqual(lines, ['重排未接入（原因：未接入重排打分器）'])
+  })
+
+  it('其余（已接入未改写）：跳过（原因透传，缺省窗口内无参与候选）', () => {
+    const lines = rerankLines({
+      enabled: true,
+      window: 20,
+      considered: 0,
+      skippedPinned: 0,
+      applied: false,
+      reason: '窗口内无参与候选',
+    })
+    assert.deepEqual(lines, ['重排窗口 20：参与重排 0 条，保证区跳过 0 条 → 跳过（原因：窗口内无参与候选）'])
+    const fallback = rerankLines({
+      enabled: true,
+      window: 20,
+      considered: 0,
+      skippedPinned: 0,
+      applied: false,
+      reason: null,
+    })
+    assert.deepEqual(fallback, ['重排窗口 20：参与重排 0 条，保证区跳过 0 条 → 跳过（原因：窗口内无参与候选）'])
+  })
+
+  it('字段缺失（老诊断）：rerank / timing.rerank 容错 undefined，前端不报错', () => {
+    assert.equal(rerankLines(undefined), null)
+    assert.equal(rerankLines(null), null)
+    const legacy = buildDiagnosticsView(fullDiagnostics, null)
+    assert.ok(legacy)
+    assert.equal(legacy.rerankLines, null)
+    assert.equal(legacy.rerankStageHint, RERANK_STAGE_HINT)
+    assert.deepEqual(legacy.timingLines, null)
+  })
+
+  it('timing.rerank 值完整时输出 重排耗时 Xms（放多路召回合并耗时之后）', () => {
+    const lines = timingLines({ bm25: 1, vector: 2, label: 3, merge: 4, rerank: 7.5 })
+    assert.deepEqual(lines, [
+      'BM25 耗时 1ms',
+      '向量库查询耗时 2ms',
+      '标签匹配耗时 3ms',
+      '多路召回合并耗时 4ms',
+      '重排耗时 7.5ms',
+    ])
+  })
+
+  it('buildDiagnosticsView 暴露 rerankLines 与阶段提示（已重排诊断）', () => {
+    const view = buildDiagnosticsView(
+      {
+        ...fullDiagnostics,
+        timing: { bm25: 3, vector: 5, label: 2, merge: 1, rerank: 9 },
+        rerank: {
+          enabled: true,
+          window: 20,
+          considered: 18,
+          skippedPinned: 2,
+          applied: true,
+          reason: null,
+        },
+      },
+      null,
+    )
+    assert.ok(view)
+    assert.deepEqual(view.rerankLines, ['重排窗口 20：参与重排 18 条，保证区跳过 2 条 → 已按重排分改写池序'])
+    assert.equal(view.rerankStageHint, RERANK_STAGE_HINT)
+    assert.deepEqual(view.timingLines, ['BM25 耗时 3ms', '向量库查询耗时 5ms', '标签匹配耗时 2ms', '多路召回合并耗时 1ms', '重排耗时 9ms'])
   })
 })
