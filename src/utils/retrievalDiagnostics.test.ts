@@ -13,6 +13,7 @@ import {
   buildSelfConsistency,
   citedTag,
   displayChunkId,
+  EXPANSION_STAGE_HINT,
   finalScoreFormula,
   formatScore,
   MERGED_CANDIDATES_HINT,
@@ -109,6 +110,21 @@ const fullDiagnostics: RetrievalDiagnostics = {
   },
 }
 
+// 新 trace（bug-00046）：检索侧不改写问句，normalized == raw、rewrites 恒 []，扩展命中走 expansionHits
+const newTraceDiagnostics: RetrievalDiagnostics = {
+  ...fullDiagnostics,
+  query: {
+    raw: '云长千里走单骑的经过',
+    normalized: '云长千里走单骑的经过',
+    tokens: ['云长', '千里', '走单骑', '经过'],
+    rewrites: [],
+    expansionHits: [{ from: '云长', to: '关羽' }],
+  },
+}
+
+// 更老 trace（feat-A016 增补前）：无 rewrites 亦无 expansionHits
+const bareTraceQuery = { raw: 'x', normalized: 'y', tokens: [] }
+
 describe('buildDiagnosticsView 汇总视图', () => {
   it('diagnostics 有值时返回完整视图（漏斗 / 分数表 / query 链 / 环境 / nextRank / 死亡意图）', () => {
     const view = buildDiagnosticsView(fullDiagnostics, 3)
@@ -162,7 +178,7 @@ describe('buildDiagnosticsView 汇总视图', () => {
   })
 
   it('sango 产出阶段 funnel 的 injected / cited 为 null，漏斗不含对应阶段', () => {
-    const funnel = buildFunnel({ ...fullDiagnostics.funnel, injected: null, cited: null })
+    const funnel = buildFunnel({ ...fullDiagnostics.funnel, injected: null, cited: null }, fullDiagnostics.query)
     assert.equal(funnel.tail.length, 2)
     assert.deepEqual(
       funnel.tail.map((stage) => stage.key),
@@ -176,7 +192,15 @@ describe('buildDiagnosticsView 汇总视图', () => {
 
 describe('feat-A016 验收 8：归一化改写可观测（rewrites / normVersion / 漏斗预置环节）', () => {
   it('漏斗 pre 预置环节：value=rewrites 命中数 / hint=环节 tooltip（改写先于检索，无 embed 术语），位于语料 chunk 之前', () => {
-    const funnel = buildFunnel(fullDiagnostics.funnel, 3)
+    const funnel = buildFunnel(fullDiagnostics.funnel, {
+      raw: 'x',
+      normalized: 'y',
+      rewrites: [
+        { from: 'a', to: 'b' },
+        { from: 'c', to: 'd' },
+        { from: 'e', to: 'f' },
+      ],
+    })
     assert.equal(funnel.pre.key, 'rewrite')
     assert.equal(funnel.pre.label, '归一化改写')
     assert.equal(funnel.pre.value, 3)
@@ -188,13 +212,14 @@ describe('feat-A016 验收 8：归一化改写可观测（rewrites / normVersion
     assert.deepEqual(funnel.hints, [MERGED_CANDIDATES_HINT])
   })
 
-  it('rewriteCount 缺省按 0（老用例 / 无改写），不产生残留环节', () => {
+  it('buildFunnel 缺省 query：按新口径 value=0（更老 trace 兜底），不产生残留环节', () => {
     const funnel = buildFunnel(fullDiagnostics.funnel)
     assert.equal(funnel.pre.value, 0)
+    assert.equal(funnel.pre.label, '索引双写扩展')
   })
 
   it('漏斗不出现「无改写」文案：pre 环节仅承载数字命中数（无改写 = 0），「无改写」只在 Query 区改写明细', () => {
-    const funnel = buildFunnel(fullDiagnostics.funnel)
+    const funnel = buildFunnel(fullDiagnostics.funnel, { raw: 'x', normalized: 'x', rewrites: [], expansionHits: [] })
     assert.equal(funnel.pre.value, 0)
     const funnelText = [funnel.pre.label, funnel.pre.hint, ...funnel.hints].join('')
     assert.ok(!funnelText.includes('无改写'))
@@ -202,8 +227,8 @@ describe('feat-A016 验收 8：归一化改写可观测（rewrites / normVersion
 
   it('query 链透传改写明细（原文片段 → 规范形），历史 trace 无字段缺省 []', () => {
     assert.deepEqual(buildQueryChain(fullDiagnostics.query).rewrites, [{ from: '云长', to: '关羽' }])
-    const legacy = buildQueryChain({ raw: 'x', normalized: 'y', tokens: [] })
-    assert.deepEqual(legacy.rewrites, [])
+    const bare = buildQueryChain(bareTraceQuery)
+    assert.deepEqual(bare.rewrites, [])
   })
 
   it('env 透传 normVersion，历史 trace 无字段缺省空串', () => {
@@ -216,18 +241,86 @@ describe('feat-A016 验收 8：归一化改写可观测（rewrites / normVersion
     const view = buildDiagnosticsView(fullDiagnostics, null)
     assert.ok(view)
     assert.equal(view.funnel.pre.value, fullDiagnostics.query.rewrites!.length)
-    const legacy = buildDiagnosticsView(
+    const bareView = buildDiagnosticsView(
       {
         ...fullDiagnostics,
-        query: { raw: 'x', normalized: 'y', tokens: [] },
+        query: bareTraceQuery,
         env: { vectorScheme: null, degradedBm25Only: false, corpusChunks: 2344, aliasCount: 87, vectorDim: null },
       },
       null,
     )
-    assert.ok(legacy)
-    assert.equal(legacy.funnel.pre.value, 0)
-    assert.deepEqual(legacy.query.rewrites, [])
-    assert.equal(legacy.env.normVersion, '')
+    assert.ok(bareView)
+    assert.equal(bareView.funnel.pre.value, 0)
+    assert.equal(bareView.funnel.pre.label, '索引双写扩展')
+    assert.deepEqual(bareView.query.rewrites, [])
+    assert.equal(bareView.env.normVersion, '')
+  })
+})
+
+describe('bug-00046：索引双写扩展口径（expansionHits / 漏斗更名 / 新老 trace 渲染分支）', () => {
+  it('新 trace 有命中：漏斗环节为「索引双写扩展」，value = expansionHits 命中数，tooltip 为新口径文案', () => {
+    const funnel = buildFunnel(newTraceDiagnostics.funnel, newTraceDiagnostics.query)
+    assert.equal(funnel.pre.key, 'expansion')
+    assert.equal(funnel.pre.label, '索引双写扩展')
+    assert.equal(funnel.pre.value, 1)
+    assert.equal(funnel.pre.hint, EXPANSION_STAGE_HINT)
+    assert.equal(funnel.pre.hint, '等价写法在索引侧双写覆盖，问句未被改写')
+    assert.deepEqual(funnel.hints, [MERGED_CANDIDATES_HINT])
+  })
+
+  it('新 trace 无命中（expansionHits=[]）：漏斗 value=0，Query 区 mode=new 且 expansionHits=[]（「无扩展」文案在组件层）', () => {
+    const noHit = { ...newTraceDiagnostics, query: { ...newTraceDiagnostics.query, expansionHits: [] } }
+    const funnel = buildFunnel(noHit.funnel, noHit.query)
+    assert.equal(funnel.pre.key, 'expansion')
+    assert.equal(funnel.pre.label, '索引双写扩展')
+    assert.equal(funnel.pre.value, 0)
+    const view = buildDiagnosticsView(noHit, null)
+    assert.ok(view)
+    assert.equal(view.query.mode, 'new')
+    assert.deepEqual(view.query.expansionHits, [])
+    assert.equal(view.query.showNormalized, false)
+  })
+
+  it('旧 trace（rewrites 非空且 normalized != raw）：保持「归一化改写」口径，不出现「索引双写扩展」标签', () => {
+    const funnel = buildFunnel(fullDiagnostics.funnel, fullDiagnostics.query)
+    assert.equal(funnel.pre.key, 'rewrite')
+    assert.equal(funnel.pre.label, '归一化改写')
+    assert.equal(funnel.pre.value, 1)
+    assert.equal(funnel.pre.hint, REWRITE_STAGE_HINT)
+    const view = buildDiagnosticsView(fullDiagnostics, null)
+    assert.ok(view)
+    assert.equal(view.query.mode, 'legacy')
+    assert.equal(view.query.showNormalized, true)
+    assert.deepEqual(view.query.rewrites, [{ from: '云长', to: '关羽' }])
+    assert.deepEqual(view.query.expansionHits, [])
+  })
+
+  it('新 trace 汇总视图：normalized == raw 时 query 区不展示「检索用文本」（showNormalized=false），expansionHits 透传', () => {
+    const view = buildDiagnosticsView(newTraceDiagnostics, null)
+    assert.ok(view)
+    assert.equal(view.query.mode, 'new')
+    assert.equal(view.query.showNormalized, false)
+    assert.equal(view.query.normalized, view.query.raw)
+    assert.deepEqual(view.query.expansionHits, [{ from: '云长', to: '关羽' }])
+    assert.equal(view.funnel.pre.label, '索引双写扩展')
+    assert.equal(view.funnel.pre.value, 1)
+  })
+
+  it('更老 trace（无 rewrites 亦无 expansionHits）：兜底按新口径渲染（无扩展），normalized != raw 时仍展示「检索用文本」', () => {
+    const view = buildDiagnosticsView(
+      {
+        ...fullDiagnostics,
+        query: bareTraceQuery,
+        env: { vectorScheme: null, degradedBm25Only: false, corpusChunks: 2344, aliasCount: 87, vectorDim: null },
+      },
+      null,
+    )
+    assert.ok(view)
+    assert.equal(view.query.mode, 'new')
+    assert.deepEqual(view.query.expansionHits, [])
+    assert.equal(view.query.showNormalized, true)
+    assert.equal(view.funnel.pre.label, '索引双写扩展')
+    assert.equal(view.funnel.pre.value, 0)
   })
 })
 
@@ -391,7 +484,7 @@ describe('验收修复：被引用标记与口径说明（feat-A009 / story-A009
   })
 
   it('漏斗给出合并候选口径说明：三路并集去重、非相加', () => {
-    const funnel = buildFunnel(fullDiagnostics.funnel)
+    const funnel = buildFunnel(fullDiagnostics.funnel, fullDiagnostics.query)
     assert.equal(funnel.hints.length, 1)
     assert.equal(funnel.hints[0], MERGED_CANDIDATES_HINT)
     assert.match(funnel.hints[0], /并集去重/)
@@ -403,7 +496,7 @@ describe('验收修复：被引用标记与口径说明（feat-A009 / story-A009
       funnel.tail.find((stage) => stage.key === 'merged')?.hint,
       MERGED_CANDIDATES_HINT,
     )
-    const partial = buildFunnel({ ...fullDiagnostics.funnel, injected: null, cited: null })
+    const partial = buildFunnel({ ...fullDiagnostics.funnel, injected: null, cited: null }, fullDiagnostics.query)
     assert.equal(partial.hints.length, 1)
   })
 

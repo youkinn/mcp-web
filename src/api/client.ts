@@ -125,6 +125,8 @@ export interface RetrievalDiagnostics {
     tokens: string[]
     /** 归一化改写明细（feat-A016 验收 8）：原文片段 → 规范形；历史 trace 无该字段 */
     rewrites?: { from: string; to: string }[]
+    /** 索引双写扩展明细（bug-00046）：原文命中可双写键 → 规范形，问句未被改写；无命中为 []；旧 trace 无该字段 */
+    expansionHits?: { from: string; to: string }[]
   }
   env: {
     vectorScheme: string | null

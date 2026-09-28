@@ -63,11 +63,13 @@
             <div class="chain-label">原始 query</div>
             <div class="chain-value">{{ view.query.raw }}</div>
           </div>
-          <span class="funnel-arrow">→</span>
-          <div class="chain-step">
-            <div class="chain-label">alias 归一化</div>
-            <div class="chain-value">{{ view.query.normalized }}</div>
-          </div>
+          <template v-if="view.query.showNormalized">
+            <span class="funnel-arrow">→</span>
+            <div class="chain-step">
+              <div class="chain-label">检索用文本</div>
+              <div class="chain-value">{{ view.query.normalized }}</div>
+            </div>
+          </template>
           <span class="funnel-arrow">→</span>
           <div class="chain-step">
             <div class="chain-label">分词 tokens</div>
@@ -85,7 +87,8 @@
             </div>
           </div>
         </div>
-        <div class="rewrite-detail">
+        <!-- 旧口径（历史 trace）：归一化改写明细 -->
+        <div v-if="view.query.mode === 'legacy'" class="rewrite-detail">
           <span class="rewrite-label">改写明细</span>
           <div v-if="view.query.rewrites.length > 0" class="rewrite-items">
             <div
@@ -99,6 +102,23 @@
             </div>
           </div>
           <span v-else class="diag-muted">无改写</span>
+        </div>
+        <!-- 新口径（bug-00046）：索引双写扩展明细 -->
+        <div v-else class="rewrite-detail">
+          <span class="rewrite-label">扩展明细</span>
+          <span class="diag-note">未改写问句、仅索引侧等价覆盖</span>
+          <div v-if="view.query.expansionHits.length > 0" class="rewrite-items">
+            <div
+              v-for="(hit, index) in view.query.expansionHits"
+              :key="`${hit.from}-${hit.to}-${index}`"
+              class="rewrite-item"
+            >
+              <span class="rewrite-from">{{ hit.from }}</span>
+              <span class="funnel-arrow">→</span>
+              <span class="rewrite-to">{{ hit.to }}</span>
+            </div>
+          </div>
+          <span v-else class="diag-muted">无扩展</span>
         </div>
       </section>
 

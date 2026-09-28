@@ -28,8 +28,11 @@ export function citedTag(cited: boolean | null): SourceTag | null {
 // 口径说明文案：收敛于此，组件只渲染（验收打回 B / C）
 export const MERGED_CANDIDATES_HINT = '合并候选 = 词法 / 向量 / 标签三路候选并集去重，非相加'
 
-// 「归一化改写」环节 tooltip（feat-A016 验收 8 二轮）：直白表述改写先于检索，不使用 embed 术语
+// 「归一化改写」环节 tooltip（feat-A016 验收 8 二轮）：直白表述改写先于检索，不使用 embed 术语；仅历史 trace（rewrites 非空且 normalized != raw）使用
 export const REWRITE_STAGE_HINT = '改写发生在检索之前，检索与缓存均用改写后的文本'
+
+// 「索引双写扩展」环节 tooltip（bug-00046）：检索侧不改写问句，等价写法由索引侧双写覆盖
+export const EXPANSION_STAGE_HINT = '等价写法在索引侧双写覆盖，问句未被改写'
 
 // 重排阶段口径说明（feat-A018 验收）：直白表述重排发生的位置、保证区排除规则与事件路归属
 export const RERANK_STAGE_HINT =
@@ -99,7 +102,7 @@ export interface FunnelStage {
 }
 
 export interface FunnelView {
-  /** 归一化改写预置环节（feat-A016 验收 8 二轮）：位于语料 chunk 前，value = rewrites 命中数；hint 为环节 tooltip（改写先于检索），不进漏斗下方提示行 */
+  /** 预置环节（feat-A016 验收 8 + bug-00046）：位于语料 chunk 前，value = 改写 / 扩展命中数；hint 为环节 tooltip，不进漏斗下方提示行；新老 trace 按各自口径命名 */
   pre: FunnelStage
   lead: FunnelStage
   branch: FunnelStage[]
@@ -107,11 +110,31 @@ export interface FunnelView {
   hints: string[]
 }
 
+export interface QueryRenderInput {
+  raw: string
+  normalized: string
+  rewrites?: { from: string; to: string }[]
+  expansionHits?: { from: string; to: string }[]
+}
+
+export type QueryRenderMode = 'legacy' | 'new'
+
+/** 渲染口径判定（bug-00046）：新 trace 带 expansionHits 字段（检索侧不改写，无命中为 []）；旧 trace 只有 rewrites 且 normalized != raw；更老 trace 无两字段，兜底按新口径（无扩展） */
+export function resolveQueryMode(query: QueryRenderInput): QueryRenderMode {
+  if (Array.isArray(query.expansionHits)) return 'new'
+  if ((query.rewrites?.length ?? 0) > 0 && query.normalized !== query.raw) return 'legacy'
+  return 'new'
+}
+
 export function buildFunnel(
   funnel: RetrievalDiagnostics['funnel'],
-  rewriteCount = 0,
+  query: QueryRenderInput = { raw: '', normalized: '' },
 ): FunnelView {
-  const pre: FunnelStage = { key: 'rewrite', label: '归一化改写', value: rewriteCount, hint: REWRITE_STAGE_HINT }
+  const mode = resolveQueryMode(query)
+  const pre: FunnelStage =
+    mode === 'legacy'
+      ? { key: 'rewrite', label: '归一化改写', value: query.rewrites?.length ?? 0, hint: REWRITE_STAGE_HINT }
+      : { key: 'expansion', label: '索引双写扩展', value: query.expansionHits?.length ?? 0, hint: EXPANSION_STAGE_HINT }
   const lead: FunnelStage = { key: 'corpus', label: '语料 chunk', value: funnel.corpusChunks }
   const branch: FunnelStage[] = [
     { key: 'lexical', label: '词法命中', value: funnel.lexicalHits },
@@ -244,12 +267,27 @@ export interface QueryChainView {
   raw: string
   normalized: string
   tokens: string[]
-  /** 归一化改写明细（feat-A016 验收 8）：原文片段 → 规范形；历史 trace 缺省 [] */
+  /** 渲染口径（bug-00046）：legacy = 旧 trace 按「归一化改写」渲染；new = 新 trace 按「索引双写扩展」渲染 */
+  mode: QueryRenderMode
+  /** 归一化改写明细（旧口径，feat-A016 验收 8）：原文片段 → 规范形；新 trace 恒 [] */
   rewrites: RewriteItem[]
+  /** 索引双写扩展明细（新口径，bug-00046）：原文命中可双写键 → 规范形，问句未被改写；无命中 [] */
+  expansionHits: RewriteItem[]
+  /** 是否展示「检索用文本」行：normalized != raw 时展示；normalized == raw 隐藏（与原文同一串） */
+  showNormalized: boolean
 }
 
 export function buildQueryChain(query: RetrievalDiagnostics['query']): QueryChainView {
-  return { raw: query.raw, normalized: query.normalized, tokens: query.tokens, rewrites: query.rewrites ?? [] }
+  const mode = resolveQueryMode(query)
+  return {
+    raw: query.raw,
+    normalized: query.normalized,
+    tokens: query.tokens,
+    mode,
+    rewrites: query.rewrites ?? [],
+    expansionHits: Array.isArray(query.expansionHits) ? query.expansionHits : [],
+    showNormalized: query.normalized !== query.raw,
+  }
 }
 
 export interface EnvView {
@@ -369,7 +407,7 @@ export function buildDiagnosticsView(
   if (diagnostics === null) return null
   return {
     truncatedText: truncatedText(diagnostics),
-    funnel: buildFunnel(diagnostics.funnel, diagnostics.query.rewrites?.length ?? 0),
+    funnel: buildFunnel(diagnostics.funnel, diagnostics.query),
     scoringNote: SCORING_FORMULA_NOTE,
     scoreRows: buildScoreRows(diagnostics.candidates, diagnostics.funnel.topN),
     nextRank: diagnostics.nextRank === null ? null : buildNextRankView(diagnostics.nextRank),
