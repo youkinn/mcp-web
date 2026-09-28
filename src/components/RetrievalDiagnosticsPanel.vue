@@ -102,6 +102,23 @@
         </div>
       </section>
 
+      <!-- 各阶段耗时（feat-A013 验收）：timing 缺失不展示 -->
+      <section v-if="view.timingLines" class="detail-section">
+        <h4 class="detail-section-title">各阶段耗时</h4>
+        <div class="diag-timing-lines">
+          <div v-for="line in view.timingLines" :key="line" class="diag-timing-line">{{ line }}</div>
+        </div>
+      </section>
+
+      <!-- 重排阶段（feat-A018 验收）：rerank 字段缺失（老诊断）不展示；明细行与阶段提示复用既有样式 -->
+      <section v-if="view.rerankLines" class="detail-section">
+        <h4 class="detail-section-title">重排阶段</h4>
+        <div class="diag-timing-lines">
+          <div v-for="line in view.rerankLines" :key="line" class="diag-timing-line">{{ line }}</div>
+        </div>
+        <div class="diag-note">{{ view.rerankStageHint }}</div>
+      </section>
+
       <!-- 候选分数表 -->
       <section class="detail-section">
         <h4 class="detail-section-title">候选分数</h4>
@@ -249,23 +266,6 @@
             <span class="env-value">{{ view.env.vectorDimText }}</span>
           </div>
         </div>
-      </section>
-
-      <!-- 各阶段耗时（feat-A013 验收）：timing 缺失不展示 -->
-      <section v-if="view.timingLines" class="detail-section">
-        <h4 class="detail-section-title">各阶段耗时</h4>
-        <div class="diag-timing-lines">
-          <div v-for="line in view.timingLines" :key="line" class="diag-timing-line">{{ line }}</div>
-        </div>
-      </section>
-
-      <!-- 重排阶段（feat-A018 验收）：rerank 字段缺失（老诊断）不展示；明细行与阶段提示复用既有样式 -->
-      <section v-if="view.rerankLines" class="detail-section">
-        <h4 class="detail-section-title">重排阶段</h4>
-        <div class="diag-timing-lines">
-          <div v-for="line in view.rerankLines" :key="line" class="diag-timing-line">{{ line }}</div>
-        </div>
-        <div class="diag-note">{{ view.rerankStageHint }}</div>
       </section>
 
       <!-- 死亡意图 -->
