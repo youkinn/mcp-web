@@ -226,6 +226,7 @@
           v-for="c in candidateModalResult?.candidates ?? []"
           :key="c.id"
           class="candidate-modal-item"
+          :class="{ 'candidate-modal-item-highlight': c.id === candidateModalHighlightId }"
           @click="openReader(c)"
         >
           <span class="candidate-modal-id">{{ shortCandidateId(c.id) }}</span>
@@ -318,6 +319,8 @@ const activeTab = ref<'summary' | 'charts'>(restoreActiveTab())
 
 const candidateModalOpen = ref(false)
 const candidateModalResult = ref<BenchmarkResultItem | null>(null)
+/** 弹框高亮：当前所点行 rank 对应召回池（candidates 按 rank 1 起有序）位置候选的 id；rank 无效 / 越池为 null */
+const candidateModalHighlightId = ref<string | null>(null)
 
 const barChartEl = ref<HTMLElement | null>(null)
 const trendChartEl = ref<HTMLElement | null>(null)
@@ -453,6 +456,10 @@ function shortCandidateId(id: string): string {
 
 function openCandidateModal(item: BenchmarkResultItem): void {
   candidateModalResult.value = item
+  // 按 rank 定位（非数组下标）：rank 1 起对应池位置；rank 无效（0 / 越出 50 条池）→ 不高亮、不报错
+  const index = item.rank - 1
+  candidateModalHighlightId.value =
+    index >= 0 && index < item.candidates.length ? item.candidates[index].id : null
   candidateModalOpen.value = true
 }
 
@@ -1073,6 +1080,10 @@ onBeforeUnmount(() => {
 
 .candidate-modal-item:hover {
   background: #f0f5f2;
+}
+
+.candidate-modal-item-highlight {
+  background: #fff3cd;
 }
 
 .candidate-modal-id {

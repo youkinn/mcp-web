@@ -105,18 +105,22 @@
       <!-- 各阶段耗时（feat-A013 验收）：timing 缺失不展示 -->
       <section v-if="view.timingLines" class="detail-section">
         <h4 class="detail-section-title">各阶段耗时</h4>
-        <div class="diag-timing-lines">
-          <div v-for="line in view.timingLines" :key="line" class="diag-timing-line">{{ line }}</div>
+        <div class="diag-block">
+          <div class="diag-timing-lines">
+            <div v-for="line in view.timingLines" :key="line" class="diag-timing-line">{{ line }}</div>
+          </div>
         </div>
       </section>
 
       <!-- 重排阶段（feat-A018 验收）：rerank 字段缺失（老诊断）不展示；明细行与阶段提示复用既有样式 -->
       <section v-if="view.rerankLines" class="detail-section">
         <h4 class="detail-section-title">重排阶段</h4>
-        <div class="diag-timing-lines">
-          <div v-for="line in view.rerankLines" :key="line" class="diag-timing-line">{{ line }}</div>
+        <div class="diag-block">
+          <div class="diag-timing-lines">
+            <div v-for="line in view.rerankLines" :key="line" class="diag-timing-line">{{ line }}</div>
+          </div>
+          <div class="diag-note">{{ view.rerankStageHint }}</div>
         </div>
-        <div class="diag-note">{{ view.rerankStageHint }}</div>
       </section>
 
       <!-- 候选分数表 -->
@@ -636,6 +640,13 @@ function onCopyChunkId(record: ScoreRowView) {
 }
 
 /* 各阶段耗时（feat-A013 验收） */
+.diag-block {
+  padding: 10px 12px;
+  background: #fafbf9;
+  border: 1px solid #e3e9e2;
+  border-radius: 10px;
+}
+
 .diag-timing-lines {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
