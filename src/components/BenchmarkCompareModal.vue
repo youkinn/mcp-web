@@ -5,6 +5,7 @@
     :footer="null"
     width="min(1000px, 94vw)"
     :mask-closable="!comparing"
+    :body-style="{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }"
   >
     <div class="compare-bar">
       <span class="compare-base">{{ shortRunId(baseRunId ?? '') }}</span>
@@ -27,67 +28,103 @@
         vs {{ shortRunId(comparison.runIdB) }}（{{ formatBenchmarkTime(comparison.timeB) }}）
       </p>
 
-      <section class="compare-section">
-        <h4 class="compare-title">类别计数变化</h4>
-        <a-table
-          :columns="categoryColumns"
-          :data-source="comparison.categories"
-          :pagination="false"
-          size="small"
-          row-key="name"
-          class="compare-cat-table"
-        >
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'top5' || column.key === 'tail' || column.key === 'miss'">
-              <span>{{ record.a[column.key] }} → {{ record.b[column.key] }}</span>
-              <span :class="deltaClass(record[`${column.key}Delta`], column.key)">{{ deltaText(record[`${column.key}Delta`]) }}</span>
-            </template>
-          </template>
-        </a-table>
-        <p class="compare-total">
-          总计：通过 {{ comparison.top5A }} → {{ comparison.top5B }} · 兜底 {{ comparison.tailA }} → {{ comparison.tailB }} · 未命中 {{ comparison.missA }} → {{ comparison.missB }}
-        </p>
-      </section>
+      <a-tabs v-model:activeKey="resultTab" size="small" class="compare-tabs">
+        <a-tab-pane key="category" tab="类别计数变化">
+          <section class="compare-section">
+            <a-table
+              :columns="categoryColumns"
+              :data-source="comparison.categories"
+              :pagination="false"
+              size="small"
+              row-key="name"
+              class="compare-cat-table"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'top5' || column.key === 'tail' || column.key === 'miss'">
+                  <span>{{ record.a[column.key] }} → {{ record.b[column.key] }}</span>
+                  <span :class="deltaClass(record[`${column.key}Delta`], column.key)">{{ deltaText(record[`${column.key}Delta`]) }}</span>
+                </template>
+                <template v-else>{{ record[column.key] }}</template>
+              </template>
+            </a-table>
+            <p class="compare-total">
+              总计：通过 {{ comparison.top5A }} → {{ comparison.top5B }} · 兜底 {{ comparison.tailA }} → {{ comparison.tailB }} · 未命中 {{ comparison.missA }} → {{ comparison.missB }}
+            </p>
+          </section>
+        </a-tab-pane>
 
-      <section class="compare-section">
-        <div class="compare-section-head">
-          <h4 class="compare-title">逐项名次 / 入榜出榜</h4>
-          <a-checkbox v-model:checked="onlyChanged">只看变化（{{ changedCount }}/{{ comparison.rows.length }}）</a-checkbox>
-        </div>
-        <a-table
-          :columns="rowColumns"
-          :data-source="visibleRows"
-          :pagination="{ pageSize: 50, showSizeChanger: false, showTotal: (t: number) => `共 ${t} 题` }"
-          size="small"
-          row-key="id"
-          :row-class-name="rowClassName"
-          class="compare-row-table"
-        >
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'question'">
-              <a-tooltip placement="topLeft">
-                <template #title>{{ record.question }}</template>
-                <span class="cell-ellipsis">{{ record.question }}</span>
-              </a-tooltip>
-            </template>
-            <template v-else-if="column.key === 'rankA'">{{ rankText(record.rankA) }}</template>
-            <template v-else-if="column.key === 'rankB'">{{ rankText(record.rankB) }}</template>
-            <template v-else-if="column.key === 'change'">
-              <a-tag :color="changeColor(record.change)" class="compare-change-tag">{{ changeLabel(record.change) }}</a-tag>
-            </template>
-          </template>
-        </a-table>
-      </section>
+        <a-tab-pane key="rows" tab="逐项名次 / 入榜出榜">
+          <section class="compare-section">
+            <div class="compare-section-head">
+              <a-radio-group v-model:value="changeFilter" size="small">
+                <a-radio-button value="all">全部（{{ comparison.rows.length }}）</a-radio-button>
+                <a-radio-button value="up">排名上升（{{ upCount }}）</a-radio-button>
+                <a-radio-button value="down">排名下降（{{ downCount }}）</a-radio-button>
+              </a-radio-group>
+              <a-checkbox v-model:checked="onlyChanged">只看变化</a-checkbox>
+            </div>
+            <a-table
+              :columns="rowColumns"
+              :data-source="visibleRows"
+              :pagination="{ pageSize: 10, showSizeChanger: false, showTotal: (t: number) => `共 ${t} 题` }"
+              size="small"
+              row-key="id"
+              :row-class-name="rowClassName"
+              class="compare-row-table"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'question'">
+                  <a-tooltip placement="topLeft">
+                    <template #title>{{ record.question }}</template>
+                    <span class="cell-ellipsis">{{ record.question }}</span>
+                  </a-tooltip>
+                </template>
+                <template v-else-if="column.key === 'rankA'">{{ rankText(record.rankA) }}</template>
+                <template v-else-if="column.key === 'rankB'">{{ rankText(record.rankB) }}</template>
+                <template v-else-if="column.key === 'change'">
+                  <a-tag :color="changeColor(record.change)" class="compare-change-tag">{{ changeLabel(record.change) }}</a-tag>
+                </template>
+                <template v-else-if="column.key === 'category'">
+                  <span class="compare-category">{{ record.category }}</span>
+                </template>
+                <template v-else-if="column.key === 'actions'">
+                  <a-tooltip title="基准快照该题召回列表">
+                    <a-button type="link" size="small" :disabled="record.rankA <= 0" @click="openCandidates(record, 'A')">A</a-button>
+                  </a-tooltip>
+                  <a-tooltip title="对比快照该题召回列表">
+                    <a-button type="link" size="small" :disabled="record.rankB <= 0" @click="openCandidates(record, 'B')">B</a-button>
+                  </a-tooltip>
+                </template>
+              </template>
+            </a-table>
+          </section>
+        </a-tab-pane>
+      </a-tabs>
     </template>
   </a-modal>
+  <CandidateListModal
+    v-model:open="candidateModalOpen"
+    :result="candidateModalResult"
+    :highlight-id="candidateModalHighlightId"
+    @open-chapter="emit('open-chapter', $event)"
+  />
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { getBenchmarkSnapshot, getErrorMessage, type BenchmarkHistoryItem } from '../api/client'
+import {
+  getBenchmarkSnapshot,
+  getErrorMessage,
+  type BenchmarkCandidate,
+  type BenchmarkHistoryItem,
+  type BenchmarkResultItem,
+} from '../api/client'
+import CandidateListModal from './CandidateListModal.vue'
 import {
   compareSnapshots,
+  isRankDown,
+  isRankUp,
   type BenchmarkComparison,
   type CompareRow,
   type RankChange,
@@ -98,7 +135,7 @@ const props = defineProps<{
   historyItems: BenchmarkHistoryItem[]
   baseRunId: string | null
 }>()
-const emit = defineEmits<{ 'update:open': [value: boolean] }>()
+const emit = defineEmits<{ 'update:open': [value: boolean]; 'open-chapter': [candidate: BenchmarkCandidate] }>()
 
 const open = computed({
   get: () => props.open,
@@ -109,6 +146,12 @@ const targetRunId = ref<string | null>(null)
 const comparing = ref(false)
 const comparison = ref<BenchmarkComparison | null>(null)
 const onlyChanged = ref(true)
+const resultTab = ref<'category' | 'rows'>('category')
+type ChangeFilter = 'all' | 'up' | 'down'
+const changeFilter = ref<ChangeFilter>('all')
+const candidateModalOpen = ref(false)
+const candidateModalResult = ref<BenchmarkResultItem | null>(null)
+const candidateModalHighlightId = ref<string | null>(null)
 
 const baseItem = computed(() => props.historyItems.find((i) => i.runId === props.baseRunId) ?? null)
 const baseTotal = computed(() => baseItem.value?.summary.total ?? 0)
@@ -124,10 +167,17 @@ const candidateOptions = computed(() =>
   })),
 )
 
-const changedCount = computed(() => comparison.value?.rows.filter((r) => r.change !== 'flat').length ?? 0)
+/** 筛选口径（负责人 2026-09-29 定）：排名上升 = up + 入榜；排名下降 = down + 出榜 */
+const upCount = computed(() => comparison.value?.rows.filter((r) => isRankUp(r.change)).length ?? 0)
+const downCount = computed(() => comparison.value?.rows.filter((r) => isRankDown(r.change)).length ?? 0)
 const visibleRows = computed<CompareRow[]>(() => {
   const rows = comparison.value?.rows ?? []
-  return onlyChanged.value ? rows.filter((r) => r.change !== 'flat') : rows
+  const filtered = rows.filter((r) => {
+    if (changeFilter.value === 'up') return isRankUp(r.change)
+    if (changeFilter.value === 'down') return isRankDown(r.change)
+    return true
+  })
+  return onlyChanged.value ? filtered.filter((r) => r.change !== 'flat') : filtered
 })
 
 watch(
@@ -137,8 +187,27 @@ watch(
     targetRunId.value = candidates.value[0]?.runId ?? null
     comparison.value = null
     onlyChanged.value = true
+    changeFilter.value = 'all'
+    resultTab.value = 'category'
   },
 )
+
+// 弹框打开时锁背景滚动，防止滚轮穿透到下层页面（bug-00047 反馈 5）
+const previousBodyOverflow = ref('')
+watch(
+  () => props.open,
+  (opened) => {
+    if (opened) {
+      previousBodyOverflow.value = document.body.style.overflow
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = previousBodyOverflow.value
+    }
+  },
+)
+onBeforeUnmount(() => {
+  if (props.open) document.body.style.overflow = previousBodyOverflow.value
+})
 
 async function runCompare(): Promise<void> {
   if (!props.baseRunId || !targetRunId.value || comparing.value) return
@@ -163,6 +232,17 @@ async function runCompare(): Promise<void> {
   } finally {
     comparing.value = false
   }
+}
+
+/** 打开某行某侧快照的召回列表（复用类别汇总同款弹框：标题候选数、高亮当前 rank 对应候选，口径一致） */
+function openCandidates(row: CompareRow, side: 'A' | 'B'): void {
+  const item = side === 'A' ? row.itemA : row.itemB
+  const rank = side === 'A' ? row.rankA : row.rankB
+  if (!item) return
+  candidateModalResult.value = item
+  const index = rank - 1
+  candidateModalHighlightId.value = index >= 0 && index < item.candidates.length ? item.candidates[index].id : null
+  candidateModalOpen.value = true
 }
 
 function shortRunId(runId: string): string {
@@ -230,10 +310,12 @@ const categoryColumns = [
 ]
 
 const rowColumns = [
+  { key: 'category', title: '分类', width: 100 },
   { key: 'question', title: '问题' },
   { key: 'rankA', title: 'A 名次', width: 90, align: 'center' },
   { key: 'rankB', title: 'B 名次', width: 90, align: 'center' },
   { key: 'change', title: '变化', width: 120, align: 'center' },
+  { key: 'actions', title: '操作', width: 130, align: 'center' },
 ]
 </script>
 
@@ -326,5 +408,10 @@ const rowColumns = [
 
 .compare-row-changed > td {
   background: #f0f7ff !important;
+}
+
+.compare-category {
+  color: #163c32;
+  font-weight: 600;
 }
 </style>

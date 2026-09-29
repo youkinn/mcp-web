@@ -17,11 +17,16 @@ export type RankChange = 'up' | 'down' | 'flat' | 'enter' | 'leave'
 export interface CompareRow {
   id: string
   question: string
+  /** 题所属分类：id 的「类别#序号」前缀（与类别汇总口径一致） */
+  category: string
   rankA: number
   rankB: number
   statusA: BenchmarkStatus | null
   statusB: BenchmarkStatus | null
   change: RankChange
+  /** 两侧快照中的完整题目（含 candidates，供操作列打开召回列表）；该侧未出现为 null */
+  itemA: BenchmarkResultItem | null
+  itemB: BenchmarkResultItem | null
 }
 
 export interface CategoryCompare {
@@ -51,6 +56,11 @@ export interface BenchmarkComparison {
 }
 
 const ZERO_CAT: BenchmarkCategorySummary = { total: 0, top5: 0, tail: 0, miss: 0 }
+
+/** 题所属分类：results[].id 的「类别#序号」前缀（与类别汇总 categoryOf 同口径） */
+export function categoryOfItem(id: string): string {
+  return id.split('#')[0]?.trim() || id
+}
 
 function changeOf(a: BenchmarkResultItem, b: BenchmarkResultItem): RankChange {
   if (a.rank === 0 && b.rank > 0) return 'enter'
@@ -92,14 +102,47 @@ export function compareSnapshots(a: BenchmarkData, b: BenchmarkData): BenchmarkC
     seen.add(ra.id)
     const rb = bById.get(ra.id)
     if (!rb) {
-      rows.push({ id: ra.id, question: ra.question, rankA: ra.rank, rankB: 0, statusA: ra.status, statusB: null, change: 'leave' })
+      rows.push({
+        id: ra.id,
+        question: ra.question,
+        category: categoryOfItem(ra.id),
+        rankA: ra.rank,
+        rankB: 0,
+        statusA: ra.status,
+        statusB: null,
+        change: 'leave',
+        itemA: ra,
+        itemB: null,
+      })
       continue
     }
-    rows.push({ id: ra.id, question: ra.question, rankA: ra.rank, rankB: rb.rank, statusA: ra.status, statusB: rb.status, change: changeOf(ra, rb) })
+    rows.push({
+      id: ra.id,
+      question: ra.question,
+      category: categoryOfItem(ra.id),
+      rankA: ra.rank,
+      rankB: rb.rank,
+      statusA: ra.status,
+      statusB: rb.status,
+      change: changeOf(ra, rb),
+      itemA: ra,
+      itemB: rb,
+    })
   }
   for (const rb of b.results) {
     if (seen.has(rb.id)) continue
-    rows.push({ id: rb.id, question: rb.question, rankA: 0, rankB: rb.rank, statusA: null, statusB: rb.status, change: 'enter' })
+    rows.push({
+      id: rb.id,
+      question: rb.question,
+      category: categoryOfItem(rb.id),
+      rankA: 0,
+      rankB: rb.rank,
+      statusA: null,
+      statusB: rb.status,
+      change: 'enter',
+      itemA: null,
+      itemB: rb,
+    })
   }
   const names = [...new Set([...Object.keys(a.summary.category), ...Object.keys(b.summary.category)])]
   const categories: CategoryCompare[] = names.map((name) => {
@@ -130,4 +173,14 @@ export function compareSnapshots(a: BenchmarkData, b: BenchmarkData): BenchmarkC
     rows: sortCompareRows(rows),
     categories,
   }
+}
+
+/** 筛选口径（负责人 2026-09-29 定）：入榜按上升处理，不另立第三类 */
+export function isRankUp(change: RankChange): boolean {
+  return change === 'up' || change === 'enter'
+}
+
+/** 筛选口径（负责人 2026-09-29 定）：出榜按下降处理，不另立第三类 */
+export function isRankDown(change: RankChange): boolean {
+  return change === 'down' || change === 'leave'
 }

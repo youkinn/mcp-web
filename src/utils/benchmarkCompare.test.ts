@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert'
 import { describe, it } from 'node:test'
 import type { BenchmarkCategorySummary, BenchmarkData, BenchmarkResultItem } from '../api/client'
-import { compareSnapshots } from './benchmarkCompare.ts'
+import { categoryOfItem, compareSnapshots, isRankDown, isRankUp } from './benchmarkCompare.ts'
 
 function item(id: string, question: string, rank: number, status: BenchmarkResultItem['status']): BenchmarkResultItem {
   return {
@@ -148,5 +148,43 @@ describe('历史快照比较（benchmarkCompare，bug-00047）', () => {
       c.rows.map((r) => r.id),
       ['enter', 'up', 'flat', 'z'],
     )
+  })
+
+  it('筛选口径：入榜并入上升、出榜并入下降（负责人 2026-09-29 定）', () => {
+    assert.equal(isRankUp('up'), true)
+    assert.equal(isRankUp('enter'), true)
+    assert.equal(isRankUp('down'), false)
+    assert.equal(isRankUp('leave'), false)
+    assert.equal(isRankUp('flat'), false)
+    assert.equal(isRankDown('down'), true)
+    assert.equal(isRankDown('leave'), true)
+    assert.equal(isRankDown('up'), false)
+    assert.equal(isRankDown('enter'), false)
+    assert.equal(isRankDown('flat'), false)
+  })
+
+  it('分类口径：id 的「类别#序号」前缀（与类别汇总 categoryOf 一致）', () => {
+    assert.equal(categoryOfItem('人物#1'), '人物')
+    assert.equal(categoryOfItem(' 地名 #2'), '地名')
+    assert.equal(categoryOfItem('no-anchor-id'), 'no-anchor-id')
+  })
+
+  it('比较行携带两侧完整题目：入榜只带 B、出榜只带 A、双侧同在两边都有', () => {
+    const a = snapshot('A', [item('onlyA', 'qA', 3, 'top5'), item('both', 'qB', 1, 'top5')])
+    const b = snapshot('B', [item('onlyB', 'qB2', 2, 'top5'), item('both', 'qB', 5, 'tail')])
+    const c = compareSnapshots(a, b)
+    assert.ok(c)
+    const leaveRow = c.rows.find((r) => r.id === 'onlyA')
+    const enterRow = c.rows.find((r) => r.id === 'onlyB')
+    const bothRow = c.rows.find((r) => r.id === 'both')
+    assert.ok(leaveRow)
+    assert.equal(leaveRow.itemA?.id, 'onlyA')
+    assert.equal(leaveRow.itemB, null)
+    assert.ok(enterRow)
+    assert.equal(enterRow.itemA, null)
+    assert.equal(enterRow.itemB?.id, 'onlyB')
+    assert.ok(bothRow)
+    assert.equal(bothRow.itemA?.id, 'both')
+    assert.equal(bothRow.itemB?.id, 'both')
   })
 })

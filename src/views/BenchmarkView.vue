@@ -219,26 +219,18 @@
       :chapter-title="readerChapterTitle"
       :chunk-id="readerChunkId"
     />
-    <BenchmarkCompareModal v-model:open="compareOpen" :history-items="historyItems" :base-run-id="compareBaseRunId" />
-    <a-modal
+    <BenchmarkCompareModal
+      v-model:open="compareOpen"
+      :history-items="historyItems"
+      :base-run-id="compareBaseRunId"
+      @open-chapter="openReader"
+    />
+    <CandidateListModal
       v-model:open="candidateModalOpen"
-      :title="`召回列表（${candidateModalResult?.candidates.length ?? 0} 个）`"
-      :footer="null"
-      width="min(720px, 90vw)"
-    >
-      <ul class="candidate-modal-list">
-        <li
-          v-for="c in candidateModalResult?.candidates ?? []"
-          :key="c.id"
-          class="candidate-modal-item"
-          :class="{ 'candidate-modal-item-highlight': c.id === candidateModalHighlightId }"
-          @click="openReader(c)"
-        >
-          <span class="candidate-modal-id">{{ shortCandidateId(c.id) }}</span>
-          <span class="candidate-modal-title">{{ c.title }}</span>
-        </li>
-      </ul>
-    </a-modal>
+      :result="candidateModalResult"
+      :highlight-id="candidateModalHighlightId"
+      @open-chapter="openReader"
+    />
   </main>
 </template>
 
@@ -251,6 +243,7 @@ import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/compon
 import { CanvasRenderer } from 'echarts/renderers'
 import type { EChartsType } from 'echarts/core'
 import BenchmarkCompareModal from '../components/BenchmarkCompareModal.vue'
+import CandidateListModal from '../components/CandidateListModal.vue'
 import SangoChapterReader from '../components/SangoChapterReader.vue'
 import {
   getBenchmarkHistory,
@@ -469,11 +462,6 @@ function detailRowsOf(category: string): BenchmarkResultItem[] {
 function questionSeq(item: BenchmarkResultItem): number {
   const idx = snapshotData.value?.results.findIndex((r) => r.id === item.id) ?? -1
   return idx >= 0 ? idx + 1 : 0
-}
-
-function shortCandidateId(id: string): string {
-  const i = id.indexOf(':')
-  return i >= 0 ? id.slice(i + 1) : id
 }
 
 function openCandidateModal(item: BenchmarkResultItem): void {
@@ -1093,37 +1081,6 @@ onBeforeUnmount(() => {
   color: #8b9990;
 }
 
-.candidate-modal-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  max-height: 60vh;
-  overflow-y: auto;
-}
-
-.candidate-modal-item {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.candidate-modal-item:hover {
-  background: #f0f5f2;
-}
-
-.candidate-modal-item-highlight {
-  background: #fff3cd;
-}
-
-.candidate-modal-id {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
-  color: #1d2924;
-  flex-shrink: 0;
-}
 
 .history-run {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
