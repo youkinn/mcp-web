@@ -16,8 +16,6 @@ export default defineConfig({
       '/sango-bench': {
         target: 'http://127.0.0.1:8787',
         changeOrigin: true,
-        // bug-00047 A 案：完整回归实测可达 5 分钟，代理超时必须大于前端 benchmarkClient 的 300s，避免代理先于前端掐断
-        proxyTimeout: 600_000,
         // 契约 §3 Base 为 /dev/benchmark，去前缀转发
         rewrite: (path) => path.replace(/^\/sango-bench/, ''),
       },

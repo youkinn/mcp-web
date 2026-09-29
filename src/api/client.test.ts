@@ -11,6 +11,7 @@ import {
   fetchGrayzone,
   getBenchmarkHistory,
   getBenchmarkLatest,
+  getBenchmarkRunStatus,
   getBenchmarkSnapshot,
   fetchLogDetail,
   fetchLogList,
@@ -18,9 +19,9 @@ import {
   fetchSangoChapter,
   fetchSimilarityDistribution,
   markMisjudge,
-  postBenchmarkRun,
   sendChatMessage,
   sendSangoRandom,
+  startBenchmarkRun,
   unmarkMisjudge,
   updateCacheMaxEntries,
   updateCacheStatus,
@@ -525,28 +526,78 @@ describe('缓存控制台接口（feat-A013）', () => {
 // ── 评测执行（feat-A015）──
 
 describe('评测执行接口（feat-A015）', () => {
-  it('benchmark 客户端基址为 /sango-bench（不挂 /api 前缀，超时放宽 5 分钟供完整回归，bug-00047 A 案）', () => {
+  it('benchmark 客户端基址为 /sango-bench（不挂 /api 前缀，异步 job 后超时回落常规值，bug-00049 B 案）', () => {
     assert.equal(benchmarkClient.defaults.baseURL, '/sango-bench')
-    assert.equal(benchmarkClient.defaults.timeout, 300_000)
+    assert.equal(benchmarkClient.defaults.timeout, 30_000)
   })
 
-  it('postBenchmarkRun POST /sango-bench/dev/benchmark/run 并解包完整快照', async () => {
+  it('startBenchmarkRun POST /dev/benchmark/run 解包 202 立即返回 runId（异步 job，不再同步等结果）', async () => {
     mock.method(benchmarkClient, 'post', async (url: string) => {
       assert.equal(url, '/dev/benchmark/run')
-      return okEnvelope({ runId: 'feat-A015-2026-09-25-1451', time: 't', summary: { total: 10, top5: 6 }, results: [] })
+      return {
+        data: { code: 202, data: { runId: 'feat-A015-2026-09-29-1500', state: 'running' }, message: '' },
+        headers: {},
+      }
     })
-    const result = await postBenchmarkRun()
-    assert.equal(result.runId, 'feat-A015-2026-09-25-1451')
-    assert.equal(result.summary.top5, 6)
+    const result = await startBenchmarkRun()
+    assert.equal(result.runId, 'feat-A015-2026-09-29-1500')
+    assert.equal(result.state, 'running')
+    assert.equal(result.alreadyRunning, false)
   })
 
-  it('getBenchmarkHistory GET /sango-bench/dev/benchmark/history 并解包列表', async () => {
+  it('startBenchmarkRun 409 视为接管在跑的那次（不抛错给页面）', async () => {
+    mock.method(benchmarkClient, 'post', async () => {
+      throw Object.assign(new Error('benchmark already running'), {
+        isAxiosError: true,
+        response: {
+          status: 409,
+          data: { code: 409, message: 'benchmark already running', data: { runId: 'feat-A015-2026-09-29-1459' } },
+        },
+      })
+    })
+    const result = await startBenchmarkRun()
+    assert.equal(result.runId, 'feat-A015-2026-09-29-1459')
+    assert.equal(result.alreadyRunning, true)
+  })
+
+  it('getBenchmarkRunStatus GET /dev/benchmark/run-status 解包 state/runId/elapsedMs', async () => {
+    mock.method(benchmarkClient, 'get', async (url: string) => {
+      assert.equal(url, '/dev/benchmark/run-status')
+      return okEnvelope({ state: 'running', runId: 'feat-A015-2026-09-29-1500', elapsedMs: 4200 })
+    })
+    const result = await getBenchmarkRunStatus()
+    assert.equal(result.state, 'running')
+    assert.equal(result.runId, 'feat-A015-2026-09-29-1500')
+    assert.equal(result.elapsedMs, 4200)
+  })
+
+  it('getBenchmarkHistory GET /sango-bench/dev/benchmark/history 并解包列表（含新追加 elapsedMs / rerank）', async () => {
     mock.method(benchmarkClient, 'get', async (url: string) => {
       assert.equal(url, '/dev/benchmark/history')
-      return okEnvelope([{ runId: 'feat-A015-2026-09-25-1451', time: 't', summary: { total: 10, top5: 6 } }])
+      return okEnvelope([
+        {
+          runId: 'feat-A015-2026-09-29-1500',
+          time: 't',
+          summary: {
+            total: 10,
+            top5: 6,
+            elapsedMs: 61_500,
+            rerank: { mode: 'on', wired: true, window: 20, maxTokens: 128, batch: 16, intraThreads: 8 },
+          },
+        },
+      ])
     })
     const result = await getBenchmarkHistory()
-    assert.equal(result[0]?.runId, 'feat-A015-2026-09-25-1451')
+    assert.equal(result[0]?.runId, 'feat-A015-2026-09-29-1500')
+    assert.equal(result[0]?.summary.elapsedMs, 61_500)
+    assert.deepEqual(result[0]?.summary.rerank, {
+      mode: 'on',
+      wired: true,
+      window: 20,
+      maxTokens: 128,
+      batch: 16,
+      intraThreads: 8,
+    })
   })
 
   it('getBenchmarkSnapshot 携带 runId 查询参数', async () => {

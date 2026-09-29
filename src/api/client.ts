@@ -380,8 +380,8 @@ export const apiClient = axios.create({
 // 导出供 node:test 单测以 mock.method 打桩；dev 评测接口独立旁路：基址走 VITE_BENCHMARK_API_BASE（默认 /sango-bench，不挂 /api 前缀）
 export const benchmarkClient = axios.create({
   baseURL: import.meta.env?.VITE_BENCHMARK_API_BASE || '/sango-bench',
-  // 完整回归实测 3.5–5 分钟（历史最长 9 分钟），超出 apiClient 的 30s 常规超时；bug-00047 A 案：放宽到 5 分钟
-  timeout: 300_000,
+  // bug-00049 B 案：run 改异步 job + 轮询后不再有长请求，超时回落常规值
+  timeout: 30_000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -901,6 +901,20 @@ export interface BenchmarkSummary {
   noAnchor: string[]
   category: Record<string, BenchmarkCategorySummary>
   runId: string
+  /** 服务端本次 run 耗时（毫秒）；老快照无此字段，读取侧需容错 */
+  elapsedMs?: number
+  /** 本次 run 的重排配置快照；老快照无此字段 */
+  rerank?: BenchmarkRerankConfig
+}
+
+/** 快照记录的重排配置（bug-00049 B 案）：mode on/off、wired 是否真正接入、窗口 / 预算 / 批量 / 线程 */
+export interface BenchmarkRerankConfig {
+  mode: 'on' | 'off'
+  wired: boolean
+  window: number
+  maxTokens: number
+  batch: number
+  intraThreads: number | null
 }
 
 /** 单题判定：rank 1–5 判对 top5；6–10 兜底 tail；>10 或未召回（rank=0）为 miss */
@@ -950,9 +964,45 @@ export interface BenchmarkHistoryItem {
   summary: BenchmarkSummary
 }
 
-/** POST run：同步返回完整快照形状（runId + summary + results），执行中页面等待 */
-export async function postBenchmarkRun(): Promise<BenchmarkData> {
-  const { data } = await benchmarkClient.post<ApiResponse<BenchmarkData>>('/dev/benchmark/run')
+export type BenchmarkRunState = 'running' | 'done' | 'failed' | 'idle'
+
+export interface BenchmarkRunStatus {
+  state: BenchmarkRunState
+  runId: string | null
+  /** 服务端本次 run 已耗时（毫秒）；无记录时缺省 */
+  elapsedMs?: number
+  /** state=failed 时的错误文案 */
+  error?: string
+}
+
+/** 启动结果：alreadyRunning=true 表示 409 接管了已在跑的那次 */
+export interface BenchmarkRunStart {
+  runId: string
+  state: string
+  alreadyRunning: boolean
+}
+
+/** POST run：异步 job，立即 202 返回 runId；409 = 已有 run 在跑，接管该次（不抛错给页面） */
+export async function startBenchmarkRun(): Promise<BenchmarkRunStart> {
+  try {
+    const { data } = await benchmarkClient.post<ApiResponse<{ runId: string; state: string }>>('/dev/benchmark/run')
+    if ((data.code !== 200 && data.code !== 202) || data.data === null) {
+      throw new Error(data.message || '请求失败，请稍后重试。')
+    }
+    return { runId: data.data.runId, state: data.data.state, alreadyRunning: false }
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response?.status === 409) {
+      const body = err.response.data as ApiResponse<{ runId: string }> | undefined
+      const runId = body?.data?.runId
+      if (runId) return { runId, state: 'running', alreadyRunning: true }
+    }
+    throw err
+  }
+}
+
+/** GET run-status：执行中页面每 1.5s 轮询；idle 表示当前无 run */
+export async function getBenchmarkRunStatus(): Promise<BenchmarkRunStatus> {
+  const { data } = await benchmarkClient.get<ApiResponse<BenchmarkRunStatus>>('/dev/benchmark/run-status')
   return unwrapData(data)
 }
 
