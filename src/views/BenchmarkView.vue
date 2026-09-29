@@ -194,6 +194,9 @@
                   </span>
                 </a-tooltip>
               </template>
+              <template v-else-if="column.key === 'rerankWindow'">
+                <span :class="{ 'rerank-window-warn': rerankWarn(record) }">{{ rerankWindowText(record) }}</span>
+              </template>
               <template v-else-if="column.key === 'elapsed'">{{ formatElapsedText(record.summary.elapsedMs) }}</template>
               <template v-else-if="column.key === 'summary'">{{ historySummaryText(record) }}</template>
               <template v-else-if="column.key === 'actions'">
@@ -946,10 +949,18 @@ async function resumeRunningBenchmark(): Promise<void> {
 const historyColumns = [
   { key: 'summary', title: '摘要' },
   { key: 'rerank', title: '重排', width: 120, align: 'center' },
+  { key: 'rerankWindow', title: '重排窗口', width: 100, align: 'center' },
   { key: 'time', title: '时间', width: 210 },
   { key: 'elapsed', title: '耗时', width: 100, align: 'center' },
   { key: 'actions', title: '操作', width: 90, align: 'center' },
 ]
+
+/** 「重排窗口」列：on 显示该条快照实际窗口值；off / 老快照无字段显示「—」 */
+function rerankWindowText(item: BenchmarkHistoryItem): string {
+  const rerank = item.summary?.rerank
+  if (!rerank || rerank.mode !== 'on') return '—'
+  return String(rerank.window)
+}
 
 /** 摘要列：纯摘要口径（耗时/重排各自独立成列，不再拼进文案） */
 function historySummaryText(item: BenchmarkHistoryItem): string {
@@ -1271,8 +1282,9 @@ onBeforeUnmount(() => {
   color: #163c32;
 }
 
-/* 重排已开但未真正接入：警示色，提示快照记录的重排未生效 */
-.rerank-badge-warn {
+/* 重排已开但未真正接入：警示色，提示快照记录的重排未生效（「重排」与「重排窗口」两列共用） */
+.rerank-badge-warn,
+.rerank-window-warn {
   color: #c25b4e;
   font-weight: 600;
 }
