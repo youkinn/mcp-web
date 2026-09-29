@@ -121,6 +121,7 @@ import {
   getErrorMessage,
   type BenchmarkCandidate,
   type BenchmarkHistoryItem,
+  type BenchmarkRerankConfig,
   type BenchmarkResultItem,
 } from '../api/client'
 import CandidateListModal from './CandidateListModal.vue'
@@ -163,10 +164,18 @@ const candidates = computed(() =>
   props.historyItems.filter((i) => i.runId !== props.baseRunId && i.summary.total === baseItem.value?.summary.total),
 )
 const noCandidate = computed(() => props.open && !!props.baseRunId && candidates.value.length === 0)
+/** 重排展示口径（负责人 16:22 定）：off → 「重排关闭」不显示窗口数字；on+wired=false → 附「（未接入）」；
+ *  老快照无 rerank 字段 → 不追加该段；窗口一律取该条快照记录的实际值 */
+function rerankSuffix(rerank: BenchmarkRerankConfig | undefined): string {
+  if (!rerank) return ''
+  if (rerank.mode !== 'on') return ' · 重排关闭'
+  return ` · 重排窗口 ${rerank.window}${rerank.wired === false ? '（未接入）' : ''}`
+}
+
 const candidateOptions = computed(() =>
   candidates.value.map((i) => ({
     value: i.runId,
-    label: `${formatBenchmarkTime(i.time)} · 通过 ${i.summary.top5}/${i.summary.total}`,
+    label: `${formatBenchmarkTime(i.time)} · 通过 ${i.summary.top5}/${i.summary.total}${rerankSuffix(i.summary.rerank)}`,
   })),
 )
 
