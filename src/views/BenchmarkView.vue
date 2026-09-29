@@ -56,7 +56,7 @@
       <template v-if="snapshotData">
         <div class="bench-current">
           <span class="bench-current-label">当前快照</span>
-          <span class="bench-current-run">{{ snapshotData.runId }}</span>
+          <span class="bench-current-run" title="点击复制快照 Id" @click="copyRunId(snapshotData.runId)">{{ snapshotData.runId }}</span>
           <span class="bench-current-time">{{ formatBenchmarkTime(snapshotData.time) }}</span>
           <a-tag color="green">通过 {{ snapshotData.summary.top5 }}/{{ snapshotData.summary.total }}</a-tag>
           <a-tag color="gold">兜底 {{ snapshotData.summary.tail }}</a-tag>
@@ -917,6 +917,16 @@ async function onAbortRun(): Promise<void> {
   }
 }
 
+/** 点击复制快照 Id（内容格式由负责人给定：`快照 Id: <runId>`） */
+async function copyRunId(runId: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(`快照 Id: ${runId}`)
+    message.success('已复制快照 Id')
+  } catch {
+    message.error('复制失败，请手动选中复制')
+  }
+}
+
 /** 页面进入时若后端仍在执行 → 恢复「执行中」并继续轮询（刷新不丢状态） */
 async function resumeRunningBenchmark(): Promise<void> {
   try {
@@ -1130,6 +1140,7 @@ onBeforeUnmount(() => {
 .bench-current-run {
   font-weight: 700;
   color: #163c32;
+  cursor: pointer;
 }
 
 .bench-current-time {

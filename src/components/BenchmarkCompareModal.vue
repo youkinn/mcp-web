@@ -40,7 +40,10 @@
               class="compare-cat-table"
             >
               <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'top5' || column.key === 'tail' || column.key === 'miss'">
+                <template v-if="column.key === 'name'">
+                  <component :is="CategoryCell" :label="record.name" />
+                </template>
+                <template v-else-if="column.key === 'top5' || column.key === 'tail' || column.key === 'miss'">
                   <span>{{ record.a[column.key] }} → {{ record.b[column.key] }}</span>
                   <span :class="deltaClass(record[`${column.key}Delta`], column.key)">{{ deltaText(record[`${column.key}Delta`]) }}</span>
                 </template>
@@ -85,7 +88,7 @@
                   <a-tag :color="changeColor(record.change)" class="compare-change-tag">{{ changeLabel(record.change) }}</a-tag>
                 </template>
                 <template v-else-if="column.key === 'category'">
-                  <span class="compare-category">{{ record.category }}</span>
+                  <component :is="CategoryCell" :label="record.category" />
                 </template>
                 <template v-else-if="column.key === 'actions'">
                   <a-tooltip title="基准快照该题召回列表">
@@ -111,7 +114,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, h, onBeforeUnmount, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   getBenchmarkSnapshot,
@@ -297,6 +300,9 @@ function deltaClass(delta: number, key: string): string {
 function rowClassName(record: CompareRow): string {
   return record.change === 'flat' ? '' : 'compare-row-changed'
 }
+
+/** 类别 / 分类列统一渲染：「类别计数变化」与「逐项名次 / 入榜出榜」两处复用同一口径 */
+const CategoryCell = (props: { label: string }) => h('span', { class: 'compare-category' }, props.label)
 
 const categoryColumns = [
   { key: 'name', title: '类别' },
