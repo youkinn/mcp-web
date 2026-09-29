@@ -8,7 +8,7 @@
     :body-style="{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }"
   >
     <div class="compare-bar">
-      <span class="compare-base">{{ shortRunId(baseRunId ?? '') }}</span>
+      <span class="compare-base">{{ formatBenchmarkTime(baseItem?.time ?? '') }}</span>
       <span class="compare-vs">vs</span>
       <a-select
         v-model:value="targetRunId"
@@ -24,8 +24,8 @@
 
     <template v-else-if="comparison">
       <p class="compare-meta">
-        基准 {{ shortRunId(comparison.runIdA) }}（{{ formatBenchmarkTime(comparison.timeA) }}）
-        vs {{ shortRunId(comparison.runIdB) }}（{{ formatBenchmarkTime(comparison.timeB) }}）
+        基准 {{ formatBenchmarkTime(comparison.timeA) }}
+        vs {{ formatBenchmarkTime(comparison.timeB) }}
       </p>
 
       <a-tabs v-model:activeKey="resultTab" size="small" class="compare-tabs">
@@ -163,7 +163,7 @@ const noCandidate = computed(() => props.open && !!props.baseRunId && candidates
 const candidateOptions = computed(() =>
   candidates.value.map((i) => ({
     value: i.runId,
-    label: `${shortRunId(i.runId)} · ${formatBenchmarkTime(i.time)} · 通过 ${i.summary.top5}/${i.summary.total}`,
+    label: `${formatBenchmarkTime(i.time)} · 通过 ${i.summary.top5}/${i.summary.total}`,
   })),
 )
 
@@ -243,10 +243,6 @@ function openCandidates(row: CompareRow, side: 'A' | 'B'): void {
   const index = rank - 1
   candidateModalHighlightId.value = index >= 0 && index < item.candidates.length ? item.candidates[index].id : null
   candidateModalOpen.value = true
-}
-
-function shortRunId(runId: string): string {
-  return runId.replace(/^feat-A015-/, '')
 }
 
 function formatBenchmarkTime(raw: string): string {

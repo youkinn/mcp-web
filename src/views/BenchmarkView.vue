@@ -33,6 +33,9 @@
           <a-button type="primary" size="large" :loading="runLoading" :disabled="runLoading" @click="onRun">
             执行
           </a-button>
+          <a-button danger size="large" :loading="runAborting" :disabled="!runLoading || runAborting" @click="onAbortRun">
+            停止
+          </a-button>
         </div>
       </div>
 
@@ -58,9 +61,6 @@
           <a-tag color="green">通过 {{ snapshotData.summary.top5 }}/{{ snapshotData.summary.total }}</a-tag>
           <a-tag color="gold">兜底 {{ snapshotData.summary.tail }}</a-tag>
           <a-tag color="red">未命中 {{ snapshotData.summary.miss }}</a-tag>
-          <a-tag v-if="snapshotData.summary.elapsedMs != null" color="blue">
-            耗时 {{ formatRunElapsed(snapshotData.summary.elapsedMs) }}
-          </a-tag>
         </div>
 
         <a-tabs v-model:activeKey="activeTab" class="bench-tabs" @change="onTabChange">
@@ -258,6 +258,7 @@ import BenchmarkCompareModal from '../components/BenchmarkCompareModal.vue'
 import CandidateListModal from '../components/CandidateListModal.vue'
 import SangoChapterReader from '../components/SangoChapterReader.vue'
 import {
+  abortBenchmarkRun,
   getBenchmarkHistory,
   getBenchmarkLatest,
   getBenchmarkSnapshot,
@@ -315,6 +316,8 @@ const selectedRunId = ref<string | null>(null)
 const historyItems = ref<BenchmarkHistoryItem[]>([])
 const historyLoading = ref(false)
 const runLoading = ref(false)
+/** 停止请求在途：防重复点击（此时仍属执行中，runLoading 未清） */
+const runAborting = ref(false)
 const compareOpen = ref(false)
 const compareBaseRunId = ref<string | null>(null)
 const filter = ref<BenchmarkFilter>('all')
@@ -405,19 +408,23 @@ function rerankWarn(item: BenchmarkHistoryItem): boolean {
   return Boolean(rerank) && rerank?.mode === 'on' && rerank.wired === false
 }
 
-/** 「重排」列 tooltip：每行「中文含义：变量名=实际值（说明）」；老快照无字段则说明未记录 */
+/** 「重排」列 tooltip：每行「中文含义：实际值（说明）」，不暴露 env 键名；老快照无字段则说明未记录 */
 function rerankTip(item: BenchmarkHistoryItem): string[] {
   const rerank = item.summary?.rerank
   if (!rerank) return ['该快照早于字段追加，未记录重排配置']
-  const lines = [
-    `重排总开关：SANGO_RERANKER=${rerank.mode}（on=接入 cross-encoder 重排；off=关闭）`,
-    `重排窗口：SANGO_RERANKER_WINDOW=${rerank.window}（规则序前 N 名参与重排打分）`,
-    `截断档位：SANGO_RERANKER_MAX_TOKENS=${rerank.maxTokens}（单条文本 token 上限）`,
-    `桶内批量：SANGO_RERANKER_BATCH=${rerank.batch}（单次推理批量）`,
-    `单会话线程：SANGO_RERANKER_INTRA_THREADS=${rerank.intraThreads ?? 'null'}（推理线程数）`,
+  const switchLine =
+    rerank.mode !== 'on'
+      ? '重排总开关：关'
+      : rerank.wired === false
+        ? '重排总开关：开（未接入：权重缺失，实际退回规则序）'
+        : '重排总开关：开（本次已接入 cross-encoder 重排）'
+  return [
+    switchLine,
+    `重排窗口：${rerank.window}（规则序前 ${rerank.window} 名参与重排打分）`,
+    `截断档位：${rerank.maxTokens}（单条文本 token 上限）`,
+    `桶内批量：${rerank.batch}（单次推理批量）`,
+    `单会话线程：${rerank.intraThreads ?? 'null'}（推理线程数）`,
   ]
-  if (rerank.wired === false) lines.push('本次权重未接入，实际退回规则序')
-  return lines
 }
 
 const filterLabel = computed(() => filterOptions.find((o) => o.value === filter.value)?.label ?? '')
@@ -790,8 +797,8 @@ async function loadHistory(): Promise<void> {
 
 // ── 执行：异步 job + 轮询（bug-00049 B 案）──
 
-/** 轮询间隔 3s（负责人定 3–5s，避免过于频繁） */
-const RUN_POLL_INTERVAL_MS = 3000
+/** 轮询间隔 5s（负责人 2026-09-29 定：3–5s 一次，该接口耗时 3–10 分钟，太频繁没必要） */
+const RUN_POLL_INTERVAL_MS = 5000
 /** 轮询上限 10 分钟（远超实测 3.5–5 分钟）；超时给明确文案，避免长超时误报 */
 const RUN_POLL_TIMEOUT_MS = 600_000
 
@@ -832,7 +839,7 @@ async function finishBenchmarkRun(runId: string): Promise<void> {
   }
 }
 
-/** 轮询 run-status：running 3s 后下一轮；done 拉快照 + 刷新历史；failed / 超时 / idle 收尾并清句柄 */
+/** 轮询 run-status：running 5s 后下一轮；done 拉快照 + 刷新历史；failed / aborted / 超时 / idle 收尾并清句柄 */
 function pollBenchmarkRun(runId: string, startedAt: number): void {
   const token = ++runPollToken
   const tick = async (): Promise<void> => {
@@ -856,10 +863,16 @@ function pollBenchmarkRun(runId: string, startedAt: number): void {
       runPollTimer = setTimeout(() => void tick(), RUN_POLL_INTERVAL_MS)
       return
     }
-    // 终态：先清轮询句柄与「执行中」，失败只留错误文案
+    // 终态：先清轮询句柄与「执行中」（aborted 不落快照，只刷新历史）
     stopRunPolling()
     if (status.state === 'failed') {
       message.error(status.error ? `评测执行失败：${status.error}` : '评测执行失败')
+      await loadHistory()
+      return
+    }
+    if (status.state === 'aborted') {
+      // 停止不落快照：不清快照、不按 runId 拉快照，仅提示 + 刷新历史
+      message.info('已停止（未落快照）')
       await loadHistory()
       return
     }
@@ -887,6 +900,23 @@ async function onRun(): Promise<void> {
   }
 }
 
+/** 点击「停止」：受理后清轮询 + 解除执行中；409 视为已结束；其它错误保持执行中让轮询继续收敛 */
+async function onAbortRun(): Promise<void> {
+  if (runAborting.value) return
+  runAborting.value = true
+  try {
+    const { accepted } = await abortBenchmarkRun()
+    stopRunPolling()
+    message.info(accepted ? '已停止（未落快照）' : '本次执行已结束')
+    await loadHistory()
+  } catch (err) {
+    // 未受理：不假装停成功，保持「执行中」，轮询继续收敛到终态
+    message.error(getErrorMessage(err))
+  } finally {
+    runAborting.value = false
+  }
+}
+
 /** 页面进入时若后端仍在执行 → 恢复「执行中」并继续轮询（刷新不丢状态） */
 async function resumeRunningBenchmark(): Promise<void> {
   try {
@@ -904,9 +934,9 @@ async function resumeRunningBenchmark(): Promise<void> {
 // ── 历史切换 ──
 
 const historyColumns = [
-  { key: 'time', title: '时间', width: 210 },
   { key: 'summary', title: '摘要' },
   { key: 'rerank', title: '重排', width: 120, align: 'center' },
+  { key: 'time', title: '时间', width: 210 },
   { key: 'elapsed', title: '耗时', width: 100, align: 'center' },
   { key: 'actions', title: '操作', width: 90, align: 'center' },
 ]

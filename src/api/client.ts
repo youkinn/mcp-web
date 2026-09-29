@@ -964,7 +964,7 @@ export interface BenchmarkHistoryItem {
   summary: BenchmarkSummary
 }
 
-export type BenchmarkRunState = 'running' | 'done' | 'failed' | 'idle'
+export type BenchmarkRunState = 'running' | 'done' | 'failed' | 'aborted' | 'idle'
 
 export interface BenchmarkRunStatus {
   state: BenchmarkRunState
@@ -1000,10 +1000,31 @@ export async function startBenchmarkRun(): Promise<BenchmarkRunStart> {
   }
 }
 
-/** GET run-status：执行中页面每 1.5s 轮询；idle 表示当前无 run */
+/** GET run-status：执行中页面每 5s 轮询；state 'aborted' = 已停止（不落快照）、'idle' 表示当前无 run */
 export async function getBenchmarkRunStatus(): Promise<BenchmarkRunStatus> {
   const { data } = await benchmarkClient.get<ApiResponse<BenchmarkRunStatus>>('/dev/benchmark/run-status')
   return unwrapData(data)
+}
+
+/** 停止执行结果：accepted=true 后端已受理停止；false = 409 已不在跑（视为本次执行已结束，不抛错） */
+export interface BenchmarkAbortResult {
+  accepted: boolean
+}
+
+/** POST run-abort：受理停止返回 200 'aborted'；409「no running benchmark」视为已结束（不抛错给页面） */
+export async function abortBenchmarkRun(): Promise<BenchmarkAbortResult> {
+  try {
+    const { data } = await benchmarkClient.post<ApiResponse<{ state: string }>>('/dev/benchmark/run-abort')
+    if (data.code !== 200 || data.data === null) {
+      throw new Error(data.message || '请求失败，请稍后重试。')
+    }
+    return { accepted: true }
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response?.status === 409) {
+      return { accepted: false }
+    }
+    throw err
+  }
 }
 
 /** 最近一次快照；无快照时后端 200 + data:null，返回 null（页面空态） */

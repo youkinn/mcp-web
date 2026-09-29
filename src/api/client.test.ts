@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert'
 import { afterEach, describe, it, mock } from 'node:test'
 import {
+  abortBenchmarkRun,
   apiClient,
   benchmarkClient,
   clearCache,
@@ -15,6 +16,7 @@ import {
   getBenchmarkSnapshot,
   fetchLogDetail,
   fetchLogList,
+  getErrorMessage,
   fetchMisjudge,
   fetchSangoChapter,
   fetchSimilarityDistribution,
@@ -569,6 +571,48 @@ describe('评测执行接口（feat-A015）', () => {
     assert.equal(result.state, 'running')
     assert.equal(result.runId, 'feat-A015-2026-09-29-1500')
     assert.equal(result.elapsedMs, 4200)
+  })
+
+  it('getBenchmarkRunStatus 透传停止终态 state=aborted（bug-00049 追加）', async () => {
+    mock.method(benchmarkClient, 'get', async () => okEnvelope({ state: 'aborted', runId: 'feat-A015-2026-09-29-1500' }))
+    const result = await getBenchmarkRunStatus()
+    assert.equal(result.state, 'aborted')
+  })
+
+  it('abortBenchmarkRun POST /dev/benchmark/run-abort 200 受理返回 accepted=true', async () => {
+    mock.method(benchmarkClient, 'post', async (url: string) => {
+      assert.equal(url, '/dev/benchmark/run-abort')
+      return okEnvelope({ state: 'aborted' })
+    })
+    const result = await abortBenchmarkRun()
+    assert.equal(result.accepted, true)
+  })
+
+  it('abortBenchmarkRun 409 no running benchmark 视为已结束（accepted=false 不抛错）', async () => {
+    mock.method(benchmarkClient, 'post', async () => {
+      throw Object.assign(new Error('no running benchmark'), {
+        isAxiosError: true,
+        response: { status: 409, data: { code: 409, message: 'no running benchmark', data: { runId: null } } },
+      })
+    })
+    const result = await abortBenchmarkRun()
+    assert.equal(result.accepted, false)
+  })
+
+  it('abortBenchmarkRun 其它错误照常抛出（不假装停成功，页面取服务端 message）', async () => {
+    mock.method(benchmarkClient, 'post', async () => {
+      throw Object.assign(new Error('boom'), {
+        isAxiosError: true,
+        response: { status: 500, data: { code: 500, message: 'abort failed', data: null } },
+      })
+    })
+    await assert.rejects(
+      () => abortBenchmarkRun(),
+      (err: unknown) => {
+        assert.equal(getErrorMessage(err), 'abort failed')
+        return true
+      },
+    )
   })
 
   it('getBenchmarkHistory GET /sango-bench/dev/benchmark/history 并解包列表（含新追加 elapsedMs / rerank）', async () => {
