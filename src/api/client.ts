@@ -380,8 +380,8 @@ export const apiClient = axios.create({
 // 导出供 node:test 单测以 mock.method 打桩；dev 评测接口独立旁路：基址走 VITE_BENCHMARK_API_BASE（默认 /sango-bench，不挂 /api 前缀）
 export const benchmarkClient = axios.create({
   baseURL: import.meta.env?.VITE_BENCHMARK_API_BASE || '/sango-bench',
-  // 完整回归可达数十秒，超出 apiClient 的 30s 常规超时
-  timeout: 120_000,
+  // 完整回归实测 3.5–5 分钟（历史最长 9 分钟），超出 apiClient 的 30s 常规超时；bug-00047 A 案：放宽到 5 分钟
+  timeout: 300_000,
   headers: {
     'Content-Type': 'application/json',
   },

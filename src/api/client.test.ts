@@ -525,9 +525,9 @@ describe('缓存控制台接口（feat-A013）', () => {
 // ── 评测执行（feat-A015）──
 
 describe('评测执行接口（feat-A015）', () => {
-  it('benchmark 客户端基址为 /sango-bench（不挂 /api 前缀，超时放宽供完整回归）', () => {
+  it('benchmark 客户端基址为 /sango-bench（不挂 /api 前缀，超时放宽 5 分钟供完整回归，bug-00047 A 案）', () => {
     assert.equal(benchmarkClient.defaults.baseURL, '/sango-bench')
-    assert.equal(benchmarkClient.defaults.timeout, 120_000)
+    assert.equal(benchmarkClient.defaults.timeout, 300_000)
   })
 
   it('postBenchmarkRun POST /sango-bench/dev/benchmark/run 并解包完整快照', async () => {

@@ -171,7 +171,7 @@
             :columns="historyColumns"
             :data-source="historyItems"
             :row-key="(item: BenchmarkHistoryItem) => item.runId"
-            :loading="historyLoading"
+            :loading="historyLoading || snapshotLoading"
             :pagination="{ pageSize: 5 }"
             size="small"
             :row-class-name="historyRowClass"
@@ -184,6 +184,9 @@
               </template>
               <template v-else-if="column.key === 'time'">{{ formatBenchmarkTime(record.time) }}</template>
               <template v-else-if="column.key === 'summary'">{{ historySummaryText(record) }}</template>
+              <template v-else-if="column.key === 'actions'">
+                <a-button type="link" size="small" @click.stop="openCompare(record)">比较</a-button>
+              </template>
             </template>
           </a-table>
         </section>
@@ -216,6 +219,7 @@
       :chapter-title="readerChapterTitle"
       :chunk-id="readerChunkId"
     />
+    <BenchmarkCompareModal v-model:open="compareOpen" :history-items="historyItems" :base-run-id="compareBaseRunId" />
     <a-modal
       v-model:open="candidateModalOpen"
       :title="`召回列表（${candidateModalResult?.candidates.length ?? 0} 个）`"
@@ -246,6 +250,7 @@ import { BarChart, LineChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import type { EChartsType } from 'echarts/core'
+import BenchmarkCompareModal from '../components/BenchmarkCompareModal.vue'
 import SangoChapterReader from '../components/SangoChapterReader.vue'
 import {
   getBenchmarkHistory,
@@ -305,6 +310,8 @@ const historyLoading = ref(false)
 const runLoading = ref(false)
 /** 本次执行整体耗时（点击执行 → 执行结束，含检索/写入/历史刷新全部环节，非单题耗时）；null=未执行本次 */
 const runElapsedMs = ref<number | null>(null)
+const compareOpen = ref(false)
+const compareBaseRunId = ref<string | null>(null)
 const filter = ref<BenchmarkFilter>('all')
 const expandedCategories = ref<string[]>([])
 const ACTIVE_TAB_KEY = 'benchmark-active-tab'
@@ -777,6 +784,7 @@ const historyColumns = [
   { key: 'runId', title: 'runId', width: 230 },
   { key: 'time', title: '时间', width: 210 },
   { key: 'summary', title: '摘要' },
+  { key: 'actions', title: '操作', width: 90, align: 'center' },
 ]
 
 function historySummaryText(item: BenchmarkHistoryItem): string {
@@ -792,8 +800,13 @@ function historyRowHandlers(record: BenchmarkHistoryItem): { onClick: () => void
   return { onClick: () => void onHistoryClick(record) }
 }
 
+function openCompare(item: BenchmarkHistoryItem): void {
+  compareBaseRunId.value = item.runId
+  compareOpen.value = true
+}
+
 async function onHistoryClick(item: BenchmarkHistoryItem): Promise<void> {
-  if (item.runId === selectedRunId.value || runLoading.value) return
+  if (item.runId === selectedRunId.value || runLoading.value || snapshotLoading.value) return
   snapshotLoading.value = true
   try {
     const data = await getBenchmarkSnapshot(item.runId)
