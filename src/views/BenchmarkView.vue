@@ -171,7 +171,7 @@
             :columns="historyColumns"
             :data-source="historyItems"
             :row-key="(item: BenchmarkHistoryItem) => item.runId"
-            :loading="historyLoading || snapshotLoading"
+            :loading="historyLoading || snapshotLoading || runLoading"
             :pagination="{ pageSize: 5 }"
             size="small"
             :row-class-name="historyRowClass"
@@ -185,7 +185,7 @@
               <template v-else-if="column.key === 'time'">{{ formatBenchmarkTime(record.time) }}</template>
               <template v-else-if="column.key === 'summary'">{{ historySummaryText(record) }}</template>
               <template v-else-if="column.key === 'actions'">
-                <a-button type="link" size="small" @click.stop="openCompare(record)">比较</a-button>
+                <a-button type="link" size="small" :disabled="runLoading" @click.stop="openCompare(record)">比较</a-button>
               </template>
             </template>
           </a-table>
@@ -777,14 +777,23 @@ const historyColumns = [
 
 function historySummaryText(item: BenchmarkHistoryItem): string {
   const s = item.summary
-  return `通过 ${s.top5}/${s.total}（${formatRatio(s.top5, s.total)}） · 兜底 ${s.tail} · 未命中 ${s.miss}`
+  const text = `通过 ${s.top5}/${s.total}（${formatRatio(s.top5, s.total)}） · 兜底 ${s.tail} · 未命中 ${s.miss}`
+  // 整体耗时只有本次新跑出的快照才有（历史条目后端不带耗时字段）：仅本次执行行在摘要后追加
+  if (runElapsedMs.value === null || item.runId !== selectedRunId.value) return text
+  return `${text} · 耗时 ${formatRunElapsed(runElapsedMs.value)}`
 }
+
+/** 历史表交互锁：执行中 / 快照加载中不挂点击（与 onHistoryClick 守卫同口径），避免「看着能点、点了没反应」 */
+const historyLocked = computed(() => runLoading.value || snapshotLoading.value)
 
 function historyRowClass(record: BenchmarkHistoryItem): string {
-  return record.runId === selectedRunId.value ? 'history-row-current' : ''
+  const classes = [record.runId === selectedRunId.value ? 'history-row-current' : '']
+  if (historyLocked.value) classes.push('history-row-locked')
+  return classes.filter(Boolean).join(' ')
 }
 
-function historyRowHandlers(record: BenchmarkHistoryItem): { onClick: () => void } {
+function historyRowHandlers(record: BenchmarkHistoryItem): { onClick?: () => void } {
+  if (historyLocked.value) return {}
   return { onClick: () => void onHistoryClick(record) }
 }
 
@@ -1093,6 +1102,11 @@ onBeforeUnmount(() => {
 
 .history-table :deep(.ant-table-row) {
   cursor: pointer;
+}
+
+/* 执行中 / 快照加载中：光标明示不可点（与历史表交互锁同口径） */
+.history-table :deep(.history-row-locked) {
+  cursor: not-allowed;
 }
 
 .history-table :deep(.history-row-current .history-run) {
