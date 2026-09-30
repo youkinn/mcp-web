@@ -59,7 +59,6 @@
           <span class="bench-current-run" title="点击复制快照 Id" @click="copyRunId(snapshotData.runId)">{{ snapshotData.runId }}</span>
           <span class="bench-current-time">{{ formatBenchmarkTime(snapshotData.time) }}</span>
           <a-tag color="green">通过 {{ snapshotData.summary.top5 }}/{{ judgedOf(snapshotData.summary) }}</a-tag>
-          <a-tag v-if="noAnchorCountOf(snapshotData.summary) > 0" class="no-anchor-tag">未参与评分 {{ noAnchorCountOf(snapshotData.summary) }}</a-tag>
           <a-tag color="gold">兜底 {{ snapshotData.summary.tail }}</a-tag>
           <a-tag color="red">未命中 {{ snapshotData.summary.miss }}</a-tag>
         </div>
@@ -89,7 +88,6 @@
               <template v-else-if="column.key === 'noAnchor'">
                 <span :class="record.noAnchor > 0 ? 'no-anchor-num' : ''">{{ record.noAnchor }}</span>
               </template>
-              <template v-else-if="column.key === 'judged'">{{ record.judged }}</template>
               <template v-else-if="column.key === 'top5'">{{ record.top5 }}</template>
               <template v-else-if="column.key === 'fail'">{{ record.tail + record.miss }}</template>
               <template v-else-if="column.key === 'passRate'">
@@ -104,12 +102,11 @@
                   <a-table-summary-cell :index="0" />
                   <a-table-summary-cell :index="1" class="sum-cell-name">合计</a-table-summary-cell>
                   <a-table-summary-cell :index="2" align="center" class="sum-cell">{{ summaryTotal?.total ?? 0 }}</a-table-summary-cell>
-                  <a-table-summary-cell :index="3" align="center" class="sum-cell no-anchor-num">{{ summaryTotal?.noAnchor ?? 0 }}</a-table-summary-cell>
-                  <a-table-summary-cell :index="4" align="center" class="sum-cell">{{ summaryTotal?.judged ?? 0 }}</a-table-summary-cell>
+                  <a-table-summary-cell :index="3" align="center" class="sum-cell">{{ summaryTotal?.top5 ?? 0 }}</a-table-summary-cell>
+                  <a-table-summary-cell :index="4" align="center" class="sum-cell">{{ summaryTotal?.fail ?? 0 }}</a-table-summary-cell>
                   <a-table-summary-cell :index="5" align="center" class="sum-cell">{{ summaryTotal?.top5 ?? 0 }}</a-table-summary-cell>
-                  <a-table-summary-cell :index="6" align="center" class="sum-cell">{{ summaryTotal?.fail ?? 0 }}</a-table-summary-cell>
-                  <a-table-summary-cell :index="7" align="center" class="sum-cell">{{ summaryTotal?.top5 ?? 0 }}</a-table-summary-cell>
-                  <a-table-summary-cell :index="8" align="center" class="sum-cell">
+                  <a-table-summary-cell :index="6" align="center" class="sum-cell no-anchor-num">{{ summaryTotal?.noAnchor ?? 0 }}</a-table-summary-cell>
+                  <a-table-summary-cell :index="7" align="center" class="sum-cell">
                     {{ formatRatio(summaryTotal?.top5 ?? 0, summaryTotal?.judged ?? 0) }}
                   </a-table-summary-cell>
                 </a-table-summary-row>
@@ -470,11 +467,10 @@ interface CategoryRow {
 const categoryColumns = [
   { key: 'name', title: '类别' },
   { key: 'total', title: '总题数', align: 'center', width: 90 },
-  { key: 'noAnchor', title: '未参与评分', align: 'center', width: 100 },
-  { key: 'judged', title: '可判题数', align: 'center', width: 100 },
   { key: 'top5', title: '通过数', align: 'center', width: 90 },
   { key: 'fail', title: '失败数', align: 'center', width: 90 },
   { key: 'hit5', title: 'Top5命中数', align: 'center', width: 110 },
+  { key: 'noAnchor', title: '未参与评分', align: 'center', width: 100 },
   { key: 'passRate', title: '通过率', align: 'center', width: 110 },
 ]
 
