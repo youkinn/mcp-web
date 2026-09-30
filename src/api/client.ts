@@ -897,8 +897,12 @@ export interface BenchmarkSummary {
   top3: number
   top10: number
   inPool50: number
-  noAnchorCount: number
-  noAnchor: string[]
+  /** 可判题数 = total - noAnchorCount（bug-00052：零锚题不参与判定，通过率分母用它）；老快照无此字段，读取侧需容错 */
+  judged?: number
+  /** 零锚（未参与评分）题数；老快照无此字段，读取侧需容错 */
+  noAnchorCount?: number
+  /** 零锚题 id 清单；老快照无此字段 */
+  noAnchor?: string[]
   category: Record<string, BenchmarkCategorySummary>
   runId: string
   /** 服务端本次 run 耗时（毫秒）；老快照无此字段，读取侧需容错 */
@@ -948,6 +952,8 @@ export interface BenchmarkResultItem {
   status: BenchmarkStatus
   hit: BenchmarkHit | null
   candidates: BenchmarkCandidate[]
+  /** 零锚题（无回目锚，未参与评分）；老快照无此字段，缺省视为 false */
+  noAnchor?: boolean
 }
 
 export interface BenchmarkData {

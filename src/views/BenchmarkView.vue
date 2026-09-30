@@ -58,7 +58,8 @@
           <span class="bench-current-label">当前快照</span>
           <span class="bench-current-run" title="点击复制快照 Id" @click="copyRunId(snapshotData.runId)">{{ snapshotData.runId }}</span>
           <span class="bench-current-time">{{ formatBenchmarkTime(snapshotData.time) }}</span>
-          <a-tag color="green">通过 {{ snapshotData.summary.top5 }}/{{ snapshotData.summary.total }}</a-tag>
+          <a-tag color="green">通过 {{ snapshotData.summary.top5 }}/{{ judgedOf(snapshotData.summary) }}</a-tag>
+          <a-tag v-if="noAnchorCountOf(snapshotData.summary) > 0" class="no-anchor-tag">未参与评分 {{ noAnchorCountOf(snapshotData.summary) }}</a-tag>
           <a-tag color="gold">兜底 {{ snapshotData.summary.tail }}</a-tag>
           <a-tag color="red">未命中 {{ snapshotData.summary.miss }}</a-tag>
         </div>
@@ -85,10 +86,14 @@
                 <span class="cat-name">{{ record.name }}</span>
               </template>
               <template v-else-if="column.key === 'total'">{{ record.total }}</template>
+              <template v-else-if="column.key === 'noAnchor'">
+                <span :class="record.noAnchor > 0 ? 'no-anchor-num' : ''">{{ record.noAnchor }}</span>
+              </template>
+              <template v-else-if="column.key === 'judged'">{{ record.judged }}</template>
               <template v-else-if="column.key === 'top5'">{{ record.top5 }}</template>
               <template v-else-if="column.key === 'fail'">{{ record.tail + record.miss }}</template>
               <template v-else-if="column.key === 'passRate'">
-                <span :class="rateClass(record.passRate)">{{ formatRatio(record.top5, record.total) }}</span>
+                <span :class="rateClass(record.passRate)">{{ formatRatio(record.top5, record.judged) }}</span>
               </template>
               <template v-else-if="column.key === 'hit5'">{{ record.top5 }}</template>
             </template>
@@ -99,11 +104,13 @@
                   <a-table-summary-cell :index="0" />
                   <a-table-summary-cell :index="1" class="sum-cell-name">合计</a-table-summary-cell>
                   <a-table-summary-cell :index="2" align="center" class="sum-cell">{{ summaryTotal?.total ?? 0 }}</a-table-summary-cell>
-                  <a-table-summary-cell :index="3" align="center" class="sum-cell">{{ summaryTotal?.top5 ?? 0 }}</a-table-summary-cell>
-                  <a-table-summary-cell :index="4" align="center" class="sum-cell">{{ summaryTotal?.fail ?? 0 }}</a-table-summary-cell>
+                  <a-table-summary-cell :index="3" align="center" class="sum-cell no-anchor-num">{{ summaryTotal?.noAnchor ?? 0 }}</a-table-summary-cell>
+                  <a-table-summary-cell :index="4" align="center" class="sum-cell">{{ summaryTotal?.judged ?? 0 }}</a-table-summary-cell>
                   <a-table-summary-cell :index="5" align="center" class="sum-cell">{{ summaryTotal?.top5 ?? 0 }}</a-table-summary-cell>
-                  <a-table-summary-cell :index="6" align="center" class="sum-cell">
-                    {{ formatRatio(summaryTotal?.top5 ?? 0, summaryTotal?.total ?? 0) }}
+                  <a-table-summary-cell :index="6" align="center" class="sum-cell">{{ summaryTotal?.fail ?? 0 }}</a-table-summary-cell>
+                  <a-table-summary-cell :index="7" align="center" class="sum-cell">{{ summaryTotal?.top5 ?? 0 }}</a-table-summary-cell>
+                  <a-table-summary-cell :index="8" align="center" class="sum-cell">
+                    {{ formatRatio(summaryTotal?.top5 ?? 0, summaryTotal?.judged ?? 0) }}
                   </a-table-summary-cell>
                 </a-table-summary-row>
               </a-table-summary>
@@ -113,7 +120,10 @@
               <div class="cat-detail">
                 <div class="cat-detail-head">
                   <a-tag color="blue">{{ record.name }}</a-tag>
-                  <span>共 {{ record.total }} 题，当前筛选「{{ filterLabel }}」显示 {{ detailRowsOf(record.name).length }} 题</span>
+                  <span>
+                    共 {{ record.total }} 题，当前筛选「{{ filterLabel }}」显示 {{ detailRowsOf(record.name).length }} 题
+                    <template v-if="noAnchorInFilter(record.name) > 0">，未参与评分 {{ noAnchorInFilter(record.name) }} 题</template>
+                  </span>
                 </div>
                 <div v-if="detailRowsOf(record.name).length === 0" class="cat-detail-empty">该筛选下此类别无题目</div>
                 <a-table
@@ -124,6 +134,7 @@
                   :pagination="false"
                   size="small"
                   table-layout="fixed"
+                  :row-class-name="questionRowClass"
                   class="question-table"
                 >
                   <template #bodyCell="{ column, record: q }">
@@ -147,10 +158,12 @@
                       </a-tooltip>
                     </template>
                     <template v-else-if="column.key === 'rank'">
-                      <span :class="{ 'rank-zero': q.rank === 0 }">{{ q.rank === 0 ? '未召回' : q.rank }}</span>
+                      <span v-if="isNoAnchor(q)" class="no-anchor-rank">—</span>
+                      <span v-else :class="{ 'rank-zero': q.rank === 0 }">{{ q.rank === 0 ? '未召回' : q.rank }}</span>
                     </template>
                     <template v-else-if="column.key === 'status'">
-                      <a-tag :color="statusColor(q.status)">{{ statusLabel(q.status) }}</a-tag>
+                      <a-tag v-if="isNoAnchor(q)" class="no-anchor-tag">未参与评分</a-tag>
+                      <a-tag v-else :color="statusColor(q.status)">{{ statusLabel(q.status) }}</a-tag>
                     </template>
                     <template v-else-if="column.key === 'candidates'">
                       <div v-if="q.candidates.length === 0" class="cand-empty">—</div>
@@ -260,6 +273,7 @@ import type { EChartsType } from 'echarts/core'
 import BenchmarkCompareModal from '../components/BenchmarkCompareModal.vue'
 import CandidateListModal from '../components/CandidateListModal.vue'
 import SangoChapterReader from '../components/SangoChapterReader.vue'
+import { isNoAnchor, judgedOf, noAnchorCountOf } from '../utils/benchmarkJudged'
 import {
   abortBenchmarkRun,
   getBenchmarkHistory,
@@ -445,6 +459,8 @@ function statusColor(status: unknown): string {
 interface CategoryRow {
   name: string
   total: number
+  noAnchor: number
+  judged: number
   top5: number
   tail: number
   miss: number
@@ -454,23 +470,42 @@ interface CategoryRow {
 const categoryColumns = [
   { key: 'name', title: '类别' },
   { key: 'total', title: '总题数', align: 'center', width: 90 },
+  { key: 'noAnchor', title: '未参与评分', align: 'center', width: 100 },
+  { key: 'judged', title: '可判题数', align: 'center', width: 100 },
   { key: 'top5', title: '通过数', align: 'center', width: 90 },
   { key: 'fail', title: '失败数', align: 'center', width: 90 },
   { key: 'hit5', title: 'Top5命中数', align: 'center', width: 110 },
   { key: 'passRate', title: '通过率', align: 'center', width: 110 },
 ]
 
+/** 各类别零锚题数（全量 results，与汇总表 total 的服务端类别口径配套，不随筛选变化） */
+const noAnchorByCategory = computed<Map<string, number>>(() => {
+  const map = new Map<string, number>()
+  for (const item of snapshotData.value?.results ?? []) {
+    if (!isNoAnchor(item)) continue
+    const name = categoryOf(item)
+    map.set(name, (map.get(name) ?? 0) + 1)
+  }
+  return map
+})
+
 const fullCategoryRows = computed<CategoryRow[]>(() => {
   const summary = snapshotData.value?.summary
   if (!summary) return []
-  return Object.entries(summary.category).map(([name, cat]) => ({
-    name,
-    total: cat.total,
-    top5: cat.top5,
-    tail: cat.tail,
-    miss: cat.miss,
-    passRate: cat.total > 0 ? cat.top5 / cat.total : null,
-  }))
+  return Object.entries(summary.category).map(([name, cat]) => {
+    const noAnchor = noAnchorByCategory.value.get(name) ?? 0
+    const judged = Math.max(0, cat.total - noAnchor)
+    return {
+      name,
+      total: cat.total,
+      noAnchor,
+      judged,
+      top5: cat.top5,
+      tail: cat.tail,
+      miss: cat.miss,
+      passRate: judged > 0 ? cat.top5 / judged : null,
+    }
+  })
 })
 
 const summaryTotal = computed(() => {
@@ -478,6 +513,8 @@ const summaryTotal = computed(() => {
   if (!summary) return null
   return {
     total: summary.total,
+    noAnchor: noAnchorCountOf(summary),
+    judged: judgedOf(summary),
     top5: summary.top5,
     fail: summary.tail + summary.miss,
   }
@@ -512,6 +549,16 @@ const questionColumns = [
 
 function detailRowsOf(category: string): BenchmarkResultItem[] {
   return visibleResults.value.filter((r) => categoryOf(r) === category)
+}
+
+/** 当前筛选下某类别零锚题数（与展开列表可见行配套） */
+function noAnchorInFilter(category: string): number {
+  return visibleResults.value.filter((r) => categoryOf(r) === category && isNoAnchor(r)).length
+}
+
+/** 明细行样式：零锚题整行灰显，一眼可辨「未参与评分」 */
+function questionRowClass(item: BenchmarkResultItem): string {
+  return isNoAnchor(item) ? 'question-row-no-anchor' : ''
 }
 
 function questionSeq(item: BenchmarkResultItem): number {
@@ -830,7 +877,7 @@ async function finishBenchmarkRun(runId: string): Promise<void> {
       expandedCategories.value = []
       candidateModalOpen.value = false
       message.success(
-        `评测完成：通过 ${data.summary.top5}/${data.summary.total}（${formatRatio(data.summary.top5, data.summary.total)}）`,
+        `评测完成：通过 ${data.summary.top5}/${judgedOf(data.summary)}（${formatRatio(data.summary.top5, judgedOf(data.summary))}）`,
       )
     } else {
       message.warning(`评测完成，但快照 ${runId} 不存在或已被清理`)
@@ -1271,6 +1318,26 @@ onBeforeUnmount(() => {
 
 .rank-zero {
   color: #c25b4e;
+}
+
+/* bug-00052 零锚题（未参与评分）展示：灰 tag / 灰数字 / 整行灰显 */
+.no-anchor-tag {
+  background: #eceeeb;
+  color: #8b9990;
+  border-color: #d7e0d7;
+}
+
+.no-anchor-num {
+  color: #8b9990;
+}
+
+.no-anchor-rank {
+  color: #8b9990;
+}
+
+.question-table :deep(.question-row-no-anchor > td) {
+  background: #f4f5f2 !important;
+  color: #8b9990;
 }
 
 .cand-empty {
