@@ -357,10 +357,11 @@ describe('分数整形（buildScoreRow / formatScore / boolText / sourceMeta）'
     assert.equal(boolText(null), '—')
   })
 
-  it('来源映射：lexical / vector / label 中文文案，未知来源回退原值', () => {
+  it('来源映射：lexical / vector / label / event 中文文案，未知来源回退原值', () => {
     assert.deepEqual(sourceMeta('lexical'), { text: '词法', color: 'blue' })
     assert.deepEqual(sourceMeta('vector'), { text: '向量', color: 'purple' })
     assert.deepEqual(sourceMeta('label'), { text: '标签', color: 'gold' })
+    assert.deepEqual(sourceMeta('event'), { text: '事件', color: 'geekblue' })
     assert.deepEqual(sourceMeta('unknown'), { text: 'unknown', color: 'default' })
   })
 
@@ -401,6 +402,57 @@ describe('分数整形（buildScoreRow / formatScore / boolText / sourceMeta）'
     const miss = buildScoreRow(fullDiagnostics.candidates[1], fullDiagnostics.funnel.topN)
     assert.equal(miss.labelHit, false)
     assert.equal(miss.hitLabelsTitle, '')
+  })
+
+  it('事件来源标签 tooltip：进窗候选按 placedChunkIds 展示命中事件名，未进窗候选兜底列出全部命中组，非事件候选 / 历史 trace 为空串', () => {
+    const eventHit: NonNullable<RetrievalDiagnostics['eventHit']> = {
+      degraded: false,
+      normVersion: '2e5f4f9d',
+      groupCount: 1,
+      groups: [
+        {
+          eventId: 'E05001',
+          eventName: '华容道义释曹操',
+          matchedAlias: '华容道义释曹操',
+          type: 'L1',
+          groupSize: 13,
+          placedCount: 2,
+          placedChunkIds: ['sanguo-yanyi:0050:c0007', 'sanguo-yanyi:0050:c0008'],
+        },
+      ],
+    }
+    const base: RetrievalCandidate = {
+      rank: 2,
+      chunkId: 'sanguo-yanyi:0050:c0007',
+      chapter: 50,
+      title: '诸葛亮智算华容 关云长义释曹操',
+      bm25: 5.7,
+      bm25Norm: 0.14,
+      cosine: 0.42,
+      labelHit: false,
+      finalScore: 0.57,
+      sources: ['event'],
+      injected: false,
+      cited: false,
+    }
+    // 进窗候选：eventHit.groups.placedChunkIds 精确匹配 → 该组事件名
+    const placed = buildScoreRow(base, 10, eventHit)
+    assert.equal(placed.hitEventsTitle, '华容道义释曹操')
+    // 池内未进窗候选：无法定位到具体组，兜底列出全部命中组名（单组命中即精确）
+    const pooled = buildScoreRow({ ...base, chunkId: 'sanguo-yanyi:0050:c0010', rank: 14 }, 10, eventHit)
+    assert.equal(pooled.hitEventsTitle, '华容道义释曹操')
+    // 非事件候选：即使有 eventHit 诊断也不展示事件名
+    const plain = buildScoreRow({ ...base, sources: ['lexical'] }, 10, eventHit)
+    assert.equal(plain.hitEventsTitle, '')
+    // 历史 trace 无 eventHit：不得出现 undefined 字样
+    const legacy = buildScoreRow(base, 10, undefined)
+    assert.equal(legacy.hitEventsTitle, '')
+    assert.doesNotMatch(legacy.hitEventsTitle, /undefined/)
+    // buildScoreRows / 第 N+1 名视图同样带事件名
+    const rows = buildScoreRows([base], 10, eventHit)
+    assert.equal(rows[0].hitEventsTitle, '华容道义释曹操')
+    const next = buildNextRankView({ ...base, rank: 11, gapToTopN: 0.19 }, eventHit)
+    assert.equal(next.hitEventsTitle, '华容道义释曹操')
   })
 })
 

@@ -172,6 +172,33 @@ export interface RetrievalDiagnostics {
     pinned: boolean
     chunkIds: string[]
   }
+  /** 事件命中诊断（feat-A018 §5.2）：历史 trace 无该字段，容错 undefined → 事件来源标签无事件名可展示 */
+  eventHit?: RetrievalEventHitDiagnostics
+}
+
+export interface RetrievalEventHitGroup {
+  eventId: string
+  eventName: string
+  /** 本组命中的 alias（归一化后 query 中子串命中者，组内最长） */
+  matchedAlias: string
+  type: 'L1' | 'L2' | 'L3'
+  /** 组内有效 chunk 引用总数（漂移剔除后） */
+  groupSize: number
+  /** 实际进出参条目的事件组 chunk 数 */
+  placedCount: number
+  /** 进出参条目的事件组 chunkId（L1/L2 按重排后出参序；L3 锚点组按事件内序） */
+  placedChunkIds: string[]
+}
+
+export interface RetrievalEventHitDiagnostics {
+  /** 事件路是否生效；false = 表加载失败或整表漂移降级（此时 groups 恒 []） */
+  degraded: boolean
+  /** 事件表 meta.normVersion；未加载为空串 */
+  normVersion: string
+  /** 命中事件组数；0 = 未命中事件路 */
+  groupCount: number
+  /** 命中组明细，按组优先级（命中 alias 长度降序，同长 eventId 升序） */
+  groups: RetrievalEventHitGroup[]
 }
 
 export interface RetrievalCandidate {

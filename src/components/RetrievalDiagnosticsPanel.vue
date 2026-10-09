@@ -222,6 +222,13 @@
                   </template>
                   <a-tag :color="source.color" size="small" class="diag-source-tag">{{ source.text }}</a-tag>
                 </a-tooltip>
+                <!-- 事件来源标签 tooltip：悬停展示命中的具体事件名（bug-00055） -->
+                <a-tooltip v-else-if="source.text === '事件' && record.hitEventsTitle" placement="topLeft">
+                  <template #title>
+                    <div class="diag-tooltip-lines">{{ record.hitEventsTitle }}</div>
+                  </template>
+                  <a-tag :color="source.color" size="small" class="diag-source-tag">{{ source.text }}</a-tag>
+                </a-tooltip>
                 <a-tag v-else :color="source.color" size="small" class="diag-source-tag">{{ source.text }}</a-tag>
               </template>
             </template>
@@ -274,14 +281,15 @@
             <div class="meta-row">
               <span class="meta-label">来源</span>
               <span class="meta-value">
-                <a-tag
-                  v-for="source in view.nextRank.sources"
-                  :key="source.text"
-                  :color="source.color"
-                  size="small"
-                >
-                  {{ source.text }}
-                </a-tag>
+                <template v-for="source in view.nextRank.sources" :key="source.text">
+                  <a-tooltip v-if="source.text === '事件' && view.nextRank.hitEventsTitle" placement="topLeft">
+                    <template #title>
+                      <div class="diag-tooltip-lines">{{ view.nextRank.hitEventsTitle }}</div>
+                    </template>
+                    <a-tag :color="source.color" size="small">{{ source.text }}</a-tag>
+                  </a-tooltip>
+                  <a-tag v-else :color="source.color" size="small">{{ source.text }}</a-tag>
+                </template>
                 <span v-if="view.nextRank.sources.length === 0">—</span>
               </span>
             </div>
