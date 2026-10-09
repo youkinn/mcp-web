@@ -108,6 +108,11 @@ const fullDiagnostics: RetrievalDiagnostics = {
     pinned: true,
     chunkIds: ['sanguo-yanyi:0001:c0001'],
   },
+  birthIntent: {
+    detected: true,
+    pinned: true,
+    chunkIds: ['sanguo-yanyi:0001:c0007'],
+  },
 }
 
 // 新 trace（bug-00046）：检索侧不改写问句，normalized == raw、rewrites 恒 []，扩展命中走 expansionHits
@@ -156,6 +161,19 @@ describe('buildDiagnosticsView 汇总视图', () => {
     assert.equal(view.funnel.pre.hint, REWRITE_STAGE_HINT)
     assert.equal(view.deathIntent.detected, true)
     assert.equal(view.deathIntent.chunkIds[0], 'sanguo-yanyi:0001:c0001')
+    assert.equal(view.birthIntent.detected, true)
+    assert.equal(view.birthIntent.pinned, true)
+    assert.equal(view.birthIntent.chunkIds[0], 'sanguo-yanyi:0001:c0007')
+  })
+
+  it('历史 trace 无 birthIntent 时默认不判定登场意图（面板不展示模块）', () => {
+    const legacy = { ...fullDiagnostics } as RetrievalDiagnostics
+    delete legacy.birthIntent
+    const view = buildDiagnosticsView(legacy, null)
+    assert.ok(view)
+    assert.equal(view.birthIntent.detected, false)
+    assert.equal(view.birthIntent.pinned, false)
+    assert.deepEqual(view.birthIntent.chunkIds, [])
   })
 
   it('diagnostics 为 null 时返回 null（老数据 / 未产出，前端不渲染面板）', () => {

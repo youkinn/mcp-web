@@ -143,6 +143,30 @@
         </div>
       </section>
 
+      <!-- 死亡意图（意图置顶模块，展示在候选分数之上） -->
+      <section v-if="view.deathIntent.detected && view.deathIntent.pinned" class="detail-section">
+        <h4 class="detail-section-title">死亡意图</h4>
+        <div class="death-intent">
+          <a-tag color="error">已判定死亡意图并置顶</a-tag>
+          <span class="diag-hint">被置顶候选：</span>
+          <a-tag v-for="chunkId in view.deathIntent.chunkIds" :key="chunkId" color="orange" size="small">
+            {{ chunkId }}
+          </a-tag>
+        </div>
+      </section>
+
+      <!-- 登场意图（人物首次登场类查询意图，与死亡意图同款展示；历史 trace 无 birthIntent 不展示） -->
+      <section v-if="view.birthIntent.detected && view.birthIntent.pinned" class="detail-section">
+        <h4 class="detail-section-title">登场意图</h4>
+        <div class="birth-intent">
+          <a-tag color="blue">已判定登场意图并置顶</a-tag>
+          <span class="diag-hint birth-hint">被置顶候选：</span>
+          <a-tag v-for="chunkId in view.birthIntent.chunkIds" :key="chunkId" color="cyan" size="small">
+            {{ chunkId }}
+          </a-tag>
+        </div>
+      </section>
+
       <!-- 候选分数表 -->
       <section class="detail-section">
         <h4 class="detail-section-title">候选分数</h4>
@@ -289,18 +313,6 @@
             <span class="env-label">向量维度</span>
             <span class="env-value">{{ view.env.vectorDimText }}</span>
           </div>
-        </div>
-      </section>
-
-      <!-- 死亡意图 -->
-      <section v-if="view.deathIntent.detected && view.deathIntent.pinned" class="detail-section">
-        <h4 class="detail-section-title">死亡意图</h4>
-        <div class="death-intent">
-          <a-tag color="error">已判定死亡意图并置顶</a-tag>
-          <span class="diag-hint">被置顶候选：</span>
-          <a-tag v-for="chunkId in view.deathIntent.chunkIds" :key="chunkId" color="orange" size="small">
-            {{ chunkId }}
-          </a-tag>
         </div>
       </section>
 
@@ -693,6 +705,22 @@ function onCopyChunkId(record: ScoreRowView) {
 .diag-hint {
   color: #cf1322;
   font-size: 12px;
+}
+
+/* 登场意图（与死亡意图同款展示，蓝系区分） */
+.birth-intent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  background: #e6f4ff;
+  border: 1px solid #91caff;
+  border-radius: 10px;
+}
+
+.birth-hint {
+  color: #0958d9;
 }
 </style>
 

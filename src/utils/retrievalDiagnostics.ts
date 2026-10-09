@@ -397,6 +397,11 @@ export interface DiagnosticsView {
     pinned: boolean
     chunkIds: string[]
   }
+  birthIntent: {
+    detected: boolean
+    pinned: boolean
+    chunkIds: string[]
+  }
   selfConsistency: SelfConsistencyView
 }
 
@@ -420,6 +425,11 @@ export function buildDiagnosticsView(
       detected: diagnostics.deathIntent.detected,
       pinned: diagnostics.deathIntent.pinned,
       chunkIds: diagnostics.deathIntent.chunkIds,
+    },
+    birthIntent: {
+      detected: diagnostics.birthIntent?.detected ?? false,
+      pinned: diagnostics.birthIntent?.pinned ?? false,
+      chunkIds: diagnostics.birthIntent?.chunkIds ?? [],
     },
     selfConsistency: buildSelfConsistency(diagnostics.funnel, diagnostics.candidates, citationCount),
   }

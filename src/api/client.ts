@@ -166,6 +166,12 @@ export interface RetrievalDiagnostics {
     pinned: boolean
     chunkIds: string[]
   }
+  /** 登场意图（人物首次登场类问法；与 deathIntent 同构。历史 trace 无该字段，容错 undefined → 面板不展示） */
+  birthIntent?: {
+    detected: boolean
+    pinned: boolean
+    chunkIds: string[]
+  }
 }
 
 export interface RetrievalCandidate {
