@@ -1,7 +1,8 @@
 import { strict as assert } from 'node:assert'
 import { describe, it } from 'node:test'
 import type { BenchmarkCategorySummary, BenchmarkData, BenchmarkResultItem } from '../api/client'
-import { categoryOfItem, compareSnapshots, isRankDown, isRankUp } from './benchmarkCompare.ts'
+import { categoryOfItem, compareGroupSnapshots, compareSnapshots, isRankDown, isRankUp } from './benchmarkCompare.ts'
+import type { BenchmarkGroupBucketSummary } from '../api/client'
 
 function item(id: string, question: string, rank: number, status: BenchmarkResultItem['status']): BenchmarkResultItem {
   return {
@@ -186,5 +187,111 @@ describe('历史快照比较（benchmarkCompare，bug-00047）', () => {
     assert.ok(bothRow)
     assert.equal(bothRow.itemA?.id, 'both')
     assert.equal(bothRow.itemB?.id, 'both')
+  })
+})
+
+// ── 组判分快照比较（feat-A018 story-03）：比较字段为 status @ firstRank ──
+
+function groupBucket(hit5: number, miss: number, total: number, cover5: number): BenchmarkGroupBucketSummary {
+  return {
+    total,
+    hit5,
+    hit10: hit5,
+    hit50: hit5 + miss,
+    miss,
+    noBridge: 1,
+    missNoBridge: 1,
+    dropped: miss - 1,
+    sumHits5: hit5,
+    sumCap5: hit5 + miss,
+    hit10Rate: 0.9,
+    cover5,
+  }
+}
+
+function groupItem(
+  id: string,
+  firstRank: number,
+  bucket: 'hit5' | 'hit10' | 'hit50' | 'miss',
+  bridgeHit: boolean,
+): BenchmarkResultItem {
+  return { ...item(id, `q-${id}`, 0, bucket), category: 'L1', segCount: 2, firstRank, bridgeHit }
+}
+
+function groupSnapshot(runId: string, items: BenchmarkResultItem[]): BenchmarkData {
+  const data = snapshot(runId, items)
+  return {
+    ...data,
+    summary: {
+      ...data.summary,
+      setId: 'events',
+      setName: '事件 / 典故组召回（组判分）',
+      judge: 'group',
+      hit5: items.filter((i) => i.status === 'hit5').length,
+      miss: items.filter((i) => i.status === 'miss').length,
+      missNoBridge: items.filter((i) => i.status === 'miss' && i.bridgeHit === false).length,
+      dropped: items.filter((i) => i.status === 'miss' && i.bridgeHit === true).length,
+      cover5: 0.5,
+      byCategory: { L1: groupBucket(1, 1, 2, 0.5) },
+    },
+  }
+}
+
+describe('组判分快照比较（compareGroupSnapshots，feat-A018 story-03）', () => {
+  it('比较字段为 status @ firstRank：前移 up / 后移 down / 入池 enter / 均未进池 flat', () => {
+    const a = groupSnapshot('A', [
+      groupItem('g1', 8, 'hit10', true),
+      groupItem('g2', 3, 'hit5', true),
+      groupItem('g3', 0, 'miss', true),
+      groupItem('g4', 0, 'miss', false),
+    ])
+    const b = groupSnapshot('B', [
+      groupItem('g1', 4, 'hit5', true),
+      groupItem('g2', 9, 'hit10', true),
+      groupItem('g3', 12, 'hit50', true),
+      groupItem('g4', 0, 'miss', false),
+    ])
+    const comparison = compareGroupSnapshots(a, b)
+    assert.ok(comparison)
+    const changeOfId = (id: string): string | undefined => comparison.rows.find((r) => r.id === id)?.change
+    assert.equal(changeOfId('g1'), 'up')
+    assert.equal(changeOfId('g2'), 'down')
+    assert.equal(changeOfId('g3'), 'enter')
+    assert.equal(changeOfId('g4'), 'flat')
+    assert.equal(comparison.rows.find((r) => r.id === 'g1')?.bucketB, 'hit5')
+  })
+
+  it('锚集快照 / 题量不一致 / 缺 firstRank 一律返回 null（不做猜测性比较）', () => {
+    assert.equal(
+      compareGroupSnapshots(snapshot('A', [item('a1', 'q1', 1, 'top5')]), snapshot('B', [item('a1', 'q1', 1, 'top5')])),
+      null,
+    )
+    assert.equal(
+      compareGroupSnapshots(
+        groupSnapshot('A', [groupItem('g1', 1, 'hit5', true)]),
+        groupSnapshot('B', [groupItem('g1', 1, 'hit5', true), groupItem('g2', 0, 'miss', false)]),
+      ),
+      null,
+    )
+    const legacy = groupSnapshot('C', [groupItem('g1', 1, 'hit5', true)])
+    legacy.results[0]!.firstRank = undefined
+    assert.equal(compareGroupSnapshots(legacy, groupSnapshot('D', [groupItem('g1', 1, 'hit5', true)])), null)
+  })
+
+  it('分类桶差值 + 汇总 cover@5 / 未进池读数', () => {
+    const comparison = compareGroupSnapshots(
+      groupSnapshot('A', [groupItem('g1', 3, 'hit5', true), groupItem('g2', 0, 'miss', true)]),
+      groupSnapshot('B', [groupItem('g1', 0, 'miss', false), groupItem('g2', 0, 'miss', true)]),
+    )
+    assert.ok(comparison)
+    assert.equal(comparison.judge, 'group')
+    assert.equal(comparison.cover5A, 0.5)
+    assert.equal(comparison.cover5B, 0.5)
+    assert.equal(comparison.missA, 1)
+    assert.equal(comparison.missB, 2)
+    assert.equal(comparison.missNoBridgeB, 1)
+    assert.equal(comparison.droppedB, 1)
+    assert.equal(comparison.buckets[0]?.name, 'L1')
+    assert.equal(comparison.buckets[0]?.cover5Delta, 0)
   })
 })

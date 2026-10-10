@@ -936,11 +936,49 @@ export async function fetchMisjudge(startAt: number, endAt: number): Promise<Mis
 
 // ── 评测执行（feat-A015）──
 
+/** 判定口径（feat-A018）：anchor = 证据锚判定；group = 事件 / 典故组判分 */
+export type BenchmarkJudge = 'anchor' | 'group'
+
+/** 评测集注册信息（GET /sets，数组顺序即服务端注册顺序） */
+export interface BenchmarkSetInfo {
+  id: string
+  name: string
+  file: string
+  judge: BenchmarkJudge
+}
+
+/** 未指定 setId 时后端按 standard 处理 */
+export const DEFAULT_BENCHMARK_SET_ID = 'standard'
+
 export interface BenchmarkCategorySummary {
   total: number
   top5: number
   tail: number
   miss: number
+}
+
+/** 组判分分类 / 分段桶计数（feat-A018）：summary.byCategory / summary.byBucket 的元素 */
+export interface BenchmarkGroupBucketSummary {
+  total: number
+  hit5: number
+  hit10: number
+  hit50: number
+  miss: number
+  noBridge: number
+  missNoBridge: number
+  dropped: number
+  sumHits5: number
+  sumCap5: number
+  hit10Rate: number
+  cover5: number
+}
+
+/** 组集快照与上一次同集快照的对比摘要（组集专有） */
+export interface BenchmarkGroupCompareRef {
+  prevFile: string
+  prevTime: string
+  regressed: string[]
+  improved: string[]
 }
 
 export interface BenchmarkSummary {
@@ -968,6 +1006,36 @@ export interface BenchmarkSummary {
   elapsedMs?: number
   /** 本次 run 的重排配置快照；老快照无此字段 */
   rerank?: BenchmarkRerankConfig
+  /** 评测集 Id / 名称 / 判定口径（feat-A018）；A015 老快照无这三字段 */
+  setId?: string
+  setName?: string
+  judge?: BenchmarkJudge
+  /** 评测集元信息（组集专有） */
+  evalSetMeta?: unknown
+  /** 组内首段进 1–5 / 6–10 / 11–50 的题数（组集专有） */
+  hit5?: number
+  hit10?: number
+  hit50?: number
+  /** 桥未命中题数（组集专有） */
+  noBridge?: number
+  /** 未进池且桥未命中题数（组集专有） */
+  missNoBridge?: number
+  /** 未进池但桥已命中题数：并池后掉窗（组集专有） */
+  dropped?: number
+  /** Σ 组内前 5 段命中数（组集专有） */
+  sumHits5?: number
+  /** Σ min(5, segCount)（组集专有） */
+  sumCap5?: number
+  /** hit@10 命中率：只作「不得下降」红线（组集专有） */
+  hit10Rate?: number
+  /** 主判据 cover@5 = sumHits5 / sumCap5（组集专有） */
+  cover5?: number
+  /** 分类（L1 / L2 / 典故）计数（组集专有） */
+  byCategory?: Record<string, BenchmarkGroupBucketSummary>
+  /** 分段桶（单段 / 多段(2-10) / 大组(>10)）计数（组集专有） */
+  byBucket?: Record<string, BenchmarkGroupBucketSummary>
+  /** 与上一次同集快照的对比摘要；无可比快照为 null（组集专有） */
+  compare?: BenchmarkGroupCompareRef | null
 }
 
 /** 快照记录的重排配置（bug-00049 B 案）：mode on/off、wired 是否真正接入、窗口 / 预算 / 批量 / 线程 */
@@ -982,6 +1050,12 @@ export interface BenchmarkRerankConfig {
 
 /** 单题判定：rank 1–5 判对 top5；6–10 兜底 tail；>10 或未召回（rank=0）为 miss */
 export type BenchmarkStatus = 'top5' | 'tail' | 'miss'
+
+/** 组判分分档：组内首段进 1–5 / 6–10 / 11–50 / 未进池（feat-A018） */
+export type BenchmarkGroupStatus = 'hit5' | 'hit10' | 'hit50' | 'miss'
+
+/** 单题判定状态：锚集 top5 / tail / miss，组集 hit5 / hit10 / hit50 / miss */
+export type BenchmarkResultStatus = BenchmarkStatus | BenchmarkGroupStatus
 
 export interface BenchmarkCandidate {
   id: string
@@ -1008,11 +1082,33 @@ export interface BenchmarkResultItem {
   titleAnchors: BenchmarkAnchorRef[]
   chapterRefs: number[]
   rank: number
-  status: BenchmarkStatus
+  status: BenchmarkResultStatus
   hit: BenchmarkHit | null
   candidates: BenchmarkCandidate[]
   /** 零锚题（无回目锚，未参与评分）；老快照无此字段，缺省视为 false */
   noAnchor?: boolean
+  /** ── 组判分字段（feat-A018，锚集缺省）── */
+  /** 题目分类：L1 / L2 / 典故 */
+  category?: string
+  /** 组内段数（cover@5 分母用 min(5, segCount)） */
+  segCount?: number
+  /** 是否跨章 */
+  crossChapter?: boolean
+  /** 组内首段在 50 路池的名次；0 = 未进池 */
+  firstRank?: number
+  /** 组内进前 5 / 前 10 的段数 */
+  hits5?: number
+  hits10?: number
+  /** 组内是否有段进前 5 / 前 10 / 前 50 */
+  hit5?: boolean
+  hit10?: boolean
+  hit50?: boolean
+  /** 桥分组数 / 桥是否命中 */
+  bridgeGroups?: number
+  bridgeHit?: boolean
+  /** 该题组内段 id / 池内前 10 候选 id */
+  chunkIds?: string[]
+  top10Ids?: string[]
 }
 
 export interface BenchmarkData {
@@ -1034,6 +1130,8 @@ export type BenchmarkRunState = 'running' | 'done' | 'failed' | 'aborted' | 'idl
 export interface BenchmarkRunStatus {
   state: BenchmarkRunState
   runId: string | null
+  /** 该次 run 的评测集 Id（feat-A018） */
+  setId?: string
   /** 服务端本次 run 已耗时（毫秒）；无记录时缺省 */
   elapsedMs?: number
   /** state=failed 时的错误文案 */
@@ -1045,16 +1143,27 @@ export interface BenchmarkRunStart {
   runId: string
   state: string
   alreadyRunning: boolean
+  /** 该次 run 的评测集 Id（feat-A018） */
+  setId?: string
+}
+
+/** GET /sets：评测集注册表（顺序即注册顺序，standard 在前） */
+export async function getBenchmarkSets(): Promise<BenchmarkSetInfo[]> {
+  const { data } = await benchmarkClient.get<ApiResponse<BenchmarkSetInfo[]>>('/dev/benchmark/sets')
+  return unwrapData(data)
 }
 
 /** POST run：异步 job，立即 202 返回 runId；409 = 已有 run 在跑，接管该次（不抛错给页面） */
-export async function startBenchmarkRun(): Promise<BenchmarkRunStart> {
+export async function startBenchmarkRun(setId?: string): Promise<BenchmarkRunStart> {
   try {
-    const { data } = await benchmarkClient.post<ApiResponse<{ runId: string; state: string }>>('/dev/benchmark/run')
+    const { data } = await benchmarkClient.post<ApiResponse<{ runId: string; state: string; setId?: string }>>(
+      '/dev/benchmark/run',
+      setId ? { setId } : {},
+    )
     if ((data.code !== 200 && data.code !== 202) || data.data === null) {
       throw new Error(data.message || '请求失败，请稍后重试。')
     }
-    return { runId: data.data.runId, state: data.data.state, alreadyRunning: false }
+    return { runId: data.data.runId, state: data.data.state, alreadyRunning: false, setId: data.data.setId }
   } catch (err) {
     if (axios.isAxiosError(err) && err.response?.status === 409) {
       const body = err.response.data as ApiResponse<{ runId: string }> | undefined
@@ -1093,20 +1202,26 @@ export async function abortBenchmarkRun(): Promise<BenchmarkAbortResult> {
 }
 
 /** 最近一次快照；无快照时后端 200 + data:null，返回 null（页面空态） */
-export async function getBenchmarkLatest(): Promise<BenchmarkData | null> {
-  const { data } = await benchmarkClient.get<ApiResponse<BenchmarkData>>('/dev/benchmark/latest')
+export async function getBenchmarkLatest(setId?: string): Promise<BenchmarkData | null> {
+  const { data } = await benchmarkClient.get<ApiResponse<BenchmarkData>>(
+    '/dev/benchmark/latest',
+    setId ? { params: { setId } } : {},
+  )
   return unwrapNullable(data)
 }
 
-export async function getBenchmarkHistory(): Promise<BenchmarkHistoryItem[]> {
-  const { data } = await benchmarkClient.get<ApiResponse<BenchmarkHistoryItem[]>>('/dev/benchmark/history')
+export async function getBenchmarkHistory(setId?: string): Promise<BenchmarkHistoryItem[]> {
+  const { data } = await benchmarkClient.get<ApiResponse<BenchmarkHistoryItem[]>>(
+    '/dev/benchmark/history',
+    setId ? { params: { setId } } : {},
+  )
   return unwrapData(data)
 }
 
-/** 指定 runId 快照；runId 不存在后端 404，无快照 200 + data:null → null */
-export async function getBenchmarkSnapshot(runId: string): Promise<BenchmarkData | null> {
+/** 指定 runId 快照（setId 一并带上，各集按 setId 隔离）；runId 不存在后端 404，无快照 200 + data:null → null */
+export async function getBenchmarkSnapshot(runId: string, setId?: string): Promise<BenchmarkData | null> {
   const { data } = await benchmarkClient.get<ApiResponse<BenchmarkData>>('/dev/benchmark/snapshot', {
-    params: { runId },
+    params: setId ? { runId, setId } : { runId },
   })
   return unwrapNullable(data)
 }

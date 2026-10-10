@@ -26,9 +26,17 @@
       <div class="bench-header">
         <div class="bench-title-block">
           <h2 class="bench-title">评测执行</h2>
-          <p class="bench-subtitle">十三段模板回归 · 零 LLM · 判对 = 证据段进检索 top5，6–10 兜底，其余未命中</p>
+          <p class="bench-subtitle">{{ subtitleText }}</p>
         </div>
         <div class="bench-run-block">
+          <a-select
+            v-model:value="setId"
+            class="set-select"
+            :options="setOptions"
+            :loading="setsLoading"
+            :disabled="runLoading || setSwitching"
+            @change="onSetChange"
+          />
           <span class="bench-run-hint">完整回归约数十秒，建议联调阶段手工触发</span>
           <a-button type="primary" size="large" :loading="runLoading" :disabled="runLoading" @click="onRun">
             执行
@@ -58,14 +66,177 @@
           <span class="bench-current-label">当前快照</span>
           <span class="bench-current-run" title="点击复制快照 Id" @click="copyRunId(snapshotData.runId)">{{ snapshotData.runId }}</span>
           <span class="bench-current-time">{{ formatBenchmarkTime(snapshotData.time) }}</span>
-          <a-tag color="green">通过 {{ snapshotData.summary.top5 }}/{{ judgedOf(snapshotData.summary) }}</a-tag>
-          <a-tag color="gold">兜底 {{ snapshotData.summary.tail }}</a-tag>
-          <a-tag color="red">未命中 {{ snapshotData.summary.miss }}</a-tag>
+          <template v-if="isGroup">
+            <a-tag color="green">cover@5 {{ groupRateText(groupMetricsOf.cover5) }}</a-tag>
+            <a-tag color="blue">hit@5 {{ groupCountRateText(groupMetricsOf.hit5, groupMetricsOf.total) }}</a-tag>
+            <a-tag color="red">未进池 {{ groupCountText(groupMetricsOf.miss) }}</a-tag>
+          </template>
+          <template v-else>
+            <a-tag color="green">通过 {{ snapshotData.summary.top5 }}/{{ judgedOf(snapshotData.summary) }}</a-tag>
+            <a-tag color="gold">兜底 {{ snapshotData.summary.tail }}</a-tag>
+            <a-tag color="red">未命中 {{ snapshotData.summary.miss }}</a-tag>
+          </template>
         </div>
 
         <a-tabs v-model:activeKey="activeTab" class="bench-tabs" @change="onTabChange">
           <a-tab-pane key="summary" tab="类别汇总">
-        <section class="bench-card">
+        <section v-if="isGroup" class="bench-card">
+          <div class="card-head">
+            <h3>组判分指标</h3>
+            <span class="bench-hint">主判据 cover@5；hit@10 只作「不得下降」红线</span>
+          </div>
+          <div class="metric-grid">
+            <div
+              v-for="row in groupMetricRowsOf"
+              :key="row.key"
+              class="metric-item"
+              :class="{ 'metric-primary': row.key === 'cover5' }"
+            >
+              <span class="metric-label">{{ row.label }}</span>
+              <span class="metric-value">{{ row.text }}</span>
+            </div>
+          </div>
+        </section>
+
+        <section v-if="isGroup" class="bench-card">
+          <div class="card-head">
+            <h3>分类汇总</h3>
+          </div>
+          <a-table
+            :columns="groupCategoryColumns"
+            :data-source="groupCategoryRows"
+            row-key="name"
+            :pagination="false"
+            :loading="snapshotLoading || runLoading"
+            size="middle"
+            class="cat-table"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'name'">
+                <span class="cat-name">{{ record.name }}</span>
+              </template>
+              <template v-else-if="column.key === 'cover5'">{{ groupRateText(record.cover5) }}</template>
+              <template v-else>{{ record[column.key] }}</template>
+            </template>
+          </a-table>
+
+          <h4 class="bucket-title">总分档</h4>
+          <a-table
+            :columns="groupCategoryColumns"
+            :data-source="groupBucketRows"
+            row-key="name"
+            :pagination="false"
+            :loading="snapshotLoading || runLoading"
+            size="middle"
+            class="cat-table"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'name'">
+                <span class="cat-name">{{ record.name }}</span>
+              </template>
+              <template v-else-if="column.key === 'cover5'">{{ groupRateText(record.cover5) }}</template>
+              <template v-else>{{ groupCountText(record[column.key]) }}</template>
+            </template>
+          </a-table>
+        </section>
+
+        <section v-if="isGroup" class="bench-card">
+          <div class="card-head">
+            <h3>题目明细</h3>
+            <a-select v-model:value="groupFilter" class="filter-select" :options="groupFilterOptions" />
+          </div>
+          <a-table
+            :columns="groupDetailColumns"
+            :data-source="groupDetailRows"
+            row-key="id"
+            :pagination="{ pageSize: 20, showSizeChanger: false, showTotal: (t: number) => `共 ${t} 题` }"
+            size="small"
+            :loading="snapshotLoading || runLoading"
+            class="question-table"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'question'">
+                <a-tooltip placement="topLeft">
+                  <template #title>{{ record.question }}</template>
+                  <span class="cell-ellipsis">{{ record.question }}</span>
+                </a-tooltip>
+              </template>
+              <template v-else-if="column.key === 'status'">
+                <a-tag :color="groupBucketColor(record)">{{ groupBucketLabel(groupBucketOf(record)) }}</a-tag>
+              </template>
+              <template v-else-if="column.key === 'firstRank'">{{ firstRankText(firstRankOf(record)) }}</template>
+              <template v-else-if="column.key === 'cover'">{{ groupRateText(cover5OfItem(record)) }}</template>
+              <template v-else-if="column.key === 'bridgeHit'">
+                <a-tag :color="bridgeHitColor(record)">{{ bridgeHitLabel(record) }}</a-tag>
+              </template>
+              <template v-else-if="column.key === 'category'">
+                <span class="cat-name">{{ record.category }}</span>
+              </template>
+              <template v-else-if="column.key === 'sources'">
+                <GroupSourceLinks :item="record" @open-chapter="openChapterChunk" />
+              </template>
+            </template>
+          </a-table>
+        </section>
+
+        <section v-if="isGroup" class="bench-card">
+          <div class="card-head">
+            <h3>未进池清单</h3>
+            <span class="bench-hint">共 {{ groupMissSplit.noBridge.length + groupMissSplit.dropped.length }} 题（与快照 summary.miss 一致）</span>
+          </div>
+          <div class="miss-group">
+            <h4 class="miss-group-title">桥未命中（bridgeHit = false）· {{ groupMissSplit.noBridge.length }} 题</h4>
+            <a-table
+              :columns="missColumns"
+              :data-source="groupMissSplit.noBridge"
+              row-key="id"
+              :pagination="false"
+              size="small"
+              class="miss-table"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'question'">
+                  <a-tooltip placement="topLeft">
+                    <template #title>{{ record.question }}</template>
+                    <span class="cell-ellipsis">{{ record.question }}</span>
+                  </a-tooltip>
+                </template>
+                <template v-else-if="column.key === 'segCount'">{{ groupCountText(record.segCount) }}</template>
+                <template v-else-if="column.key === 'bridgeGroups'">{{ groupCountText(record.bridgeGroups) }}</template>
+                <template v-else-if="column.key === 'sources'">
+                  <GroupSourceLinks :item="record" @open-chapter="openChapterChunk" />
+                </template>
+              </template>
+            </a-table>
+          </div>
+          <div class="miss-group">
+            <h4 class="miss-group-title">并池后掉窗（bridgeHit = true）· {{ groupMissSplit.dropped.length }} 题</h4>
+            <a-table
+              :columns="missColumns"
+              :data-source="groupMissSplit.dropped"
+              row-key="id"
+              :pagination="false"
+              size="small"
+              class="miss-table"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'question'">
+                  <a-tooltip placement="topLeft">
+                    <template #title>{{ record.question }}</template>
+                    <span class="cell-ellipsis">{{ record.question }}</span>
+                  </a-tooltip>
+                </template>
+                <template v-else-if="column.key === 'segCount'">{{ groupCountText(record.segCount) }}</template>
+                <template v-else-if="column.key === 'bridgeGroups'">{{ groupCountText(record.bridgeGroups) }}</template>
+                <template v-else-if="column.key === 'sources'">
+                  <GroupSourceLinks :item="record" @open-chapter="openChapterChunk" />
+                </template>
+              </template>
+            </a-table>
+          </div>
+        </section>
+
+        <section v-if="!isGroup" class="bench-card">
           <div class="card-head">
             <h3>类别汇总</h3>
             <a-select v-model:value="filter" class="filter-select" :options="filterOptions" @change="onFilterChange" />
@@ -226,7 +397,7 @@
         <section class="bench-card">
           <div class="card-head">
             <a-tooltip title="按 runId 依次展示历史整体对比">
-              <h3>通过率趋势</h3>
+              <h3>{{ isGroup ? 'cover@5 趋势' : '通过率趋势' }}</h3>
             </a-tooltip>
           </div>
           <div v-if="historyLoading && historyItems.length === 0" class="chart-state"><a-spin size="small" /><span>历史加载中…</span></div>
@@ -248,6 +419,7 @@
       v-model:open="compareOpen"
       :history-items="historyItems"
       :base-run-id="compareBaseRunId"
+      :set-id="setId"
       @open-chapter="openReader"
     />
     <CandidateListModal
@@ -269,24 +441,45 @@ import { CanvasRenderer } from 'echarts/renderers'
 import type { EChartsType } from 'echarts/core'
 import BenchmarkCompareModal from '../components/BenchmarkCompareModal.vue'
 import CandidateListModal from '../components/CandidateListModal.vue'
+import GroupSourceLinks from '../components/GroupSourceLinks.vue'
 import SangoChapterReader from '../components/SangoChapterReader.vue'
 import { isNoAnchor, judgedOf, noAnchorCountOf } from '../utils/benchmarkJudged'
 import {
+  DEFAULT_BENCHMARK_SET_ID,
   abortBenchmarkRun,
   getBenchmarkHistory,
   getBenchmarkLatest,
+  getBenchmarkSets,
   getBenchmarkSnapshot,
   getBenchmarkRunStatus,
   getErrorMessage,
   startBenchmarkRun,
-  type BenchmarkCandidate,
   type BenchmarkData,
+  type BenchmarkGroupBucketSummary,
   type BenchmarkHistoryItem,
   type BenchmarkResultItem,
   type BenchmarkRunStatus,
+  type BenchmarkSetInfo,
   type BenchmarkStatus,
+  type BenchmarkSummary,
 } from '../api/client'
 import { chapterFromChunkId } from '../utils/sangoChapter'
+import {
+  cover5OfItem,
+  firstRankOf,
+  firstRankText,
+  groupBucketLabel,
+  groupBucketOf,
+  groupCountRateText,
+  groupCountText,
+  groupMetricRows,
+  groupMetrics,
+  groupRateText,
+  isGroupSummary,
+  splitMisses,
+  summaryCover5,
+  type GroupStatusBucket,
+} from '../utils/benchmarkGroup'
 
 use([BarChart, LineChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
@@ -319,10 +512,27 @@ const SERIES_DEFS = [
   { key: 'miss', name: '未命中', color: '#d9d9d9' },
 ] as const
 
+/** 组集柱图系列：组内首段进 1–5 / 6–10 / 11–50 / 未进池 */
+const GROUP_SERIES_DEFS = [
+  { key: 'hit5', name: 'hit@5', color: '#2e6d56' },
+  { key: 'hit10', name: 'hit@10', color: '#7caf9b' },
+  { key: 'hit50', name: 'hit@50', color: '#c9b981' },
+  { key: 'miss', name: '未进池', color: '#d9d9d9' },
+] as const
+
 const BAR_GRID = { left: 56, right: 64, top: 56, bottom: 48 } as const
 const TREND_GRID = { left: 56, right: 24, top: 36, bottom: 44 } as const
 
 // ── 状态 ──
+
+/** 评测集注册表（GET /sets）：顺序即服务端注册顺序，默认选中 first（standard） */
+const sets = ref<BenchmarkSetInfo[]>([])
+const setsLoading = ref(false)
+const setId = ref<string>(DEFAULT_BENCHMARK_SET_ID)
+/** 切换集重拉在途：期间锁下拉，避免连点串集 */
+const setSwitching = ref(false)
+/** 组集明细筛选（全部 / 各分档） */
+const groupFilter = ref<GroupStatusBucket | 'all'>('all')
 
 const snapshotData = ref<BenchmarkData | null>(null)
 const snapshotLoading = ref(false)
@@ -336,6 +546,26 @@ const compareOpen = ref(false)
 const compareBaseRunId = ref<string | null>(null)
 const filter = ref<BenchmarkFilter>('all')
 const expandedCategories = ref<string[]>([])
+
+// ── 评测集口径 ──
+
+/** 当前集注册信息（注册表未到时为 null） */
+const currentSet = computed(() => sets.value.find((s) => s.id === setId.value) ?? null)
+/** 是否组判分集：以注册表为准，注册表未到时以快照 summary.judge 兜底（A015 老快照按锚集显示） */
+const isGroup = computed(() =>
+  currentSet.value ? currentSet.value.judge === 'group' : isGroupSummary(snapshotData.value?.summary),
+)
+const setOptions = computed(() => sets.value.map((s) => ({ value: s.id, label: s.name })))
+const subtitleText = computed(() =>
+  isGroup.value
+    ? '组判分 · 组内首段进 1–5 / 6–10 / 11–50 计数 · 主判据 cover@5，未进池分「桥未命中 / 并池后掉窗」'
+    : '十三段模板回归 · 零 LLM · 判对 = 证据段进检索 top5，6–10 兜底，其余未命中',
+)
+
+function setNameOf(id: string): string {
+  return sets.value.find((s) => s.id === id)?.name ?? id
+}
+
 const ACTIVE_TAB_KEY = 'benchmark-active-tab'
 
 function restoreActiveTab(): 'summary' | 'charts' {
@@ -523,6 +753,122 @@ function rateClass(ratio: number | null): string {
   return 'rate-low'
 }
 
+// ── 组判分展示（judge=group，feat-A018）──
+
+const groupMetricsOf = computed(() => groupMetrics(snapshotData.value?.summary, snapshotData.value?.results ?? []))
+const groupMetricRowsOf = computed(() => groupMetricRows(snapshotData.value?.summary, snapshotData.value?.results ?? []))
+const groupMissSplit = computed(() => splitMisses(snapshotData.value?.results ?? []))
+
+interface GroupCategoryRow {
+  name: string
+  total: number
+  hit5: number
+  hit10: number
+  hit50: number
+  miss: number
+  cover5: number | null
+}
+
+/** 分类 / 分档桶同口径行映射（缺字段由 groupCountText / groupRateText 兜底成「—」） */
+function toGroupRow(name: string, bucket: BenchmarkGroupBucketSummary): GroupCategoryRow {
+  return {
+    name,
+    total: bucket.total,
+    hit5: bucket.hit5,
+    hit10: bucket.hit10,
+    hit50: bucket.hit50,
+    miss: bucket.miss,
+    cover5: summaryCover5(bucket),
+  }
+}
+
+/** 分类汇总：取快照 byCategory（L1 / L2 / 典故）；缺字段时为「—」（老快照 / 异集快照） */
+const groupCategoryRows = computed<GroupCategoryRow[]>(() => {
+  const byCategory = snapshotData.value?.summary.byCategory ?? {}
+  return Object.entries(byCategory).map(([name, bucket]) => toGroupRow(name, bucket))
+})
+
+/** 分档顺序（契约 §7）：单段 / 多段(2-10) / 大组(>10)；服务端多出的档位按原顺序追加 */
+const GROUP_BUCKET_ORDER = ['单段', '多段(2-10)', '大组(>10)']
+
+const groupBucketRows = computed<GroupCategoryRow[]>(() => {
+  const byBucket = snapshotData.value?.summary.byBucket ?? {}
+  const names = [
+    ...GROUP_BUCKET_ORDER.filter((name) => name in byBucket),
+    ...Object.keys(byBucket).filter((name) => !GROUP_BUCKET_ORDER.includes(name)),
+  ]
+  return names.map((name) => toGroupRow(name, byBucket[name]))
+})
+
+const groupCategoryColumns = [
+  { key: 'name', title: '分类' },
+  { key: 'total', title: '题数', align: 'center', width: 90 },
+  { key: 'hit5', title: 'hit@5', align: 'center', width: 90 },
+  { key: 'hit10', title: 'hit@10', align: 'center', width: 90 },
+  { key: 'hit50', title: 'hit@50', align: 'center', width: 90 },
+  { key: 'miss', title: '未进池', align: 'center', width: 90 },
+  { key: 'cover5', title: 'cover@5', align: 'center', width: 110 },
+]
+
+const groupFilterOptions = [
+  { value: 'all', label: '全部' },
+  { value: 'hit5', label: 'hit@5（组内首段 1–5）' },
+  { value: 'hit10', label: 'hit@10（组内首段 6–10）' },
+  { value: 'hit50', label: 'hit@50（组内首段 11–50）' },
+  { value: 'miss', label: '未进池（首段未进 50 路池）' },
+]
+
+/** 组集题目明细：按分档筛选（口径与 status @ firstRank 一致） */
+const groupDetailRows = computed<BenchmarkResultItem[]>(() => {
+  const results = snapshotData.value?.results ?? []
+  if (groupFilter.value === 'all') return results
+  return results.filter((item) => groupBucketOf(item) === groupFilter.value)
+})
+
+const groupDetailColumns = [
+  { key: 'id', title: '题号', width: 120 },
+  { key: 'question', title: '问题', width: 300 },
+  { key: 'category', title: '分类', width: 80, align: 'center' },
+  { key: 'status', title: '状态', width: 100, align: 'center' },
+  { key: 'firstRank', title: '首段名次', width: 100, align: 'center' },
+  { key: 'hits5', title: 'hits5', width: 80, align: 'center' },
+  { key: 'hits10', title: 'hits10', width: 80, align: 'center' },
+  { key: 'cover', title: 'cover', width: 90, align: 'center' },
+  { key: 'bridgeHit', title: '桥命中', width: 90, align: 'center' },
+  { key: 'sources', title: '原文', width: 260 },
+]
+
+const missColumns = [
+  { key: 'id', title: '题号', width: 120 },
+  { key: 'question', title: '问题', width: 320 },
+  { key: 'category', title: '分类', width: 80, align: 'center' },
+  { key: 'segCount', title: '组内段数', width: 100, align: 'center' },
+  { key: 'bridgeGroups', title: '桥分组数', width: 100, align: 'center' },
+  { key: 'sources', title: '原文', width: 260 },
+]
+
+function groupBucketColor(item: BenchmarkResultItem): string {
+  const bucket = groupBucketOf(item)
+  if (bucket === 'hit5') return 'green'
+  if (bucket === 'hit10') return 'blue'
+  if (bucket === 'hit50') return 'gold'
+  if (bucket === 'miss') return 'red'
+  return 'default'
+}
+
+/** 桥命中列：true / false / 缺字段（老快照）三态分明 */
+function bridgeHitLabel(item: BenchmarkResultItem): string {
+  if (item.bridgeHit === true) return '命中'
+  if (item.bridgeHit === false) return '未命中'
+  return '—'
+}
+
+function bridgeHitColor(item: BenchmarkResultItem): string {
+  if (item.bridgeHit === true) return 'green'
+  if (item.bridgeHit === false) return 'default'
+  return 'default'
+}
+
 // ── 明细（跟随筛选）──
 
 const visibleResults = computed<BenchmarkResultItem[]>(() => {
@@ -603,6 +949,77 @@ const chartCategoryRows = computed<ChartRow[]>(() => {
   return [...map.values()].sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name))
 })
 
+interface GroupChartRow {
+  name: string
+  total: number
+  hit5: number
+  hit10: number
+  hit50: number
+  miss: number
+  cover5: number | null
+}
+
+/** 组集柱图行：按 byCategory（L1 / L2 / 典故）取全量计数，cover@5 取桶内读数 */
+const groupChartRows = computed<GroupChartRow[]>(() => {
+  const byCategory = snapshotData.value?.summary.byCategory ?? {}
+  return Object.entries(byCategory).map(([name, bucket]) => ({
+    name,
+    total: bucket.total,
+    hit5: bucket.hit5,
+    hit10: bucket.hit10,
+    hit50: bucket.hit50,
+    miss: bucket.miss,
+    cover5: summaryCover5(bucket),
+  }))
+})
+
+interface BarDatum {
+  name: string
+  total: number
+  values: number[]
+  /** 折线读数（百分比）：锚集 = 通过率，组集 = cover@5 */
+  rate: number | null
+}
+
+/** 柱图数据：锚集按 通过 / 兜底 / 未命中，组集按 hit@5 / hit@10 / hit@50 / 未进池 */
+const barData = computed<BarDatum[]>(() => {
+  if (isGroup.value) {
+    return groupChartRows.value.map((r) => ({
+      name: r.name,
+      total: r.total,
+      values: [r.hit5, r.hit10, r.hit50, r.miss],
+      rate: r.cover5 === null ? null : r.cover5 * 100,
+    }))
+  }
+  return chartCategoryRows.value.map((r) => ({
+    name: r.name,
+    total: r.total,
+    values: [r.top5, r.tail, r.miss],
+    rate: r.total > 0 ? (r.top5 / r.total) * 100 : null,
+  }))
+})
+
+const barSeriesDefs = computed(() => (isGroup.value ? GROUP_SERIES_DEFS : SERIES_DEFS))
+const barRateName = computed(() => (isGroup.value ? 'cover@5 %' : '通过率 %'))
+
+/** 趋势折线读数（百分比）：组集 = cover@5，锚集 = 通过率；缺字段 null（断点） */
+function trendRateOf(summary: BenchmarkSummary): number | null {
+  if (isGroupSummary(summary)) {
+    const cover = summaryCover5(summary)
+    return cover === null ? null : cover * 100
+  }
+  return summary.total > 0 ? (summary.top5 / summary.total) * 100 : null
+}
+
+/** 趋势 tooltip 摘要行：组集 cover@5 / hit@5 / 未进池，锚集通过 / 兜底 / 未命中 */
+function trendTooltipLines(item: BenchmarkHistoryItem): string {
+  const s = item.summary
+  if (isGroupSummary(s)) {
+    return `cover@5 ${groupRateText(summaryCover5(s))} · hit@5 ${groupCountRateText(s.hit5, s.total)} · 未进池 ${groupCountText(s.miss)}`
+  }
+  return `通过 ${s.top5}/${s.total} · 兜底 ${s.tail} · 未命中 ${s.miss}`
+}
+
 function renderBarChart(): void {
   const el = barChartEl.value
   if (!el || !snapshotData.value) return
@@ -616,11 +1033,11 @@ function renderBarChart(): void {
     barChart.getZr().on('click', onBarChartClick)
     barChartClickBound = true
   }
-  const rows = chartCategoryRows.value
+  const rows = barData.value
   barChart.setOption(
     {
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-      legend: { top: 12, data: SERIES_DEFS.map((d) => d.name) },
+      legend: { top: 12, data: barSeriesDefs.value.map((d) => d.name) },
       grid: BAR_GRID,
       xAxis: {
         type: 'category',
@@ -643,7 +1060,7 @@ function renderBarChart(): void {
         },
         {
           type: 'value',
-          name: '通过率 %',
+          name: barRateName.value,
           min: 0,
           max: 100,
           axisLabel: { color: '#718078' },
@@ -651,23 +1068,23 @@ function renderBarChart(): void {
         },
       ],
       series: [
-        ...SERIES_DEFS.map((def) => ({
+        ...barSeriesDefs.value.map((def, i) => ({
           name: def.name,
           type: 'bar' as const,
           stack: 'benchmark',
           barMaxWidth: 26,
           itemStyle: { color: def.color },
-          data: rows.map((r) => r[def.key]),
+          data: rows.map((r) => r.values[i]),
         })),
         {
-          name: '通过率',
+          name: isGroup.value ? 'cover@5' : '通过率',
           type: 'line' as const,
           yAxisIndex: 1,
           smooth: true,
           symbolSize: 6,
           lineStyle: { color: '#163c32', width: 2 },
           itemStyle: { color: '#163c32' },
-          data: rows.map((r) => (r.total > 0 ? (r.top5 / r.total) * 100 : null)),
+          data: rows.map((r) => r.rate),
         },
       ],
     },
@@ -689,9 +1106,9 @@ function renderTrendChart(): void {
     trendChart.clear()
     return
   }
-  // 首次执行（历史最旧一条）通过率作为基线参考线
+  // 首次执行（历史最旧一条）通过率 / cover@5 作为基线参考线
   const first = items[0]
-  const baseline = first.summary.total > 0 ? (first.summary.top5 / first.summary.total) * 100 : null
+  const baseline = trendRateOf(first.summary)
   trendChart.setOption(
     {
       tooltip: {
@@ -701,13 +1118,15 @@ function renderTrendChart(): void {
           const first = array[0] as { dataIndex?: number } | undefined
           const item = items[first?.dataIndex ?? 0]
           if (!item) return ''
-          const s = item.summary
-          return [
+          const lines = [
             `<b>${shortRunId(item.runId)}</b>`,
             `时间：${formatBenchmarkTime(item.time)}`,
-            `通过 ${s.top5}/${s.total} · 兜底 ${s.tail} · 未命中 ${s.miss}`,
-            `通过率 ${formatRatio(s.top5, s.total)}`,
-          ].join('<br/>')
+            trendTooltipLines(item),
+          ]
+          if (!isGroupSummary(item.summary)) {
+            lines.push(`通过率 ${formatRatio(item.summary.top5, item.summary.total)}`)
+          }
+          return lines.join('<br/>')
         },
       },
       grid: TREND_GRID,
@@ -723,7 +1142,7 @@ function renderTrendChart(): void {
       },
       yAxis: {
         type: 'value',
-        name: '通过率 %',
+        name: barRateName.value,
         min: 0,
         max: 100,
         axisLabel: { color: '#718078' },
@@ -731,14 +1150,14 @@ function renderTrendChart(): void {
       },
       series: [
         {
-          name: '通过率',
+          name: isGroup.value ? 'cover@5' : '通过率',
           type: 'line' as const,
           smooth: true,
           symbolSize: 7,
           lineStyle: { color: '#2e6d56', width: 2 },
           itemStyle: { color: '#2e6d56' },
           areaStyle: { color: 'rgba(46,109,86,0.08)' },
-          data: items.map((i) => (i.summary.total > 0 ? (i.summary.top5 / i.summary.total) * 100 : null)),
+          data: items.map((i) => trendRateOf(i.summary)),
           markLine:
             baseline === null
               ? undefined
@@ -764,6 +1183,8 @@ function renderTrendChart(): void {
 function onBarChartClick(event: unknown): void {
   const chart = barChart
   if (!chart || !snapshotData.value) return
+  // 组集柱图按分类计数、明细表不受类别展开驱动，不做点击下钻
+  if (isGroup.value) return
   const ev = event as { offsetX?: number; offsetY?: number }
   if (typeof ev.offsetX !== 'number' || typeof ev.offsetY !== 'number') return
   const inGrid =
@@ -817,10 +1238,23 @@ function onWindowResize(): void {
 
 // ── 数据加载 ──
 
+/** 拉取评测集注册表（下拉选项与判定口径来源）；失败保留默认集，不阻塞页面其余加载 */
+async function loadSets(): Promise<void> {
+  setsLoading.value = true
+  try {
+    const list = await getBenchmarkSets()
+    if (list.length > 0) sets.value = list
+  } catch (err) {
+    message.error(getErrorMessage(err))
+  } finally {
+    setsLoading.value = false
+  }
+}
+
 async function loadInitial(): Promise<void> {
   snapshotLoading.value = true
   try {
-    const latest = await getBenchmarkLatest()
+    const latest = await getBenchmarkLatest(setId.value)
     snapshotData.value = latest
     selectedRunId.value = latest?.runId ?? null
   } catch (err) {
@@ -833,11 +1267,31 @@ async function loadInitial(): Promise<void> {
 async function loadHistory(): Promise<void> {
   historyLoading.value = true
   try {
-    historyItems.value = await getBenchmarkHistory()
+    historyItems.value = await getBenchmarkHistory(setId.value)
   } catch (err) {
     message.error(getErrorMessage(err))
   } finally {
     historyLoading.value = false
+  }
+}
+
+/** 切换评测集：先清空上一集残留（快照 / 历史 / 展开行 / 弹框 / 图表），再按新 setId 重拉 */
+async function onSetChange(): Promise<void> {
+  if (setSwitching.value) return
+  setSwitching.value = true
+  snapshotData.value = null
+  selectedRunId.value = null
+  historyItems.value = []
+  expandedCategories.value = []
+  filter.value = 'all'
+  groupFilter.value = 'all'
+  candidateModalOpen.value = false
+  compareOpen.value = false
+  disposeCharts()
+  try {
+    await Promise.all([loadInitial(), loadHistory()])
+  } finally {
+    setSwitching.value = false
   }
 }
 
@@ -863,17 +1317,24 @@ function stopRunPolling(): void {
   runLoading.value = false
 }
 
-/** done 收尾：按 runId 拉快照渲染，随后刷新历史（耗时 / 重排随快照落表，刷新不丢） */
-async function finishBenchmarkRun(runId: string): Promise<void> {
+/** done 收尾：按 runId + setId 拉快照渲染，随后刷新历史（耗时 / 重排随快照落表，刷新不丢）；
+ *  完成的是别的集时不混进当前集视图，只提示并刷新当前集历史 */
+async function finishBenchmarkRun(runId: string, runSetId: string): Promise<void> {
   try {
-    const data = await getBenchmarkSnapshot(runId)
+    const data = await getBenchmarkSnapshot(runId, runSetId)
+    if (runSetId !== setId.value) {
+      message.info(`「${setNameOf(runSetId)}」评测完成（当前查看「${setNameOf(setId.value)}」），已刷新历史`)
+      return
+    }
     if (data) {
       snapshotData.value = data
       selectedRunId.value = data.runId
       expandedCategories.value = []
       candidateModalOpen.value = false
       message.success(
-        `评测完成：通过 ${data.summary.top5}/${judgedOf(data.summary)}（${formatRatio(data.summary.top5, judgedOf(data.summary))}）`,
+        isGroupSummary(data.summary)
+          ? `评测完成：cover@5 ${groupRateText(summaryCover5(data.summary))} · hit@5 ${groupCountRateText(data.summary.hit5, data.summary.total)}`
+          : `评测完成：通过 ${data.summary.top5}/${judgedOf(data.summary)}（${formatRatio(data.summary.top5, judgedOf(data.summary))}）`,
       )
     } else {
       message.warning(`评测完成，但快照 ${runId} 不存在或已被清理`)
@@ -886,7 +1347,7 @@ async function finishBenchmarkRun(runId: string): Promise<void> {
 }
 
 /** 轮询 run-status：running 5s 后下一轮；done 拉快照 + 刷新历史；failed / aborted / 超时 / idle 收尾并清句柄 */
-function pollBenchmarkRun(runId: string, startedAt: number): void {
+function pollBenchmarkRun(runId: string, startedAt: number, runSetId: string): void {
   const token = ++runPollToken
   const tick = async (): Promise<void> => {
     if (token !== runPollToken) return
@@ -923,7 +1384,7 @@ function pollBenchmarkRun(runId: string, startedAt: number): void {
       return
     }
     if (status.state === 'done') {
-      await finishBenchmarkRun(status.runId ?? runId)
+      await finishBenchmarkRun(status.runId ?? runId, status.setId ?? runSetId)
       return
     }
     message.warning('评测状态已丢失（可能后端重启），已刷新历史')
@@ -937,9 +1398,9 @@ async function onRun(): Promise<void> {
   if (runLoading.value) return
   runLoading.value = true
   try {
-    const started = await startBenchmarkRun()
+    const started = await startBenchmarkRun(setId.value)
     if (started.alreadyRunning) message.info('已在执行，接续该次')
-    pollBenchmarkRun(started.runId, Date.now())
+    pollBenchmarkRun(started.runId, Date.now(), started.setId ?? setId.value)
   } catch (err) {
     runLoading.value = false
     message.error(getErrorMessage(err))
@@ -981,7 +1442,7 @@ async function resumeRunningBenchmark(): Promise<void> {
     runLoading.value = true
     message.info('检测到评测执行中，已接续该次')
     // 已耗时按服务端读数扣减，避免刷新后重新计满 10 分钟
-    pollBenchmarkRun(status.runId, Date.now() - (status.elapsedMs ?? 0))
+    pollBenchmarkRun(status.runId, Date.now() - (status.elapsedMs ?? 0), status.setId ?? setId.value)
   } catch {
     // 状态接口不可用（旧后端 / 服务未启动）不影响页面其余加载
   }
@@ -989,14 +1450,24 @@ async function resumeRunningBenchmark(): Promise<void> {
 
 // ── 历史切换 ──
 
-const historyColumns = [
-  { key: 'summary', title: '摘要' },
-  { key: 'rerank', title: '重排', width: 120, align: 'center' },
-  { key: 'rerankWindow', title: '重排窗口', width: 100, align: 'center' },
-  { key: 'time', title: '时间', width: 210 },
-  { key: 'elapsed', title: '耗时', width: 100, align: 'center' },
-  { key: 'actions', title: '操作', width: 90, align: 'center' },
-]
+/** 历史表列：锚集带重排两列；组集无重排字段，只保留摘要 / 时间 / 耗时 / 操作，切换集不残留旧指标列 */
+const historyColumns = computed(() =>
+  isGroup.value
+    ? [
+        { key: 'summary', title: '摘要' },
+        { key: 'time', title: '时间', width: 210 },
+        { key: 'elapsed', title: '耗时', width: 100, align: 'center' },
+        { key: 'actions', title: '操作', width: 90, align: 'center' },
+      ]
+    : [
+        { key: 'summary', title: '摘要' },
+        { key: 'rerank', title: '重排', width: 120, align: 'center' },
+        { key: 'rerankWindow', title: '重排窗口', width: 100, align: 'center' },
+        { key: 'time', title: '时间', width: 210 },
+        { key: 'elapsed', title: '耗时', width: 100, align: 'center' },
+        { key: 'actions', title: '操作', width: 90, align: 'center' },
+      ],
+)
 
 /** 「重排窗口」列：on 显示该条快照实际窗口值；off / 老快照无字段显示「—」 */
 function rerankWindowText(item: BenchmarkHistoryItem): string {
@@ -1005,9 +1476,12 @@ function rerankWindowText(item: BenchmarkHistoryItem): string {
   return String(rerank.window)
 }
 
-/** 摘要列：纯摘要口径（耗时/重排各自独立成列，不再拼进文案） */
+/** 摘要列：纯摘要口径（耗时/重排各自独立成列，不再拼进文案）；组集按 cover@5 / hit@5 / 未进池 */
 function historySummaryText(item: BenchmarkHistoryItem): string {
   const s = item.summary
+  if (isGroupSummary(s)) {
+    return `cover@5 ${groupRateText(summaryCover5(s))} · hit@5 ${groupCountRateText(s.hit5, s.total)} · 未进池 ${groupCountText(s.miss)}`
+  }
   return `通过 ${s.top5}/${s.total}（${formatRatio(s.top5, s.total)}） · 兜底 ${s.tail} · 未命中 ${s.miss}`
 }
 
@@ -1034,7 +1508,7 @@ async function onHistoryClick(item: BenchmarkHistoryItem): Promise<void> {
   if (item.runId === selectedRunId.value || runLoading.value || snapshotLoading.value) return
   snapshotLoading.value = true
   try {
-    const data = await getBenchmarkSnapshot(item.runId)
+    const data = await getBenchmarkSnapshot(item.runId, setId.value)
     if (!data) {
       message.warning(`快照 ${item.runId} 不存在或已被清理`)
       return
@@ -1052,16 +1526,22 @@ async function onHistoryClick(item: BenchmarkHistoryItem): Promise<void> {
 
 // ── 原文查看 ──
 
-function openReader(candidate: BenchmarkCandidate): void {
+/** 原文入口：锚集候选带回目锚，组集候选 / 组内段只带 chunkId（回号一律由 chapterFromChunkId 解析） */
+function openReader(candidate: { id: string; title?: string }): void {
   const chapter = chapterFromChunkId(candidate.id)
   if (Number.isNaN(chapter)) {
     message.warning(`无法解析候选 chunkId（${candidate.id}）的回号`)
     return
   }
   readerChapter.value = chapter
-  readerChapterTitle.value = candidate.title
+  readerChapterTitle.value = candidate.title ?? ''
   readerChunkId.value = candidate.id
   readerOpen.value = true
+}
+
+/** 组集原文入口：只带 chunkId（组内段 / top10 候选），回号解析与锚集同一口径 */
+function openChapterChunk(chunkId: string): void {
+  openReader({ id: chunkId })
 }
 
 // ── 生命周期 ──
@@ -1089,7 +1569,7 @@ watch(
 
 onMounted(() => {
   window.addEventListener('resize', onWindowResize)
-  void Promise.all([loadInitial(), loadHistory(), resumeRunningBenchmark()])
+  void Promise.all([loadSets(), loadInitial(), loadHistory(), resumeRunningBenchmark()])
 })
 
 onBeforeUnmount(() => {
@@ -1363,6 +1843,72 @@ onBeforeUnmount(() => {
 /* 执行中 / 快照加载中：光标明示不可点（与历史表交互锁同口径） */
 .history-table :deep(.history-row-locked) {
   cursor: not-allowed;
+}
+
+/* 评测集下拉（feat-A018）：注册表名称较长，给足宽度 */
+.set-select {
+  width: 260px;
+}
+
+.bench-hint {
+  color: #8b9990;
+  font-size: 12px;
+}
+
+/* 组判分指标：cover@5 主判据在前并加重 */
+.metric-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 150px;
+  padding: 10px 14px;
+  border: 1px solid #e3eae3;
+  border-radius: 8px;
+  background: #fafcfa;
+}
+
+.metric-primary {
+  border-color: #2e6d56;
+  background: #f0f7f2;
+}
+
+.metric-label {
+  color: #718078;
+  font-size: 12px;
+}
+
+.metric-value {
+  color: #163c32;
+  font-size: 18px;
+  font-weight: 700;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+}
+
+/* 未进池清单：两组（桥未命中 / 并池后掉窗）分块列出 */
+.bucket-title {
+  margin: 16px 0 8px;
+  color: #163c32;
+  font-size: 14px;
+}
+
+.miss-group + .miss-group {
+  margin-top: 16px;
+}
+
+.miss-group-title {
+  margin: 0 0 8px;
+  color: #163c32;
+  font-size: 14px;
+}
+
+.miss-table :deep(.ant-table-thead > tr > th) {
+  background: #f2f6f1;
 }
 
 </style>

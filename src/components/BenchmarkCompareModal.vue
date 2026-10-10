@@ -22,6 +22,95 @@
 
     <div v-if="noCandidate" class="compare-empty">暂无题量一致（{{ baseTotal }} 题）的历史快照可比</div>
 
+      <template v-else-if="groupComparison">
+        <p class="compare-meta">
+          基准 {{ formatBenchmarkTime(groupComparison.timeA) }}
+          vs {{ formatBenchmarkTime(groupComparison.timeB) }}
+        </p>
+
+        <a-tabs v-model:activeKey="resultTab" size="small" class="compare-tabs">
+          <a-tab-pane key="category" tab="分类计数变化">
+            <section class="compare-section">
+              <a-table
+                :columns="groupCategoryColumns"
+                :data-source="groupComparison.buckets"
+                :pagination="false"
+                size="small"
+                row-key="name"
+                class="compare-cat-table"
+              >
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'name'">
+                    <component :is="CategoryCell" :label="record.name" />
+                  </template>
+                  <template v-else-if="column.key === 'hit5' || column.key === 'miss'">
+                    <span>{{ record.a[column.key] }} → {{ record.b[column.key] }}</span>
+                    <span :class="deltaClass(record[`${column.key}Delta`], column.key)">{{ deltaText(record[`${column.key}Delta`]) }}</span>
+                  </template>
+                  <template v-else-if="column.key === 'cover5'">
+                    <span>{{ groupRateText(record.a.cover5) }} → {{ groupRateText(record.b.cover5) }}</span>
+                    <span :class="deltaClass(record.cover5Delta, 'cover5')">{{ groupPointText(record.cover5Delta) }}</span>
+                  </template>
+                  <template v-else>{{ record[column.key] }}</template>
+                </template>
+              </a-table>
+              <p class="compare-total">
+                总计：hit@5 {{ groupCountRateText(groupComparison.hit5A, groupComparison.total) }} →
+                {{ groupCountRateText(groupComparison.hit5B, groupComparison.total) }} · 未进池
+                {{ groupCountText(groupComparison.missA) }} → {{ groupCountText(groupComparison.missB) }} · cover@5
+                {{ groupRateText(groupComparison.cover5A) }} → {{ groupRateText(groupComparison.cover5B) }}
+              </p>
+              <p class="compare-total">
+                未进池归因：桥未命中 {{ groupCountText(groupComparison.missNoBridgeA) }} →
+                {{ groupCountText(groupComparison.missNoBridgeB) }} · 并池后掉窗
+                {{ groupCountText(groupComparison.droppedA) }} → {{ groupCountText(groupComparison.droppedB) }}
+              </p>
+            </section>
+          </a-tab-pane>
+
+          <a-tab-pane key="rows" tab="逐项 status@firstRank">
+            <section class="compare-section">
+              <div class="compare-section-head">
+                <a-radio-group v-model:value="changeFilter" size="small">
+                  <a-radio-button value="all">全部（{{ groupComparison.rows.length }}）</a-radio-button>
+                  <a-radio-button value="up">排名上升（{{ upCount }}）</a-radio-button>
+                  <a-radio-button value="down">排名下降（{{ downCount }}）</a-radio-button>
+                </a-radio-group>
+                <a-checkbox v-model:checked="onlyChanged">只看变化</a-checkbox>
+              </div>
+              <a-table
+                :columns="groupRowColumns"
+                :data-source="visibleRows"
+                :pagination="{ pageSize: 10, showSizeChanger: false, showTotal: (t: number) => `共 ${t} 题` }"
+                size="small"
+                row-key="id"
+                :row-class-name="rowClassName"
+                class="compare-row-table"
+              >
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'question'">
+                    <a-tooltip placement="topLeft">
+                      <template #title>{{ record.question }}</template>
+                      <span class="cell-ellipsis">{{ record.question }}</span>
+                    </a-tooltip>
+                  </template>
+                  <template v-else-if="column.key === 'category'">
+                    <component :is="CategoryCell" :label="record.category" />
+                  </template>
+                  <template v-else-if="column.key === 'bucketA'">{{ groupBucketLabel(record.bucketA) }}</template>
+                  <template v-else-if="column.key === 'bucketB'">{{ groupBucketLabel(record.bucketB) }}</template>
+                  <template v-else-if="column.key === 'rankA'">{{ firstRankText(record.rankA) }}</template>
+                  <template v-else-if="column.key === 'rankB'">{{ firstRankText(record.rankB) }}</template>
+                  <template v-else-if="column.key === 'change'">
+                    <a-tag :color="changeColor(record.change)" class="compare-change-tag">{{ changeLabel(record.change) }}</a-tag>
+                  </template>
+                </template>
+              </a-table>
+            </section>
+          </a-tab-pane>
+        </a-tabs>
+      </template>
+
     <template v-else-if="comparison">
       <p class="compare-meta">
         基准 {{ formatBenchmarkTime(comparison.timeA) }}
@@ -126,18 +215,31 @@ import {
 } from '../api/client'
 import CandidateListModal from './CandidateListModal.vue'
 import {
+  compareGroupSnapshots,
   compareSnapshots,
   isRankDown,
   isRankUp,
   type BenchmarkComparison,
   type CompareRow,
+  type GroupComparison,
   type RankChange,
 } from '../utils/benchmarkCompare'
+import {
+  firstRankText,
+  groupBucketLabel,
+  groupCountRateText,
+  groupCountText,
+  groupRateText,
+  isGroupSummary,
+  summaryCover5,
+} from '../utils/benchmarkGroup'
 
 const props = defineProps<{
   open: boolean
   historyItems: BenchmarkHistoryItem[]
   baseRunId: string | null
+  /** 当前评测集 Id（组判分集快照按集隔离取数；缺省 = standard） */
+  setId?: string
 }>()
 const emit = defineEmits<{ 'update:open': [value: boolean]; 'open-chapter': [candidate: BenchmarkCandidate] }>()
 
@@ -149,6 +251,8 @@ const open = computed({
 const targetRunId = ref<string | null>(null)
 const comparing = ref(false)
 const comparison = ref<BenchmarkComparison | null>(null)
+/** 组判分集比较结果（与锚集比较分开持有，避免两套字段混用） */
+const groupComparison = ref<GroupComparison | null>(null)
 const onlyChanged = ref(true)
 const resultTab = ref<'category' | 'rows'>('category')
 type ChangeFilter = 'all' | 'up' | 'down'
@@ -175,15 +279,21 @@ function rerankSuffix(rerank: BenchmarkRerankConfig | undefined): string {
 const candidateOptions = computed(() =>
   candidates.value.map((i) => ({
     value: i.runId,
-    label: `${formatBenchmarkTime(i.time)} · 通过 ${i.summary.top5}/${i.summary.total}${rerankSuffix(i.summary.rerank)}`,
+    label: isGroupSummary(i.summary)
+      ? `${formatBenchmarkTime(i.time)} · cover@5 ${groupRateText(summaryCover5(i.summary))} · hit@5 ${groupCountRateText(i.summary.hit5, i.summary.total)}`
+      : `${formatBenchmarkTime(i.time)} · 通过 ${i.summary.top5}/${i.summary.total}${rerankSuffix(i.summary.rerank)}`,
   })),
 )
 
+/** 当前比较结果的逐项行：锚集与组集共用同一行结构，按被比较快照的判定口径取用 */
+const activeRows = computed<CompareRow[]>(() =>
+  groupComparison.value ? groupComparison.value.rows : (comparison.value?.rows ?? []),
+)
 /** 筛选口径（负责人 2026-09-29 定）：排名上升 = up + 入榜；排名下降 = down + 出榜 */
-const upCount = computed(() => comparison.value?.rows.filter((r) => isRankUp(r.change)).length ?? 0)
-const downCount = computed(() => comparison.value?.rows.filter((r) => isRankDown(r.change)).length ?? 0)
+const upCount = computed(() => activeRows.value.filter((r) => isRankUp(r.change)).length)
+const downCount = computed(() => activeRows.value.filter((r) => isRankDown(r.change)).length)
 const visibleRows = computed<CompareRow[]>(() => {
-  const rows = comparison.value?.rows ?? []
+  const rows = activeRows.value
   const filtered = rows.filter((r) => {
     if (changeFilter.value === 'up') return isRankUp(r.change)
     if (changeFilter.value === 'down') return isRankDown(r.change)
@@ -193,11 +303,12 @@ const visibleRows = computed<CompareRow[]>(() => {
 })
 
 watch(
-  () => [props.open, props.baseRunId],
+  () => [props.open, props.baseRunId, props.setId],
   () => {
     if (!props.open) return
     targetRunId.value = candidates.value[0]?.runId ?? null
     comparison.value = null
+    groupComparison.value = null
     onlyChanged.value = true
     changeFilter.value = 'all'
     resultTab.value = 'category'
@@ -226,11 +337,21 @@ async function runCompare(): Promise<void> {
   comparing.value = true
   try {
     const [a, b] = await Promise.all([
-      getBenchmarkSnapshot(props.baseRunId),
-      getBenchmarkSnapshot(targetRunId.value),
+      getBenchmarkSnapshot(props.baseRunId, props.setId),
+      getBenchmarkSnapshot(targetRunId.value, props.setId),
     ])
     if (!a || !b) {
       message.warning('快照不存在或已被清理，无法比较')
+      return
+    }
+    if (isGroupSummary(a.summary) || isGroupSummary(b.summary)) {
+      const groupResult = compareGroupSnapshots(a, b)
+      if (!groupResult) {
+        message.warning('题量不一致或快照缺组判分字段，无法比较')
+        return
+      }
+      groupComparison.value = groupResult
+      comparison.value = null
       return
     }
     const result = compareSnapshots(a, b)
@@ -239,6 +360,7 @@ async function runCompare(): Promise<void> {
       return
     }
     comparison.value = result
+    groupComparison.value = null
   } catch (err) {
     message.error(getErrorMessage(err))
   } finally {
@@ -301,9 +423,16 @@ function deltaText(delta: number): string {
 /** 通过/未命中按好坏着色，兜底仅中性展示（兜底增多不直接等于变好或变坏） */
 function deltaClass(delta: number, key: string): string {
   if (delta === 0) return ''
-  if (key === 'top5') return delta > 0 ? 'compare-delta-pos' : 'compare-delta-neg'
+  if (key === 'top5' || key === 'hit5' || key === 'cover5') return delta > 0 ? 'compare-delta-pos' : 'compare-delta-neg'
   if (key === 'miss') return delta > 0 ? 'compare-delta-neg' : 'compare-delta-pos'
   return 'compare-delta-neutral'
+}
+
+/** cover@5 差值按百分点展示（0.05 → +5.0pp） */
+function groupPointText(delta: number): string {
+  if (delta === 0) return ''
+  const points = (delta * 100).toFixed(1)
+  return delta > 0 ? `+${points}pp` : `${points}pp`
 }
 
 function rowClassName(record: CompareRow): string {
@@ -327,6 +456,25 @@ const rowColumns = [
   { key: 'rankB', title: 'B 名次', width: 90, align: 'center' },
   { key: 'change', title: '变化', width: 120, align: 'center' },
   { key: 'actions', title: '操作', width: 130, align: 'center' },
+]
+
+/** 组集分类桶列：hit@5 / 未进池 / cover@5（主判据） */
+const groupCategoryColumns = [
+  { key: 'name', title: '分类' },
+  { key: 'hit5', title: 'hit@5', align: 'center', width: 140 },
+  { key: 'miss', title: '未进池', align: 'center', width: 140 },
+  { key: 'cover5', title: 'cover@5', align: 'center', width: 170 },
+]
+
+/** 组集逐项列：比较字段为 status @ firstRank（组集题无召回候选列表，不设操作列） */
+const groupRowColumns = [
+  { key: 'category', title: '分类', width: 90 },
+  { key: 'question', title: '问题' },
+  { key: 'bucketA', title: 'A 分档', width: 100, align: 'center' },
+  { key: 'bucketB', title: 'B 分档', width: 100, align: 'center' },
+  { key: 'rankA', title: 'A 首段名次', width: 110, align: 'center' },
+  { key: 'rankB', title: 'B 首段名次', width: 110, align: 'center' },
+  { key: 'change', title: '变化', width: 120, align: 'center' },
 ]
 </script>
 
