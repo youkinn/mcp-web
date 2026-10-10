@@ -357,11 +357,12 @@ describe('分数整形（buildScoreRow / formatScore / boolText / sourceMeta）'
     assert.equal(boolText(null), '—')
   })
 
-  it('来源映射：lexical / vector / label / event 中文文案，未知来源回退原值', () => {
+  it('来源映射：lexical / vector / label / event / allusion 中文文案，未知来源回退原值', () => {
     assert.deepEqual(sourceMeta('lexical'), { text: '词法', color: 'blue' })
     assert.deepEqual(sourceMeta('vector'), { text: '向量', color: 'purple' })
     assert.deepEqual(sourceMeta('label'), { text: '标签', color: 'gold' })
     assert.deepEqual(sourceMeta('event'), { text: '事件', color: 'geekblue' })
+    assert.deepEqual(sourceMeta('allusion'), { text: '典故', color: 'orange' })
     assert.deepEqual(sourceMeta('unknown'), { text: 'unknown', color: 'default' })
   })
 
@@ -453,6 +454,64 @@ describe('分数整形（buildScoreRow / formatScore / boolText / sourceMeta）'
     assert.equal(rows[0].hitEventsTitle, '华容道义释曹操')
     const next = buildNextRankView({ ...base, rank: 11, gapToTopN: 0.19 }, eventHit)
     assert.equal(next.hitEventsTitle, '华容道义释曹操')
+  })
+
+  it('典故来源标签 tooltip：进窗候选按 placedChunkIds 展示命中典故名，未进窗候选兜底列出全部命中组，非典故候选 / 历史 trace 为空串', () => {
+    const allusionHit: NonNullable<RetrievalDiagnostics['allusionHit']> = {
+      degraded: false,
+      normVersion: '3f7a2c9e',
+      groupCount: 2,
+      groups: [
+        {
+          allusionId: 'AL001',
+          allusionName: '桃园结义',
+          matchedAlias: '桃园结义',
+          groupSize: 5,
+          placedCount: 1,
+          placedChunkIds: ['sanguo-yanyi:0001:c0003'],
+        },
+        {
+          allusionId: 'AL002',
+          allusionName: '三顾茅庐',
+          matchedAlias: '三顾茅庐',
+          groupSize: 8,
+          placedCount: 2,
+          placedChunkIds: ['sanguo-yanyi:0037:c0002', 'sanguo-yanyi:0037:c0005'],
+        },
+      ],
+    }
+    const base: RetrievalCandidate = {
+      rank: 2,
+      chunkId: 'sanguo-yanyi:0001:c0003',
+      chapter: 1,
+      title: '宴桃园豪杰三结义 斩黄巾英雄首立功',
+      bm25: 5.7,
+      bm25Norm: 0.14,
+      cosine: 0.42,
+      labelHit: false,
+      finalScore: 0.57,
+      sources: ['allusion'],
+      injected: false,
+      cited: false,
+    }
+    // 进窗候选：allusionHit.groups.placedChunkIds 精确匹配 → 该组典故名
+    const placed = buildScoreRow(base, 10, undefined, allusionHit)
+    assert.equal(placed.hitAllusionsTitle, '桃园结义')
+    // 池内未进窗候选：无法定位到具体组，兜底列出全部命中组名（多组区分退化路径）
+    const pooled = buildScoreRow({ ...base, chunkId: 'sanguo-yanyi:0001:c0010', rank: 14 }, 10, undefined, allusionHit)
+    assert.equal(pooled.hitAllusionsTitle, '桃园结义\n三顾茅庐')
+    // 非典故候选：即使有 allusionHit 诊断也不展示典故名
+    const plain = buildScoreRow({ ...base, sources: ['lexical'] }, 10, undefined, allusionHit)
+    assert.equal(plain.hitAllusionsTitle, '')
+    // 历史 trace 无 allusionHit：不得出现 undefined 字样
+    const legacy = buildScoreRow(base, 10)
+    assert.equal(legacy.hitAllusionsTitle, '')
+    assert.doesNotMatch(legacy.hitAllusionsTitle, /undefined/)
+    // buildScoreRows / 第 N+1 名视图同样带典故名
+    const rows = buildScoreRows([base], 10, undefined, allusionHit)
+    assert.equal(rows[0].hitAllusionsTitle, '桃园结义')
+    const next = buildNextRankView({ ...base, rank: 11, gapToTopN: 0.19 }, undefined, allusionHit)
+    assert.equal(next.hitAllusionsTitle, '桃园结义')
   })
 })
 

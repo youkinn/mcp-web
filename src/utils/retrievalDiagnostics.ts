@@ -13,6 +13,7 @@ const SOURCE_META: Record<string, SourceTag> = {
   vector: { text: '向量', color: 'purple' },
   label: { text: '标签', color: 'gold' },
   event: { text: '事件', color: 'geekblue' },
+  allusion: { text: '典故', color: 'orange' },
 }
 
 export function sourceMeta(source: string): SourceTag {
@@ -31,6 +32,20 @@ export function hitEventsOf(
   const matched = groups.filter((g) => g.placedChunkIds.includes(candidate.chunkId)).map((g) => g.eventName)
   if (matched.length > 0) return [...new Set(matched)]
   return [...new Set(groups.map((g) => g.eventName))]
+}
+
+// 典故命中 tooltip（feat-A018）：sources 含 allusion = 候选属某命中典故组。典故名不在候选行上，
+// 由顶层 allusionHit.groups 组装——进窗候选按 placedChunkIds 精确匹配所属组；池内未进窗候选
+// 无法从诊断数据定位到具体组，退化为列出全部命中组名（单组命中时为精确值，多组时给出典故上下文）。
+export function hitAllusionsOf(
+  candidate: { chunkId: string; sources: string[] },
+  allusionHit: RetrievalDiagnostics['allusionHit'],
+): string[] {
+  if (!candidate.sources.includes('allusion')) return []
+  const groups = allusionHit?.groups ?? []
+  const matched = groups.filter((g) => g.placedChunkIds.includes(candidate.chunkId)).map((g) => g.allusionName)
+  if (matched.length > 0) return [...new Set(matched)]
+  return [...new Set(groups.map((g) => g.allusionName))]
 }
 
 // 被引用标记：被引用列在表格最右（横向滚动看不到），故在 rank 列重复标记一次
@@ -187,6 +202,8 @@ export interface ScoreRowView {
   hitLabelsTitle: string
   /** 事件来源标签的 tooltip 文本：命中事件名逐行拼接，非事件候选 / 无事件名为空串（bug-00055） */
   hitEventsTitle: string
+  /** 典故来源标签的 tooltip 文本：命中典故名逐行拼接，非典故候选 / 无典故名为空串（feat-A018） */
+  hitAllusionsTitle: string
   finalScoreText: string
   /** 最终分列的 tooltip 文本：finalScore 算式代入过程（finalScoreFormula），逐行拼接 */
   finalScoreTitle: string
@@ -204,6 +221,7 @@ export function buildScoreRow(
   candidate: RetrievalCandidate,
   topN: number,
   eventHit?: RetrievalDiagnostics['eventHit'],
+  allusionHit?: RetrievalDiagnostics['allusionHit'],
 ): ScoreRowView {
   return {
     key: candidate.chunkId,
@@ -215,6 +233,7 @@ export function buildScoreRow(
     chapterText: `第 ${candidate.chapter} 回 ${candidate.title}`,
     hitLabelsTitle: (candidate.hitLabels ?? []).join('\n'),
     hitEventsTitle: hitEventsOf(candidate, eventHit).join('\n'),
+    hitAllusionsTitle: hitAllusionsOf(candidate, allusionHit).join('\n'),
     bm25NormText: formatScore(candidate.bm25Norm),
     vectorMapText: formatScore(vectorMap(candidate.cosine)),
     labelHit: candidate.labelHit,
@@ -235,8 +254,9 @@ export function buildScoreRows(
   candidates: RetrievalCandidate[],
   topN: number,
   eventHit?: RetrievalDiagnostics['eventHit'],
+  allusionHit?: RetrievalDiagnostics['allusionHit'],
 ): ScoreRowView[] {
-  return candidates.map((candidate) => buildScoreRow(candidate, topN, eventHit))
+  return candidates.map((candidate) => buildScoreRow(candidate, topN, eventHit, allusionHit))
 }
 
 // 行高亮：进 top-N（绿）与被引用（青）可叠加，组件 row-class-name 直接消费
@@ -261,6 +281,8 @@ export interface NextRankView {
   finalScoreTitle: string
   /** 事件来源标签的 tooltip 文本：命中事件名逐行拼接（bug-00055） */
   hitEventsTitle: string
+  /** 典故来源标签的 tooltip 文本：命中典故名逐行拼接（feat-A018） */
+  hitAllusionsTitle: string
   bm25RawText: string
   cosineRawText: string
   sources: SourceTag[]
@@ -270,6 +292,7 @@ export interface NextRankView {
 export function buildNextRankView(
   nextRank: NonNullable<RetrievalDiagnostics['nextRank']>,
   eventHit?: RetrievalDiagnostics['eventHit'],
+  allusionHit?: RetrievalDiagnostics['allusionHit'],
 ): NextRankView {
   return {
     rank: nextRank.rank,
@@ -281,6 +304,7 @@ export function buildNextRankView(
     finalScoreText: formatScore(nextRank.finalScore),
     finalScoreTitle: finalScoreFormula(nextRank),
     hitEventsTitle: hitEventsOf(nextRank, eventHit).join('\n'),
+    hitAllusionsTitle: hitAllusionsOf(nextRank, allusionHit).join('\n'),
     bm25RawText: formatScore(nextRank.bm25),
     cosineRawText: formatScore(nextRank.cosine),
     sources: nextRank.sources.map(sourceMeta),
@@ -446,9 +470,16 @@ export function buildDiagnosticsView(
     truncatedText: truncatedText(diagnostics),
     funnel: buildFunnel(diagnostics.funnel, diagnostics.query),
     scoringNote: SCORING_FORMULA_NOTE,
-    scoreRows: buildScoreRows(diagnostics.candidates, diagnostics.funnel.topN, diagnostics.eventHit),
+    scoreRows: buildScoreRows(
+      diagnostics.candidates,
+      diagnostics.funnel.topN,
+      diagnostics.eventHit,
+      diagnostics.allusionHit,
+    ),
     nextRank:
-      diagnostics.nextRank === null ? null : buildNextRankView(diagnostics.nextRank, diagnostics.eventHit),
+      diagnostics.nextRank === null
+        ? null
+        : buildNextRankView(diagnostics.nextRank, diagnostics.eventHit, diagnostics.allusionHit),
     query: buildQueryChain(diagnostics.query),
     env: buildEnvView(diagnostics.env),
     timingLines: timingLines(diagnostics.timing),

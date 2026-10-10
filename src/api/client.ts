@@ -174,6 +174,8 @@ export interface RetrievalDiagnostics {
   }
   /** 事件命中诊断（feat-A018 §5.2）：历史 trace 无该字段，容错 undefined → 事件来源标签无事件名可展示 */
   eventHit?: RetrievalEventHitDiagnostics
+  /** 典故命中诊断（feat-A018 §5.6）：历史 trace 无该字段，容错 undefined → 典故来源标签无典故名可展示 */
+  allusionHit?: RetrievalAllusionHitDiagnostics
 }
 
 export interface RetrievalEventHitGroup {
@@ -199,6 +201,30 @@ export interface RetrievalEventHitDiagnostics {
   groupCount: number
   /** 命中组明细，按组优先级（命中 alias 长度降序，同长 eventId 升序） */
   groups: RetrievalEventHitGroup[]
+}
+
+export interface RetrievalAllusionHitGroup {
+  allusionId: string
+  allusionName: string
+  /** 本组命中的 alias（归一化后 query 中子串命中者，组内最长） */
+  matchedAlias: string
+  /** 组内有效 chunk 引用总数（漂移剔除后） */
+  groupSize: number
+  /** 实际进出参条目的典故组 chunk 数（重排后自然进窗，= placedChunkIds.length） */
+  placedCount: number
+  /** 进出参条目的典故组 chunkId（按重排后出参序） */
+  placedChunkIds: string[]
+}
+
+export interface RetrievalAllusionHitDiagnostics {
+  /** 典故路是否生效；false = 典故表缺失 / 加载失败 / 整表漂移降级（此时 groups 恒 []）。事件路不受影响 */
+  degraded: boolean
+  /** 典故表 meta.normVersion；未加载为空串 */
+  normVersion: string
+  /** 命中典故组数；0 = 未命中典故路 */
+  groupCount: number
+  /** 命中组明细，按组优先级（命中 alias 长度降序，同长 allusionId 升序） */
+  groups: RetrievalAllusionHitGroup[]
 }
 
 export interface RetrievalCandidate {

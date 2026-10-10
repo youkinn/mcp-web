@@ -229,6 +229,13 @@
                   </template>
                   <a-tag :color="source.color" size="small" class="diag-source-tag">{{ source.text }}</a-tag>
                 </a-tooltip>
+                <!-- 典故来源标签 tooltip：悬停展示命中的具体典故名（feat-A018），与事件标签同机制 -->
+                <a-tooltip v-else-if="source.text === '典故' && record.hitAllusionsTitle" placement="topLeft">
+                  <template #title>
+                    <div class="diag-tooltip-lines">{{ record.hitAllusionsTitle }}</div>
+                  </template>
+                  <a-tag :color="source.color" size="small" class="diag-source-tag">{{ source.text }}</a-tag>
+                </a-tooltip>
                 <a-tag v-else :color="source.color" size="small" class="diag-source-tag">{{ source.text }}</a-tag>
               </template>
             </template>
@@ -285,6 +292,12 @@
                   <a-tooltip v-if="source.text === '事件' && view.nextRank.hitEventsTitle" placement="topLeft">
                     <template #title>
                       <div class="diag-tooltip-lines">{{ view.nextRank.hitEventsTitle }}</div>
+                    </template>
+                    <a-tag :color="source.color" size="small">{{ source.text }}</a-tag>
+                  </a-tooltip>
+                  <a-tooltip v-else-if="source.text === '典故' && view.nextRank.hitAllusionsTitle" placement="topLeft">
+                    <template #title>
+                      <div class="diag-tooltip-lines">{{ view.nextRank.hitAllusionsTitle }}</div>
                     </template>
                     <a-tag :color="source.color" size="small">{{ source.text }}</a-tag>
                   </a-tooltip>
