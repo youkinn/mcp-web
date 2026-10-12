@@ -82,11 +82,12 @@
                 <span class="bench-hint">主判据 cover@5；hit@10 只作「不得下降」红线</span>
               </div>
               <div class="metric-grid">
-                <div v-for="row in groupMetricRowsOf" :key="row.key" class="metric-item"
-                  :class="{ 'metric-primary': row.key === 'cover5' }">
-                  <span class="metric-label">{{ row.label }}</span>
-                  <span class="metric-value">{{ row.text }}</span>
-                </div>
+                <a-tooltip v-for="row in groupMetricRowsOf" :key="row.key" :title="row.tip" placement="topLeft">
+                  <div class="metric-item" :class="{ 'metric-primary': row.key === 'cover5' }">
+                    <span class="metric-label">{{ row.label }}</span>
+                    <span class="metric-value">{{ row.text }}</span>
+                  </div>
+                </a-tooltip>
               </div>
             </section>
 
@@ -1859,9 +1860,12 @@ onBeforeUnmount(() => {
   background: #f0f7f2;
 }
 
+/* 指标名移入即显示口径说明（文案见 benchmarkGroup.ts 的 tip）：虚线下划线作可悬停提示 */
 .metric-label {
   color: #718078;
   font-size: 12px;
+  border-bottom: 1px dashed #b6c2ba;
+  cursor: help;
 }
 
 .metric-value {

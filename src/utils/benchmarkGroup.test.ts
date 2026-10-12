@@ -266,6 +266,13 @@ describe('锚集缺字段兜底（老快照 / 异集快照一律「—」）', (
     assert.equal(rows[7]?.text, '0')
   })
 
+  it('每个指标行都带移入说明（简洁非空，且互不重复）', () => {
+    const rows = groupMetricRows(groupSummary(), [groupItem({ firstRank: 0, bridgeHit: false })])
+    assert.equal(rows.every((r) => r.tip.length > 0), true)
+    assert.equal(new Set(rows.map((r) => r.tip)).size, rows.length)
+    assert.equal(rows.every((r) => r.tip.length <= 40), true)
+  })
+
   it('展示兜底：缺字段计数 / 比率 / 分子分母都显示「—」，不出现 undefined / NaN', () => {
     assert.equal(groupCountText(undefined), '—')
     assert.equal(groupCountText(null), '—')

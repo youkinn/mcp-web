@@ -38,6 +38,8 @@ export interface GroupMetricRow {
   key: string
   label: string
   text: string
+  /** 移入说明：指标含义与分子 / 分母口径（悬停展示，简洁易懂） */
+  tip: string
 }
 
 const GROUP_BUCKET_LABELS: Record<GroupStatusBucket, string> = {
@@ -234,13 +236,53 @@ export function groupMetricRows(
 ): GroupMetricRow[] {
   const metrics = groupMetrics(summary, results)
   return [
-    { key: 'cover5', label: 'cover@5（主判据）', text: groupRateText(metrics.cover5) },
-    { key: 'hit5', label: 'hit@5', text: groupCountRateText(metrics.hit5, metrics.total) },
-    { key: 'hit10', label: 'hit@10', text: groupCountRateText(metrics.hit10, metrics.total) },
-    { key: 'hit50', label: 'hit@50', text: groupCountRateText(metrics.hit50, metrics.total) },
-    { key: 'bridgeHitRate', label: '桥命中率', text: groupRateText(metrics.bridgeHitRate) },
-    { key: 'miss', label: '未进池', text: groupCountRateText(metrics.miss, metrics.total) },
-    { key: 'missNoBridge', label: '未进池·桥未命中', text: groupCountText(metrics.missNoBridge) },
-    { key: 'dropped', label: '未进池·并池后掉窗', text: groupCountText(metrics.dropped) },
+    {
+      key: 'cover5',
+      label: 'cover@5（主判据）',
+      text: groupRateText(metrics.cover5),
+      tip: '前 5 席覆盖组内段的比例（命中段数 ÷ min(5, 组内段数)），越高越好',
+    },
+    {
+      key: 'hit5',
+      label: 'hit@5',
+      text: groupCountRateText(metrics.hit5, metrics.total),
+      tip: '组内首段（名次最靠前那段）进前 5 名的题数 / 总题数',
+    },
+    {
+      key: 'hit10',
+      label: 'hit@10',
+      text: groupCountRateText(metrics.hit10, metrics.total),
+      tip: '组内首段进前 10 名的题数 / 总题数（含 hit@5）；红线：不得下降',
+    },
+    {
+      key: 'hit50',
+      label: 'hit@50',
+      text: groupCountRateText(metrics.hit50, metrics.total),
+      tip: '组内首段进了 50 路池的题数 / 总题数（含 hit@10），即组进池率',
+    },
+    {
+      key: 'bridgeHitRate',
+      label: '桥命中率',
+      text: groupRateText(metrics.bridgeHitRate),
+      tip: '事件名 / 典故名桥命中的题数占比：组是否被桥引入候选池',
+    },
+    {
+      key: 'miss',
+      label: '未进池',
+      text: groupCountRateText(metrics.miss, metrics.total),
+      tip: '组内一段都没进 50 路候选池的题数 / 总题数（下面两类之和）',
+    },
+    {
+      key: 'missNoBridge',
+      label: '未进池·桥未命中',
+      text: groupCountText(metrics.missNoBridge),
+      tip: '未进池且桥也没命中的题数——组根本没进池，问题在召回源头',
+    },
+    {
+      key: 'dropped',
+      label: '未进池·并池后掉窗',
+      text: groupCountText(metrics.dropped),
+      tip: '未进池但桥已命中的题数——组进池后被并池 / 重排挤出，问题在排序',
+    },
   ]
 }
