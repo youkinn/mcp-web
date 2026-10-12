@@ -204,6 +204,21 @@ function bridgeCountOf(
   return present.filter((item) => item[key] === true).length
 }
 
+/** 桥命中并集拆分：至少命中一桥 / 双桥同命中 的题数，按明细布尔字段现算；明细也无布尔字段（老快照）→ null（对外显示「—」） */
+function bridgeUnionSplitOf(results: BenchmarkResultItem[]): { union: number | null; both: number | null } {
+  const present = results.filter(
+    (item) => typeof item.eventBridgeHit === 'boolean' || typeof item.allusionBridgeHit === 'boolean',
+  )
+  if (present.length === 0) return { union: null, both: null }
+  let union = 0
+  let both = 0
+  for (const item of present) {
+    if (item.eventBridgeHit === true || item.allusionBridgeHit === true) union++
+    if (item.eventBridgeHit === true && item.allusionBridgeHit === true) both++
+  }
+  return { union, both }
+}
+
 /** 组判分指标（锚集 / 老快照一律返回全 null，展示层统一兜底成「—」） */
 export function groupMetrics(
   summary: BenchmarkSummary | null | undefined,
@@ -261,6 +276,9 @@ export function groupMetricRows(
   results: BenchmarkResultItem[] = [],
 ): GroupMetricRow[] {
   const metrics = groupMetrics(summary, results)
+  const bridgeSplit = bridgeUnionSplitOf(results)
+  const eventBridgeCount = bridgeCountOf(summary?.eventBridge, results, 'eventBridgeHit')
+  const allusionBridgeCount = bridgeCountOf(summary?.allusionBridge, results, 'allusionBridgeHit')
   return [
     {
       key: 'cover5',
@@ -287,34 +305,16 @@ export function groupMetricRows(
       tip: '组内首段进了 50 路池的题数 / 总题数（含 hit@10），即组进池率',
     },
     {
-      key: 'eventBridgeHitRate',
-      label: '事件桥命中率',
-      text: groupRateText(metrics.eventBridgeHitRate),
-      tip: '事件名桥命中的题数 / 总题数：事件桥把组引入候选池',
-    },
-    {
-      key: 'allusionBridgeHitRate',
-      label: '典故桥命中率',
-      text: groupRateText(metrics.allusionBridgeHitRate),
-      tip: '典故名桥命中的题数 / 总题数：典故桥把组引入候选池',
+      key: 'bridgeHitRate',
+      label: '桥命中率',
+      text: groupCountRateText(bridgeSplit.union, metrics.total),
+      tip: `至少命中一桥的题数 / 总题数（并集，非两桥相加）；事件桥 ${groupCountText(eventBridgeCount)} 题（${groupRateText(metrics.eventBridgeHitRate)}）／典故桥 ${groupCountText(allusionBridgeCount)} 题（${groupRateText(metrics.allusionBridgeHitRate)}）／双命中 ${groupCountText(bridgeSplit.both)} 题`,
     },
     {
       key: 'miss',
       label: '未进池',
       text: groupCountRateText(metrics.miss, metrics.total),
-      tip: '组内一段都没进 50 路候选池的题数 / 总题数（下面两类之和）',
-    },
-    {
-      key: 'missNoBridge',
-      label: '未进池·桥未命中',
-      text: groupCountText(metrics.missNoBridge),
-      tip: '未进池且桥也没命中的题数——组根本没进池，问题在召回源头',
-    },
-    {
-      key: 'dropped',
-      label: '未进池·并池后掉窗',
-      text: groupCountText(metrics.dropped),
-      tip: '未进池但桥已命中的题数——组进池后被并池 / 重排挤出，问题在排序',
-    },
+      tip: `组内一段都没进 50 路候选池的题数 / 总题数；拆分：桥未命中 ${groupCountText(metrics.missNoBridge)} 题（组没进池，问题在召回源头）／并池后掉窗 ${groupCountText(metrics.dropped)} 题（组进池后被并池或重排挤出，问题在排序）`,
+    }
   ]
 }

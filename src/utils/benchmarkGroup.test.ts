@@ -255,19 +255,19 @@ describe('桥命中率拆分：事件桥 / 典故桥', () => {
     assert.equal(metrics.allusionBridgeHitRate, null)
   })
 
-  it('明细列：事件桥 / 典故桥两行读数与互不重复的移入说明', () => {
-    const rows = groupMetricRows(groupSummary({ eventBridge: 3, allusionBridge: 1 }), [])
-    const bridge = rows.filter((r) => r.key === 'eventBridgeHitRate' || r.key === 'allusionBridgeHitRate')
-    assert.equal(bridge.length, 2)
-    assert.deepEqual(
-      bridge.map((r) => [r.key, r.label, r.text]),
-      [
-        ['eventBridgeHitRate', '事件桥命中率', '75.0%'],
-        ['allusionBridgeHitRate', '典故桥命中率', '25.0%'],
-      ],
-    )
-    assert.equal(bridge[0]!.tip.length > 0, true)
-    assert.notEqual(bridge[0]!.tip, bridge[1]!.tip)
+  it('桥命中率行：并集口径（至少命中一桥 / 总题数），tip 拆事件桥 / 典故桥 / 双命中', () => {
+    const rows = groupMetricRows(groupSummary({ eventBridge: 3, allusionBridge: 1, total: 4 }), [
+      groupItem({ id: 'L1#E00101', eventBridgeHit: true, allusionBridgeHit: false }),
+      groupItem({ id: 'L1#E00102', eventBridgeHit: true, allusionBridgeHit: true }),
+      groupItem({ id: 'L2#E00201', eventBridgeHit: false, allusionBridgeHit: false }),
+    ])
+    const bridge = rows.find((r) => r.key === 'bridgeHitRate')
+    assert.equal(bridge?.label, '桥命中率')
+    assert.equal(bridge?.text, '2/4（50.0%）')
+    assert.equal(bridge?.tip.includes('至少命中一桥的题数 / 总题数（并集，非两桥相加）'), true)
+    assert.equal(bridge?.tip.includes('事件桥 3 题（75.0%）'), true)
+    assert.equal(bridge?.tip.includes('典故桥 1 题（25.0%）'), true)
+    assert.equal(bridge?.tip.includes('双命中 1 题'), true)
   })
 })
 
@@ -286,39 +286,36 @@ describe('锚集缺字段兜底（老快照 / 异集快照一律「—」）', (
 
   it('锚集快照的指标行全部显示「—」', () => {
     const rows = groupMetricRows(anchorSummary(), [anchorItem()])
-    assert.equal(rows.length, 9)
+    assert.equal(rows.length, 6)
     assert.deepEqual([...new Set(rows.map((r) => r.text))], ['—'])
   })
 
   it('组集快照指标行给出读数（cover@5 主判据在前）', () => {
-    const rows = groupMetricRows(groupSummary({ eventBridge: 3, allusionBridge: 1 }), [
-      groupItem({ firstRank: 0, bridgeHit: false }),
+    const rows = groupMetricRows(groupSummary({ eventBridge: 3, allusionBridge: 1, total: 4 }), [
+      groupItem({ firstRank: 0, bridgeHit: false, eventBridgeHit: true, allusionBridgeHit: true }),
+      groupItem({ firstRank: 0, bridgeHit: false, eventBridgeHit: true, allusionBridgeHit: false }),
     ])
     assert.deepEqual(rows.map((r) => r.key), [
       'cover5',
       'hit5',
       'hit10',
       'hit50',
-      'eventBridgeHitRate',
-      'allusionBridgeHitRate',
+      'bridgeHitRate',
       'miss',
-      'missNoBridge',
-      'dropped',
     ])
     assert.equal(rows[0]?.text, '62.5%')
     assert.equal(rows[1]?.text, '2/4（50.0%）')
-    assert.equal(rows[4]?.text, '75.0%')
-    assert.equal(rows[5]?.text, '25.0%')
-    assert.equal(rows[6]?.text, '1/4（25.0%）')
-    assert.equal(rows[7]?.text, '1')
-    assert.equal(rows[8]?.text, '0')
+    assert.equal(rows[4]?.text, '2/4（50.0%）')
+    assert.equal(rows[5]?.text, '1/4（25.0%）')
   })
 
-  it('每个指标行都带移入说明（简洁非空，且互不重复）', () => {
+  it('每个指标行都带移入说明（非空且互不重复）；未进池行含拆分口径', () => {
     const rows = groupMetricRows(groupSummary(), [groupItem({ firstRank: 0, bridgeHit: false })])
     assert.equal(rows.every((r) => r.tip.length > 0), true)
     assert.equal(new Set(rows.map((r) => r.tip)).size, rows.length)
-    assert.equal(rows.every((r) => r.tip.length <= 40), true)
+    const missRow = rows.find((r) => r.key === 'miss')
+    assert.equal(missRow?.tip.includes('桥未命中 1 题（组没进池，问题在召回源头）'), true)
+    assert.equal(missRow?.tip.includes('并池后掉窗 0 题（组进池后被并池或重排挤出，问题在排序）'), true)
   })
 
   it('展示兜底：缺字段计数 / 比率 / 分子分母都显示「—」，不出现 undefined / NaN', () => {
