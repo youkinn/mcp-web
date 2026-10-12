@@ -227,6 +227,50 @@ describe('未进池两类归因', () => {
   })
 })
 
+describe('桥命中率拆分：事件桥 / 典故桥', () => {
+  it('取 summary.eventBridge / allusionBridge ÷ total', () => {
+    const metrics = groupMetrics(groupSummary({ eventBridge: 3, allusionBridge: 1 }), [])
+    assert.equal(metrics.eventBridgeHitRate, 0.75)
+    assert.equal(metrics.allusionBridgeHitRate, 0.25)
+  })
+
+  it('summary 缺两桥字段时按明细 eventBridgeHit / allusionBridgeHit 计数回退', () => {
+    const results = [
+      groupItem({ id: 'L1#E00101', eventBridgeHit: true, allusionBridgeHit: false }),
+      groupItem({ id: 'L1#E00102', eventBridgeHit: false, allusionBridgeHit: true }),
+      groupItem({ id: 'L2#E00201', eventBridgeHit: false, allusionBridgeHit: false }),
+      groupItem({ id: 'L2#E00202', eventBridgeHit: true, allusionBridgeHit: true }),
+    ]
+    const metrics = groupMetrics(groupSummary({ eventBridge: undefined, allusionBridge: undefined }), results)
+    assert.equal(metrics.eventBridgeHitRate, 0.5)
+    assert.equal(metrics.allusionBridgeHitRate, 0.5)
+  })
+
+  it('summary 与明细都缺两桥字段（老快照）：命中率为 null（显示「—」）', () => {
+    const metrics = groupMetrics(
+      groupSummary({ eventBridge: undefined, allusionBridge: undefined }),
+      [groupItem({ eventBridgeHit: undefined, allusionBridgeHit: undefined })],
+    )
+    assert.equal(metrics.eventBridgeHitRate, null)
+    assert.equal(metrics.allusionBridgeHitRate, null)
+  })
+
+  it('明细列：事件桥 / 典故桥两行读数与互不重复的移入说明', () => {
+    const rows = groupMetricRows(groupSummary({ eventBridge: 3, allusionBridge: 1 }), [])
+    const bridge = rows.filter((r) => r.key === 'eventBridgeHitRate' || r.key === 'allusionBridgeHitRate')
+    assert.equal(bridge.length, 2)
+    assert.deepEqual(
+      bridge.map((r) => [r.key, r.label, r.text]),
+      [
+        ['eventBridgeHitRate', '事件桥命中率', '75.0%'],
+        ['allusionBridgeHitRate', '典故桥命中率', '25.0%'],
+      ],
+    )
+    assert.equal(bridge[0]!.tip.length > 0, true)
+    assert.notEqual(bridge[0]!.tip, bridge[1]!.tip)
+  })
+})
+
 describe('锚集缺字段兜底（老快照 / 异集快照一律「—」）', () => {
   it('judge 非 group（含缺 judge 的老快照）不算组判分集', () => {
     assert.equal(isGroupSummary(groupSummary()), true)
@@ -237,23 +281,26 @@ describe('锚集缺字段兜底（老快照 / 异集快照一律「—」）', (
 
   it('锚集快照的组判分指标全为 null（不显示 undefined / NaN）', () => {
     const metrics = groupMetrics(anchorSummary(), [anchorItem()])
-    assert.deepEqual(Object.values(metrics), [null, null, null, null, null, null, null, null, null])
+    assert.deepEqual(Object.values(metrics), [null, null, null, null, null, null, null, null, null, null])
   })
 
   it('锚集快照的指标行全部显示「—」', () => {
     const rows = groupMetricRows(anchorSummary(), [anchorItem()])
-    assert.equal(rows.length, 8)
+    assert.equal(rows.length, 9)
     assert.deepEqual([...new Set(rows.map((r) => r.text))], ['—'])
   })
 
   it('组集快照指标行给出读数（cover@5 主判据在前）', () => {
-    const rows = groupMetricRows(groupSummary(), [groupItem({ firstRank: 0, bridgeHit: false })])
+    const rows = groupMetricRows(groupSummary({ eventBridge: 3, allusionBridge: 1 }), [
+      groupItem({ firstRank: 0, bridgeHit: false }),
+    ])
     assert.deepEqual(rows.map((r) => r.key), [
       'cover5',
       'hit5',
       'hit10',
       'hit50',
-      'bridgeHitRate',
+      'eventBridgeHitRate',
+      'allusionBridgeHitRate',
       'miss',
       'missNoBridge',
       'dropped',
@@ -261,9 +308,10 @@ describe('锚集缺字段兜底（老快照 / 异集快照一律「—」）', (
     assert.equal(rows[0]?.text, '62.5%')
     assert.equal(rows[1]?.text, '2/4（50.0%）')
     assert.equal(rows[4]?.text, '75.0%')
-    assert.equal(rows[5]?.text, '1/4（25.0%）')
-    assert.equal(rows[6]?.text, '1')
-    assert.equal(rows[7]?.text, '0')
+    assert.equal(rows[5]?.text, '25.0%')
+    assert.equal(rows[6]?.text, '1/4（25.0%）')
+    assert.equal(rows[7]?.text, '1')
+    assert.equal(rows[8]?.text, '0')
   })
 
   it('每个指标行都带移入说明（简洁非空，且互不重复）', () => {

@@ -29,8 +29,10 @@ export interface GroupMetrics {
   missNoBridge: number | null
   /** 未进池但桥已命中（并池后掉窗） */
   dropped: number | null
-  /** 桥命中率 = 1 - noBridge / total */
-  bridgeHitRate: number | null
+  /** 事件桥命中率 = eventBridge / total */
+  eventBridgeHitRate: number | null
+  /** 典故桥命中率 = allusionBridge / total */
+  allusionBridgeHitRate: number | null
   cover5: number | null
 }
 
@@ -62,12 +64,18 @@ const EMPTY_METRICS: GroupMetrics = {
   miss: null,
   missNoBridge: null,
   dropped: null,
-  bridgeHitRate: null,
+  eventBridgeHitRate: null,
+  allusionBridgeHitRate: null,
   cover5: null,
 }
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
+}
+
+/** 比率 = 计数 / 总数；total 缺失或 ≤ 0 返回 null（对外显示「—」） */
+function rateOf(total: number | null, count: number | null): number | null {
+  return total !== null && total > 0 && count !== null ? count / total : null
 }
 
 /** 是否组判分快照：以 summary.judge 为准；A015 老快照无 judge 字段，按锚集处理 */
@@ -184,6 +192,18 @@ function countOf(
   return results.filter(predicate).length
 }
 
+/** 桥命中计数兜底：summary 缺字段时按明细 eventBridgeHit / allusionBridgeHit 现算；明细也无该布尔字段（老快照）→ null（对外显示「—」） */
+function bridgeCountOf(
+  value: number | undefined,
+  results: BenchmarkResultItem[],
+  key: 'eventBridgeHit' | 'allusionBridgeHit',
+): number | null {
+  if (isFiniteNumber(value)) return value
+  const present = results.filter((item) => typeof item[key] === 'boolean')
+  if (present.length === 0) return null
+  return present.filter((item) => item[key] === true).length
+}
+
 /** 组判分指标（锚集 / 老快照一律返回全 null，展示层统一兜底成「—」） */
 export function groupMetrics(
   summary: BenchmarkSummary | null | undefined,
@@ -191,7 +211,6 @@ export function groupMetrics(
 ): GroupMetrics {
   if (!summary || !isGroupSummary(summary)) return { ...EMPTY_METRICS }
   const total = isFiniteNumber(summary.total) ? summary.total : null
-  const noBridge = countOf(summary.noBridge, results, (item) => item.bridgeHit === false)
   const cover5 = summaryCover5(summary) ?? cover5OfResults(results)
   return {
     total,
@@ -201,7 +220,14 @@ export function groupMetrics(
     miss: countOf(summary.miss, results, isUnpooled),
     missNoBridge: countOf(summary.missNoBridge, results, (item) => missKindOf(item) === 'noBridge'),
     dropped: countOf(summary.dropped, results, (item) => missKindOf(item) === 'dropped'),
-    bridgeHitRate: total !== null && noBridge !== null && total > 0 ? (total - noBridge) / total : null,
+    eventBridgeHitRate: rateOf(
+      total,
+      bridgeCountOf(summary.eventBridge, results, 'eventBridgeHit'),
+    ),
+    allusionBridgeHitRate: rateOf(
+      total,
+      bridgeCountOf(summary.allusionBridge, results, 'allusionBridgeHit'),
+    ),
     cover5,
   }
 }
@@ -261,10 +287,16 @@ export function groupMetricRows(
       tip: '组内首段进了 50 路池的题数 / 总题数（含 hit@10），即组进池率',
     },
     {
-      key: 'bridgeHitRate',
-      label: '桥命中率',
-      text: groupRateText(metrics.bridgeHitRate),
-      tip: '事件名 / 典故名桥命中的题数占比：组是否被桥引入候选池',
+      key: 'eventBridgeHitRate',
+      label: '事件桥命中率',
+      text: groupRateText(metrics.eventBridgeHitRate),
+      tip: '事件名桥命中的题数 / 总题数：事件桥把组引入候选池',
+    },
+    {
+      key: 'allusionBridgeHitRate',
+      label: '典故桥命中率',
+      text: groupRateText(metrics.allusionBridgeHitRate),
+      tip: '典故名桥命中的题数 / 总题数：典故桥把组引入候选池',
     },
     {
       key: 'miss',

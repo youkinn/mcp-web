@@ -1016,6 +1016,10 @@ export interface BenchmarkSummary {
   hit5?: number
   hit10?: number
   hit50?: number
+  /** 事件桥命中题数（诊断 eventHit.groupCount > 0；组集专有） */
+  eventBridge?: number
+  /** 典故桥命中题数（诊断 allusionHit.groupCount > 0；组集专有） */
+  allusionBridge?: number
   /** 桥未命中题数（组集专有） */
   noBridge?: number
   /** 未进池且桥未命中题数（组集专有） */
@@ -1106,6 +1110,10 @@ export interface BenchmarkResultItem {
   /** 桥分组数 / 桥是否命中 */
   bridgeGroups?: number
   bridgeHit?: boolean
+  /** 事件名桥是否命中（诊断 eventHit.groupCount > 0；组集专有） */
+  eventBridgeHit?: boolean
+  /** 典故名桥是否命中（诊断 allusionHit.groupCount > 0；组集专有） */
+  allusionBridgeHit?: boolean
   /** 该题组内段 id / 池内前 10 候选 id / 50 路池有序 id */
   chunkIds?: string[]
   top10Ids?: string[]

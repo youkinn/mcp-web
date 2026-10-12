@@ -143,8 +143,13 @@
                       <template v-else-if="column.key === 'hits5'">{{ groupCountText(record.hits5) }}</template>
                       <template v-else-if="column.key === 'hits10'">{{ groupCountText(record.hits10) }}</template>
                       <template v-else-if="column.key === 'cover'">{{ groupRateText(cover5OfItem(record)) }}</template>
-                      <template v-else-if="column.key === 'bridgeHit'">
-                        <a-tag :color="bridgeHitColor(record)">{{ bridgeHitLabel(record) }}</a-tag>
+                      <template v-else-if="column.key === 'eventBridgeHit'">
+                        <a-tag :color="bridgeHitColor(record.eventBridgeHit)">{{ bridgeHitLabel(record.eventBridgeHit)
+                          }}</a-tag>
+                      </template>
+                      <template v-else-if="column.key === 'allusionBridgeHit'">
+                        <a-tag :color="bridgeHitColor(record.allusionBridgeHit)">{{ bridgeHitLabel(record.allusionBridgeHit)
+                          }}</a-tag>
                       </template>
                       <template v-else-if="column.key === 'category'">
                         <span class="cat-name">{{ record.category }}</span>
@@ -798,7 +803,8 @@ const groupDetailColumns = [
   { key: 'hits5', title: 'hits5', width: 80, align: 'center' },
   { key: 'hits10', title: 'hits10', width: 80, align: 'center' },
   { key: 'cover', title: 'cover', width: 90, align: 'center' },
-  { key: 'bridgeHit', title: '桥命中', width: 90, align: 'center' },
+  { key: 'eventBridgeHit', title: '事件桥', width: 90, align: 'center' },
+  { key: 'allusionBridgeHit', title: '典故桥', width: 90, align: 'center' },
   { key: 'sources', title: '原文', width: 90 },
 ]
 
@@ -821,15 +827,14 @@ function groupBucketColor(item: BenchmarkResultItem): string {
 }
 
 /** 桥命中列：true / false / 缺字段（老快照）三态分明 */
-function bridgeHitLabel(item: BenchmarkResultItem): string {
-  if (item.bridgeHit === true) return '命中'
-  if (item.bridgeHit === false) return '未命中'
+function bridgeHitLabel(value: boolean | undefined): string {
+  if (value === true) return '命中'
+  if (value === false) return '未命中'
   return '—'
 }
 
-function bridgeHitColor(item: BenchmarkResultItem): string {
-  if (item.bridgeHit === true) return 'green'
-  if (item.bridgeHit === false) return 'default'
+function bridgeHitColor(value: boolean | undefined): string {
+  if (value === true) return 'green'
   return 'default'
 }
 
