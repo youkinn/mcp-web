@@ -18,10 +18,14 @@
    阅读器弹框（feat-A010）的 antd 滚动锁（vc-util/Dom/scrollLocker.js）会向 body 注入 overflow: hidden /
    width: calc(100% - scrollBarSize)（bug-00017）：其开关条件恒真，传 :get-container 绕不开，故用下面一行 !important 中和 ——
    槽位已由 scrollbar-gutter 预留、width 无需补偿；overflow-y 必须回 visible，否则 body 变成内部滚动容器、文档滚动被换走。
-   弹框打开时页面不滚动改由遮罩层 overscroll-behavior: contain 保证，故 html 无需常驻绘制那条 inert 滚动条。 */
+   弹框打开时页面不滚动改由弹框 wrap 吃掉滚轮（见下方 .ant-modal-wrap 规则），故 html 无需常驻绘制那条 inert 滚动条。 */
 html { overflow-y: auto; scrollbar-gutter: stable; }
 html body { overflow-y: visible !important; width: auto !important; }
 body { margin: 0; min-width: 320px; }
+
+/* 弹框打开时页面不滚动：wrap 覆盖整个视口且本身是滚动容器，overscroll-behavior: contain 阻断滚轮链式传给 html；
+   弹框内滚动区（如查看弹框的召回列表）滚到边界同样不再带动底层页面。 */
+.ant-modal-wrap { overscroll-behavior: contain; }
 button, textarea { font: inherit; }
 
 /* ── Workspace / Home ── */

@@ -1106,9 +1106,11 @@ export interface BenchmarkResultItem {
   /** 桥分组数 / 桥是否命中 */
   bridgeGroups?: number
   bridgeHit?: boolean
-  /** 该题组内段 id / 池内前 10 候选 id */
+  /** 该题组内段 id / 池内前 10 候选 id / 50 路池有序 id */
   chunkIds?: string[]
   top10Ids?: string[]
+  /** 50 路池有序 chunkId（下标 +1 = 池内名次；老快照无此字段 → 页面降级只列 top10Ids） */
+  poolIds?: string[]
 }
 
 export interface BenchmarkData {

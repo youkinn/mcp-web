@@ -29,19 +29,14 @@
           <p class="bench-subtitle">{{ subtitleText }}</p>
         </div>
         <div class="bench-run-block">
-          <a-select
-            v-model:value="setId"
-            class="set-select"
-            :options="setOptions"
-            :loading="setsLoading"
-            :disabled="runLoading || setSwitching"
-            @change="onSetChange"
-          />
+          <a-select v-model:value="setId" class="set-select" :options="setOptions" :loading="setsLoading"
+            :disabled="runLoading || setSwitching" @change="onSetChange" />
           <span class="bench-run-hint">完整回归约数十秒，建议联调阶段手工触发</span>
           <a-button type="primary" size="large" :loading="runLoading" :disabled="runLoading" @click="onRun">
             执行
           </a-button>
-          <a-button danger size="large" :loading="runAborting" :disabled="!runLoading || runAborting" @click="onAbortRun">
+          <a-button danger size="large" :loading="runAborting" :disabled="!runLoading || runAborting"
+            @click="onAbortRun">
             停止
           </a-button>
         </div>
@@ -64,7 +59,8 @@
       <template v-if="snapshotData">
         <div class="bench-current">
           <span class="bench-current-label">当前快照</span>
-          <span class="bench-current-run" title="点击复制快照 Id" @click="copyRunId(snapshotData.runId)">{{ snapshotData.runId }}</span>
+          <span class="bench-current-run" title="点击复制快照 Id" @click="copyRunId(snapshotData.runId)">{{ snapshotData.runId
+            }}</span>
           <span class="bench-current-time">{{ formatBenchmarkTime(snapshotData.time) }}</span>
           <template v-if="isGroup">
             <a-tag color="green">cover@5 {{ groupRateText(groupMetricsOf.cover5) }}</a-tag>
@@ -80,354 +76,315 @@
 
         <a-tabs v-model:activeKey="activeTab" class="bench-tabs" @change="onTabChange">
           <a-tab-pane key="summary" tab="类别汇总">
-        <section v-if="isGroup" class="bench-card">
-          <div class="card-head">
-            <h3>组判分指标</h3>
-            <span class="bench-hint">主判据 cover@5；hit@10 只作「不得下降」红线</span>
-          </div>
-          <div class="metric-grid">
-            <div
-              v-for="row in groupMetricRowsOf"
-              :key="row.key"
-              class="metric-item"
-              :class="{ 'metric-primary': row.key === 'cover5' }"
-            >
-              <span class="metric-label">{{ row.label }}</span>
-              <span class="metric-value">{{ row.text }}</span>
-            </div>
-          </div>
-        </section>
-
-        <section v-if="isGroup" class="bench-card">
-          <div class="card-head">
-            <h3>分类汇总</h3>
-          </div>
-          <a-table
-            :columns="groupCategoryColumns"
-            :data-source="groupCategoryRows"
-            row-key="name"
-            :pagination="false"
-            :loading="snapshotLoading || runLoading"
-            size="middle"
-            class="cat-table"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'name'">
-                <span class="cat-name">{{ record.name }}</span>
-              </template>
-              <template v-else-if="column.key === 'cover5'">{{ groupRateText(record.cover5) }}</template>
-              <template v-else>{{ record[column.key] }}</template>
-            </template>
-          </a-table>
-
-          <h4 class="bucket-title">总分档</h4>
-          <a-table
-            :columns="groupCategoryColumns"
-            :data-source="groupBucketRows"
-            row-key="name"
-            :pagination="false"
-            :loading="snapshotLoading || runLoading"
-            size="middle"
-            class="cat-table"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'name'">
-                <span class="cat-name">{{ record.name }}</span>
-              </template>
-              <template v-else-if="column.key === 'cover5'">{{ groupRateText(record.cover5) }}</template>
-              <template v-else>{{ groupCountText(record[column.key]) }}</template>
-            </template>
-          </a-table>
-        </section>
-
-        <section v-if="isGroup" class="bench-card">
-          <div class="card-head">
-            <h3>题目明细</h3>
-            <a-select v-model:value="groupFilter" class="filter-select" :options="groupFilterOptions" />
-          </div>
-          <a-table
-            :columns="groupDetailColumns"
-            :data-source="groupDetailRows"
-            row-key="id"
-            :pagination="{ pageSize: 20, showSizeChanger: false, showTotal: (t: number) => `共 ${t} 题` }"
-            size="small"
-            :loading="snapshotLoading || runLoading"
-            class="question-table"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'question'">
-                <a-tooltip placement="topLeft">
-                  <template #title>{{ record.question }}</template>
-                  <span class="cell-ellipsis">{{ record.question }}</span>
-                </a-tooltip>
-              </template>
-              <template v-else-if="column.key === 'status'">
-                <a-tag :color="groupBucketColor(record)">{{ groupBucketLabel(groupBucketOf(record)) }}</a-tag>
-              </template>
-              <template v-else-if="column.key === 'firstRank'">{{ firstRankText(firstRankOf(record)) }}</template>
-              <template v-else-if="column.key === 'cover'">{{ groupRateText(cover5OfItem(record)) }}</template>
-              <template v-else-if="column.key === 'bridgeHit'">
-                <a-tag :color="bridgeHitColor(record)">{{ bridgeHitLabel(record) }}</a-tag>
-              </template>
-              <template v-else-if="column.key === 'category'">
-                <span class="cat-name">{{ record.category }}</span>
-              </template>
-              <template v-else-if="column.key === 'sources'">
-                <GroupSourceLinks :item="record" @open-chapter="openChapterChunk" />
-              </template>
-            </template>
-          </a-table>
-        </section>
-
-        <section v-if="isGroup" class="bench-card">
-          <div class="card-head">
-            <h3>未进池清单</h3>
-            <span class="bench-hint">共 {{ groupMissSplit.noBridge.length + groupMissSplit.dropped.length }} 题（与快照 summary.miss 一致）</span>
-          </div>
-          <div class="miss-group">
-            <h4 class="miss-group-title">桥未命中（bridgeHit = false）· {{ groupMissSplit.noBridge.length }} 题</h4>
-            <a-table
-              :columns="missColumns"
-              :data-source="groupMissSplit.noBridge"
-              row-key="id"
-              :pagination="false"
-              size="small"
-              class="miss-table"
-            >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'question'">
-                  <a-tooltip placement="topLeft">
-                    <template #title>{{ record.question }}</template>
-                    <span class="cell-ellipsis">{{ record.question }}</span>
-                  </a-tooltip>
-                </template>
-                <template v-else-if="column.key === 'segCount'">{{ groupCountText(record.segCount) }}</template>
-                <template v-else-if="column.key === 'bridgeGroups'">{{ groupCountText(record.bridgeGroups) }}</template>
-                <template v-else-if="column.key === 'sources'">
-                  <GroupSourceLinks :item="record" @open-chapter="openChapterChunk" />
-                </template>
-              </template>
-            </a-table>
-          </div>
-          <div class="miss-group">
-            <h4 class="miss-group-title">并池后掉窗（bridgeHit = true）· {{ groupMissSplit.dropped.length }} 题</h4>
-            <a-table
-              :columns="missColumns"
-              :data-source="groupMissSplit.dropped"
-              row-key="id"
-              :pagination="false"
-              size="small"
-              class="miss-table"
-            >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'question'">
-                  <a-tooltip placement="topLeft">
-                    <template #title>{{ record.question }}</template>
-                    <span class="cell-ellipsis">{{ record.question }}</span>
-                  </a-tooltip>
-                </template>
-                <template v-else-if="column.key === 'segCount'">{{ groupCountText(record.segCount) }}</template>
-                <template v-else-if="column.key === 'bridgeGroups'">{{ groupCountText(record.bridgeGroups) }}</template>
-                <template v-else-if="column.key === 'sources'">
-                  <GroupSourceLinks :item="record" @open-chapter="openChapterChunk" />
-                </template>
-              </template>
-            </a-table>
-          </div>
-        </section>
-
-        <section v-if="!isGroup" class="bench-card">
-          <div class="card-head">
-            <h3>类别汇总</h3>
-            <a-select v-model:value="filter" class="filter-select" :options="filterOptions" @change="onFilterChange" />
-          </div>
-          <a-table
-            :columns="categoryColumns"
-            :data-source="fullCategoryRows"
-            :row-key="(record: { name: string }) => record.name"
-            v-model:expandedRowKeys="expandedCategories"
-            :pagination="false"
-            :loading="snapshotLoading || runLoading"
-            size="middle"
-            class="cat-table"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'name'">
-                <span class="cat-name">{{ record.name }}</span>
-              </template>
-              <template v-else-if="column.key === 'total'">{{ record.total }}</template>
-              <template v-else-if="column.key === 'noAnchor'">
-                <span :class="record.noAnchor > 0 ? 'no-anchor-num' : ''">{{ record.noAnchor }}</span>
-              </template>
-              <template v-else-if="column.key === 'top5'">{{ record.top5 }}</template>
-              <template v-else-if="column.key === 'fail'">{{ record.tail + record.miss }}</template>
-              <template v-else-if="column.key === 'passRate'">
-                <span :class="rateClass(record.passRate)">{{ formatRatio(record.top5, record.judged) }}</span>
-              </template>
-              <template v-else-if="column.key === 'hit5'">{{ record.top5 }}</template>
-            </template>
-
-            <template #summary>
-              <a-table-summary>
-                <a-table-summary-row>
-                  <a-table-summary-cell :index="0" />
-                  <a-table-summary-cell :index="1" class="sum-cell-name">合计</a-table-summary-cell>
-                  <a-table-summary-cell :index="2" align="center" class="sum-cell">{{ summaryTotal?.total ?? 0 }}</a-table-summary-cell>
-                  <a-table-summary-cell :index="3" align="center" class="sum-cell">{{ summaryTotal?.top5 ?? 0 }}</a-table-summary-cell>
-                  <a-table-summary-cell :index="4" align="center" class="sum-cell">{{ summaryTotal?.fail ?? 0 }}</a-table-summary-cell>
-                  <a-table-summary-cell :index="5" align="center" class="sum-cell">{{ summaryTotal?.top5 ?? 0 }}</a-table-summary-cell>
-                  <a-table-summary-cell :index="6" align="center" class="sum-cell no-anchor-num">{{ summaryTotal?.noAnchor ?? 0 }}</a-table-summary-cell>
-                  <a-table-summary-cell :index="7" align="center" class="sum-cell">
-                    {{ formatRatio(summaryTotal?.top5 ?? 0, summaryTotal?.judged ?? 0) }}
-                  </a-table-summary-cell>
-                </a-table-summary-row>
-              </a-table-summary>
-            </template>
-
-            <template #expandedRowRender="{ record }">
-              <div class="cat-detail">
-                <div class="cat-detail-head">
-                  <a-tag color="blue">{{ record.name }}</a-tag>
-                  <span>
-                    共 {{ record.total }} 题，当前筛选「{{ filterLabel }}」显示 {{ detailRowsOf(record.name).length }} 题
-                    <template v-if="noAnchorInFilter(record.name) > 0">，未参与评分 {{ noAnchorInFilter(record.name) }} 题</template>
-                  </span>
-                </div>
-                <div v-if="detailRowsOf(record.name).length === 0" class="cat-detail-empty">该筛选下此类别无题目</div>
-                <a-table
-                  v-else
-                  :columns="questionColumns"
-                  :data-source="detailRowsOf(record.name)"
-                  :row-key="(q: BenchmarkResultItem) => q.id"
-                  :pagination="false"
-                  size="small"
-                  table-layout="fixed"
-                  :row-class-name="questionRowClass"
-                  class="question-table"
-                >
-                  <template #bodyCell="{ column, record: q }">
-                    <template v-if="column.key === 'seq'">{{ questionSeq(q) }}</template>
-                    <template v-else-if="column.key === 'question'">
-                      <a-tooltip placement="topLeft">
-                        <template #title>{{ q.question }}</template>
-                        <span class="cell-ellipsis">{{ q.question }}</span>
-                      </a-tooltip>
-                    </template>
-                    <template v-else-if="column.key === 'answer'">
-                      <a-tooltip placement="topLeft">
-                        <template #title>{{ q.answer }}</template>
-                        <span class="cell-ellipsis">{{ q.answer }}</span>
-                      </a-tooltip>
-                    </template>
-                    <template v-else-if="column.key === 'evidence'">
-                      <a-tooltip placement="topLeft">
-                        <template #title>{{ q.evidence }}</template>
-                        <span class="cell-ellipsis">{{ q.evidence }}</span>
-                      </a-tooltip>
-                    </template>
-                    <template v-else-if="column.key === 'rank'">
-                      <span v-if="isNoAnchor(q)" class="no-anchor-rank">—</span>
-                      <span v-else :class="{ 'rank-zero': q.rank === 0 }">{{ q.rank === 0 ? '未召回' : q.rank }}</span>
-                    </template>
-                    <template v-else-if="column.key === 'status'">
-                      <a-tag v-if="isNoAnchor(q)" class="no-anchor-tag">未参与评分</a-tag>
-                      <a-tag v-else :color="statusColor(q.status)">{{ statusLabel(q.status) }}</a-tag>
-                    </template>
-                    <template v-else-if="column.key === 'candidates'">
-                      <div v-if="q.candidates.length === 0" class="cand-empty">—</div>
-                      <a-button v-else type="link" size="small" @click="openCandidateModal(q)">查看</a-button>
-                    </template>
-                  </template>
-                </a-table>
+            <section v-if="isGroup" class="bench-card">
+              <div class="card-head">
+                <h3>组判分指标</h3>
+                <span class="bench-hint">主判据 cover@5；hit@10 只作「不得下降」红线</span>
               </div>
-            </template>
-          </a-table>
-        </section>
+              <div class="metric-grid">
+                <div v-for="row in groupMetricRowsOf" :key="row.key" class="metric-item"
+                  :class="{ 'metric-primary': row.key === 'cover5' }">
+                  <span class="metric-label">{{ row.label }}</span>
+                  <span class="metric-value">{{ row.text }}</span>
+                </div>
+              </div>
+            </section>
 
-        <section class="bench-card">
-          <div class="card-head">
-            <a-tooltip title="鼠标移入展示 点击行切换查看该次执行">
-              <h3>历史快照</h3>
-            </a-tooltip>
-          </div>
-          <a-table
-            :columns="historyColumns"
-            :data-source="historyItems"
-            :row-key="(item: BenchmarkHistoryItem) => item.runId"
-            :loading="historyLoading || snapshotLoading || runLoading"
-            :pagination="{ pageSize: 5 }"
-            size="small"
-            :row-class-name="historyRowClass"
-            :custom-row="historyRowHandlers"
-            class="history-table"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'time'">{{ formatBenchmarkTime(record.time) }}</template>
-              <template v-else-if="column.key === 'rerank'">
-                <a-tooltip>
-                  <template #title>
-                    <div class="rerank-tip">
-                      <div v-for="(line, i) in rerankTip(record)" :key="i">{{ line }}</div>
-                    </div>
+            <a-tabs v-if="isGroup" v-model:activeKey="groupTab" class="bench-subtabs">
+              <a-tab-pane key="category" tab="分类汇总">
+                <section class="bench-card">
+                  <a-table :columns="groupCategoryColumns" :data-source="groupCategoryRows" row-key="name"
+                    :pagination="false" :loading="snapshotLoading || runLoading" size="middle" class="cat-table">
+                    <template #bodyCell="{ column, record }">
+                      <template v-if="column.key === 'name'">
+                        <span class="cat-name">{{ record.name }}</span>
+                      </template>
+                      <template v-else-if="column.key === 'cover5'">{{ groupRateText(record.cover5) }}</template>
+                      <template v-else>{{ record[column.key] }}</template>
+                    </template>
+                  </a-table>
+
+                  <h4 class="bucket-title">总分档</h4>
+                  <a-table :columns="groupCategoryColumns" :data-source="groupBucketRows" row-key="name"
+                    :pagination="false" :loading="snapshotLoading || runLoading" size="middle" class="cat-table">
+                    <template #bodyCell="{ column, record }">
+                      <template v-if="column.key === 'name'">
+                        <span class="cat-name">{{ record.name }}</span>
+                      </template>
+                      <template v-else-if="column.key === 'cover5'">{{ groupRateText(record.cover5) }}</template>
+                      <template v-else>{{ groupCountText(record[column.key]) }}</template>
+                    </template>
+                  </a-table>
+                </section>
+
+              </a-tab-pane>
+              <a-tab-pane key="detail" tab="题目明细">
+                <section class="bench-card">
+                  <div class="card-head card-head-end">
+                    <a-select v-model:value="groupFilter" class="filter-select" :options="groupFilterOptions" />
+                  </div>
+                  <a-table :columns="groupDetailColumns" :data-source="groupDetailRows" row-key="id"
+                    :pagination="{ pageSize: 20, showSizeChanger: false, showTotal: (t: number) => `共 ${t} 题` }"
+                    size="small" :loading="snapshotLoading || runLoading" class="question-table">
+                    <template #bodyCell="{ column, record }">
+                      <template v-if="column.key === 'id'">{{ record.id }}</template>
+                      <template v-else-if="column.key === 'question'">
+                        <a-tooltip placement="topLeft">
+                          <template #title>{{ record.question }}</template>
+                          <span class="cell-ellipsis">{{ record.question }}</span>
+                        </a-tooltip>
+                      </template>
+                      <template v-else-if="column.key === 'status'">
+                        <a-tag :color="groupBucketColor(record)">{{ groupBucketLabel(groupBucketOf(record)) }}</a-tag>
+                      </template>
+                      <template v-else-if="column.key === 'firstRank'">{{ firstRankText(firstRankOf(record))
+                        }}</template>
+                      <template v-else-if="column.key === 'hits5'">{{ groupCountText(record.hits5) }}</template>
+                      <template v-else-if="column.key === 'hits10'">{{ groupCountText(record.hits10) }}</template>
+                      <template v-else-if="column.key === 'cover'">{{ groupRateText(cover5OfItem(record)) }}</template>
+                      <template v-else-if="column.key === 'bridgeHit'">
+                        <a-tag :color="bridgeHitColor(record)">{{ bridgeHitLabel(record) }}</a-tag>
+                      </template>
+                      <template v-else-if="column.key === 'category'">
+                        <span class="cat-name">{{ record.category }}</span>
+                      </template>
+                      <template v-else-if="column.key === 'sources'">
+                        <a-button type="link" size="small" @click="openSourceModal(record)">查看</a-button>
+                      </template>
+                    </template>
+                  </a-table>
+                </section>
+
+              </a-tab-pane>
+              <a-tab-pane key="miss" tab="未进池清单">
+                <section class="bench-card">
+                  <div class="card-head card-head-end">
+                    <span class="bench-hint">共 {{ groupMissSplit.noBridge.length + groupMissSplit.dropped.length }}
+                      题（与快照
+                      summary.miss 一致）</span>
+                  </div>
+                  <div class="miss-group">
+                    <h4 class="miss-group-title">桥未命中（bridgeHit = false）· {{ groupMissSplit.noBridge.length }} 题</h4>
+                    <a-table :columns="missColumns" :data-source="groupMissSplit.noBridge" row-key="id"
+                      :pagination="false" size="small" class="miss-table">
+                      <template #bodyCell="{ column, record }">
+                        <template v-if="column.key === 'id'">{{ record.id }}</template>
+                        <template v-else-if="column.key === 'question'">
+                          <a-tooltip placement="topLeft">
+                            <template #title>{{ record.question }}</template>
+                            <span class="cell-ellipsis">{{ record.question }}</span>
+                          </a-tooltip>
+                        </template>
+                        <template v-else-if="column.key === 'category'">
+                          <span class="cat-name">{{ record.category }}</span>
+                        </template>
+                        <template v-else-if="column.key === 'segCount'">{{ groupCountText(record.segCount) }}</template>
+                        <template v-else-if="column.key === 'bridgeGroups'">{{ groupCountText(record.bridgeGroups)
+                          }}</template>
+                        <template v-else-if="column.key === 'sources'">
+                          <a-button type="link" size="small" @click="openSourceModal(record)">查看</a-button>
+                        </template>
+                      </template>
+                    </a-table>
+                  </div>
+                  <div class="miss-group">
+                    <h4 class="miss-group-title">并池后掉窗（bridgeHit = true）· {{ groupMissSplit.dropped.length }} 题</h4>
+                    <a-table :columns="missColumns" :data-source="groupMissSplit.dropped" row-key="id"
+                      :pagination="false" size="small" class="miss-table">
+                      <template #bodyCell="{ column, record }">
+                        <template v-if="column.key === 'id'">{{ record.id }}</template>
+                        <template v-else-if="column.key === 'question'">
+                          <a-tooltip placement="topLeft">
+                            <template #title>{{ record.question }}</template>
+                            <span class="cell-ellipsis">{{ record.question }}</span>
+                          </a-tooltip>
+                        </template>
+                        <template v-else-if="column.key === 'category'">
+                          <span class="cat-name">{{ record.category }}</span>
+                        </template>
+                        <template v-else-if="column.key === 'segCount'">{{ groupCountText(record.segCount) }}</template>
+                        <template v-else-if="column.key === 'bridgeGroups'">{{ groupCountText(record.bridgeGroups)
+                          }}</template>
+                        <template v-else-if="column.key === 'sources'">
+                          <a-button type="link" size="small" @click="openSourceModal(record)">查看</a-button>
+                        </template>
+                      </template>
+                    </a-table>
+                  </div>
+                </section>
+              </a-tab-pane>
+            </a-tabs>
+
+            <section v-if="!isGroup" class="bench-card">
+              <div class="card-head">
+                <h3>类别汇总</h3>
+                <a-select v-model:value="filter" class="filter-select" :options="filterOptions"
+                  @change="onFilterChange" />
+              </div>
+              <a-table :columns="categoryColumns" :data-source="fullCategoryRows"
+                :row-key="(record: { name: string }) => record.name" v-model:expandedRowKeys="expandedCategories"
+                :pagination="false" :loading="snapshotLoading || runLoading" size="middle" class="cat-table">
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'name'">
+                    <span class="cat-name">{{ record.name }}</span>
                   </template>
-                  <span class="rerank-badge" :class="{ 'rerank-badge-warn': rerankWarn(record) }">
-                    {{ rerankText(record) }}
-                  </span>
+                  <template v-else-if="column.key === 'total'">{{ record.total }}</template>
+                  <template v-else-if="column.key === 'noAnchor'">
+                    <span :class="record.noAnchor > 0 ? 'no-anchor-num' : ''">{{ record.noAnchor }}</span>
+                  </template>
+                  <template v-else-if="column.key === 'top5'">{{ record.top5 }}</template>
+                  <template v-else-if="column.key === 'fail'">{{ record.tail + record.miss }}</template>
+                  <template v-else-if="column.key === 'passRate'">
+                    <span :class="rateClass(record.passRate)">{{ formatRatio(record.top5, record.judged) }}</span>
+                  </template>
+                  <template v-else-if="column.key === 'hit5'">{{ record.top5 }}</template>
+                </template>
+
+                <template #summary>
+                  <a-table-summary>
+                    <a-table-summary-row>
+                      <a-table-summary-cell :index="0" />
+                      <a-table-summary-cell :index="1" class="sum-cell-name">合计</a-table-summary-cell>
+                      <a-table-summary-cell :index="2" align="center" class="sum-cell">{{ summaryTotal?.total ?? 0
+                        }}</a-table-summary-cell>
+                      <a-table-summary-cell :index="3" align="center" class="sum-cell">{{ summaryTotal?.top5 ?? 0
+                        }}</a-table-summary-cell>
+                      <a-table-summary-cell :index="4" align="center" class="sum-cell">{{ summaryTotal?.fail ?? 0
+                        }}</a-table-summary-cell>
+                      <a-table-summary-cell :index="5" align="center" class="sum-cell">{{ summaryTotal?.top5 ?? 0
+                        }}</a-table-summary-cell>
+                      <a-table-summary-cell :index="6" align="center" class="sum-cell no-anchor-num">{{
+                        summaryTotal?.noAnchor ?? 0 }}</a-table-summary-cell>
+                      <a-table-summary-cell :index="7" align="center" class="sum-cell">
+                        {{ formatRatio(summaryTotal?.top5 ?? 0, summaryTotal?.judged ?? 0) }}
+                      </a-table-summary-cell>
+                    </a-table-summary-row>
+                  </a-table-summary>
+                </template>
+
+                <template #expandedRowRender="{ record }">
+                  <div class="cat-detail">
+                    <div class="cat-detail-head">
+                      <a-tag color="blue">{{ record.name }}</a-tag>
+                      <span>
+                        共 {{ record.total }} 题，当前筛选「{{ filterLabel }}」显示 {{ detailRowsOf(record.name).length }} 题
+                        <template v-if="noAnchorInFilter(record.name) > 0">，未参与评分 {{ noAnchorInFilter(record.name) }}
+                          题</template>
+                      </span>
+                    </div>
+                    <div v-if="detailRowsOf(record.name).length === 0" class="cat-detail-empty">该筛选下此类别无题目</div>
+                    <a-table v-else :columns="questionColumns" :data-source="detailRowsOf(record.name)"
+                      :row-key="(q: BenchmarkResultItem) => q.id" :pagination="false" size="small" table-layout="fixed"
+                      :row-class-name="questionRowClass" class="question-table">
+                      <template #bodyCell="{ column, record: q }">
+                        <template v-if="column.key === 'seq'">{{ questionSeq(q) }}</template>
+                        <template v-else-if="column.key === 'question'">
+                          <a-tooltip placement="topLeft">
+                            <template #title>{{ q.question }}</template>
+                            <span class="cell-ellipsis">{{ q.question }}</span>
+                          </a-tooltip>
+                        </template>
+                        <template v-else-if="column.key === 'answer'">
+                          <a-tooltip placement="topLeft">
+                            <template #title>{{ q.answer }}</template>
+                            <span class="cell-ellipsis">{{ q.answer }}</span>
+                          </a-tooltip>
+                        </template>
+                        <template v-else-if="column.key === 'evidence'">
+                          <a-tooltip placement="topLeft">
+                            <template #title>{{ q.evidence }}</template>
+                            <span class="cell-ellipsis">{{ q.evidence }}</span>
+                          </a-tooltip>
+                        </template>
+                        <template v-else-if="column.key === 'rank'">
+                          <span v-if="isNoAnchor(q)" class="no-anchor-rank">—</span>
+                          <span v-else :class="{ 'rank-zero': q.rank === 0 }">{{ q.rank === 0 ? '未召回' : q.rank }}</span>
+                        </template>
+                        <template v-else-if="column.key === 'status'">
+                          <a-tag v-if="isNoAnchor(q)" class="no-anchor-tag">未参与评分</a-tag>
+                          <a-tag v-else :color="statusColor(q.status)">{{ statusLabel(q.status) }}</a-tag>
+                        </template>
+                        <template v-else-if="column.key === 'candidates'">
+                          <div v-if="q.candidates.length === 0" class="cand-empty">—</div>
+                          <a-button v-else type="link" size="small" @click="openCandidateModal(q)">查看</a-button>
+                        </template>
+                      </template>
+                    </a-table>
+                  </div>
+                </template>
+              </a-table>
+            </section>
+
+            <section class="bench-card">
+              <div class="card-head">
+                <a-tooltip title="鼠标移入展示 点击行切换查看该次执行">
+                  <h3>历史快照</h3>
                 </a-tooltip>
-              </template>
-              <template v-else-if="column.key === 'rerankWindow'">
-                <span :class="{ 'rerank-window-warn': rerankWarn(record) }">{{ rerankWindowText(record) }}</span>
-              </template>
-              <template v-else-if="column.key === 'elapsed'">{{ formatElapsedText(record.summary.elapsedMs) }}</template>
-              <template v-else-if="column.key === 'summary'">{{ historySummaryText(record) }}</template>
-              <template v-else-if="column.key === 'actions'">
-                <a-button type="link" size="small" :disabled="runLoading" @click.stop="openCompare(record)">比较</a-button>
-              </template>
-            </template>
-          </a-table>
-        </section>
+              </div>
+              <a-table :columns="historyColumns" :data-source="historyItems"
+                :row-key="(item: BenchmarkHistoryItem) => item.runId"
+                :loading="historyLoading || snapshotLoading || runLoading" :pagination="{ pageSize: 5 }" size="small"
+                :row-class-name="historyRowClass" :custom-row="historyRowHandlers" class="history-table">
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'time'">{{ formatBenchmarkTime(record.time) }}</template>
+                  <template v-else-if="column.key === 'rerank'">
+                    <a-tooltip>
+                      <template #title>
+                        <div class="rerank-tip">
+                          <div v-for="(line, i) in rerankTip(record)" :key="i">{{ line }}</div>
+                        </div>
+                      </template>
+                      <span class="rerank-badge" :class="{ 'rerank-badge-warn': rerankWarn(record) }">
+                        {{ rerankText(record) }}
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <template v-else-if="column.key === 'rerankWindow'">
+                    <span :class="{ 'rerank-window-warn': rerankWarn(record) }">{{ rerankWindowText(record) }}</span>
+                  </template>
+                  <template v-else-if="column.key === 'elapsed'">{{ formatElapsedText(record.summary.elapsedMs)
+                    }}</template>
+                  <template v-else-if="column.key === 'summary'">{{ historySummaryText(record) }}</template>
+                  <template v-else-if="column.key === 'actions'">
+                    <a-button type="link" size="small" :disabled="runLoading"
+                      @click.stop="openCompare(record)">比较</a-button>
+                  </template>
+                </template>
+              </a-table>
+            </section>
           </a-tab-pane>
           <a-tab-pane key="charts" tab="图表">
-        <section class="bench-card">
-          <div class="card-head"><h3>类别分布</h3></div>
-          <div v-if="snapshotLoading" class="chart-state"><a-spin size="small" /><span>快照加载中…</span></div>
-          <div v-else ref="barChartEl" class="chart-canvas" />
-        </section>
+            <section class="bench-card">
+              <div class="card-head">
+                <h3>类别分布</h3>
+              </div>
+              <div v-if="snapshotLoading" class="chart-state"><a-spin size="small" /><span>快照加载中…</span></div>
+              <div v-else ref="barChartEl" class="chart-canvas" />
+            </section>
 
-        <section class="bench-card">
-          <div class="card-head">
-            <a-tooltip title="按 runId 依次展示历史整体对比">
-              <h3>{{ isGroup ? 'cover@5 趋势' : '通过率趋势' }}</h3>
-            </a-tooltip>
-          </div>
-          <div v-if="historyLoading && historyItems.length === 0" class="chart-state"><a-spin size="small" /><span>历史加载中…</span></div>
-          <div v-else-if="historyItems.length === 0" class="chart-state"><span>暂无历史执行记录</span></div>
-          <div v-else ref="trendChartEl" class="chart-canvas" />
-        </section>
+            <section class="bench-card">
+              <div class="card-head">
+                <a-tooltip title="按 runId 依次展示历史整体对比">
+                  <h3>{{ isGroup ? 'cover@5 趋势' : '通过率趋势' }}</h3>
+                </a-tooltip>
+              </div>
+              <div v-if="historyLoading && historyItems.length === 0" class="chart-state"><a-spin
+                  size="small" /><span>历史加载中…</span></div>
+              <div v-else-if="historyItems.length === 0" class="chart-state"><span>暂无历史执行记录</span></div>
+              <div v-else ref="trendChartEl" class="chart-canvas" />
+            </section>
           </a-tab-pane>
         </a-tabs>
       </template>
     </div>
 
-    <SangoChapterReader
-      v-model:open="readerOpen"
-      :chapter="readerChapter"
-      :chapter-title="readerChapterTitle"
-      :chunk-id="readerChunkId"
-    />
-    <BenchmarkCompareModal
-      v-model:open="compareOpen"
-      :history-items="historyItems"
-      :base-run-id="compareBaseRunId"
-      :set-id="setId"
-      @open-chapter="openReader"
-    />
-    <CandidateListModal
-      v-model:open="candidateModalOpen"
-      :result="candidateModalResult"
-      :highlight-id="candidateModalHighlightId"
-      @open-chapter="openReader"
-    />
+    <SangoChapterReader v-model:open="readerOpen" :chapter="readerChapter" :chapter-title="readerChapterTitle"
+      :chunk-id="readerChunkId" />
+    <BenchmarkCompareModal v-model:open="compareOpen" :history-items="historyItems" :base-run-id="compareBaseRunId"
+      :set-id="setId" @open-chapter="openReader" />
+    <CandidateListModal v-model:open="candidateModalOpen" :result="candidateModalResult"
+      :highlight-id="candidateModalHighlightId" @open-chapter="openReader" />
+    <GroupSourceModal v-model:open="sourceModalOpen" :item="sourceModalItem" @open-chapter="openChapterChunk" />
   </main>
 </template>
 
@@ -441,7 +398,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import type { EChartsType } from 'echarts/core'
 import BenchmarkCompareModal from '../components/BenchmarkCompareModal.vue'
 import CandidateListModal from '../components/CandidateListModal.vue'
-import GroupSourceLinks from '../components/GroupSourceLinks.vue'
+import GroupSourceModal from '../components/GroupSourceModal.vue'
 import SangoChapterReader from '../components/SangoChapterReader.vue'
 import { isNoAnchor, judgedOf, noAnchorCountOf } from '../utils/benchmarkJudged'
 import {
@@ -579,10 +536,16 @@ function restoreActiveTab(): 'summary' | 'charts' {
 
 const activeTab = ref<'summary' | 'charts'>(restoreActiveTab())
 
+/** 组集「类别汇总」页内的二级 tab：分类汇总 / 题目明细 / 未进池清单（三类块改为分页展示，不再纵向堆叠） */
+const groupTab = ref<'category' | 'detail' | 'miss'>('category')
+
 const candidateModalOpen = ref(false)
 const candidateModalResult = ref<BenchmarkResultItem | null>(null)
 /** 弹框高亮：当前所点行 rank 对应召回池（candidates 按 rank 1 起有序）位置候选的 id；rank 无效 / 越池为 null */
 const candidateModalHighlightId = ref<string | null>(null)
+
+const sourceModalOpen = ref(false)
+const sourceModalItem = ref<BenchmarkResultItem | null>(null)
 
 const barChartEl = ref<HTMLElement | null>(null)
 const trendChartEl = ref<HTMLElement | null>(null)
@@ -835,7 +798,7 @@ const groupDetailColumns = [
   { key: 'hits10', title: 'hits10', width: 80, align: 'center' },
   { key: 'cover', title: 'cover', width: 90, align: 'center' },
   { key: 'bridgeHit', title: '桥命中', width: 90, align: 'center' },
-  { key: 'sources', title: '原文', width: 260 },
+  { key: 'sources', title: '原文', width: 90 },
 ]
 
 const missColumns = [
@@ -844,7 +807,7 @@ const missColumns = [
   { key: 'category', title: '分类', width: 80, align: 'center' },
   { key: 'segCount', title: '组内段数', width: 100, align: 'center' },
   { key: 'bridgeGroups', title: '桥分组数', width: 100, align: 'center' },
-  { key: 'sources', title: '原文', width: 260 },
+  { key: 'sources', title: '原文', width: 90 },
 ]
 
 function groupBucketColor(item: BenchmarkResultItem): string {
@@ -1162,17 +1125,17 @@ function renderTrendChart(): void {
             baseline === null
               ? undefined
               : {
-                  symbol: 'none',
-                  silent: true,
-                  lineStyle: { type: 'dashed', color: '#8b9990', width: 1 },
-                  label: {
-                    formatter: `首跑基线 ${formatPercent(baseline / 100)}`,
-                    position: 'insideEndTop',
-                    color: '#8b9990',
-                    fontSize: 11,
-                  },
-                  data: [{ yAxis: baseline }],
+                symbol: 'none',
+                silent: true,
+                lineStyle: { type: 'dashed', color: '#8b9990', width: 1 },
+                label: {
+                  formatter: `首跑基线 ${formatPercent(baseline / 100)}`,
+                  position: 'insideEndTop',
+                  color: '#8b9990',
+                  fontSize: 11,
                 },
+                data: [{ yAxis: baseline }],
+              },
         },
       ],
     },
@@ -1286,6 +1249,7 @@ async function onSetChange(): Promise<void> {
   filter.value = 'all'
   groupFilter.value = 'all'
   candidateModalOpen.value = false
+  sourceModalOpen.value = false
   compareOpen.value = false
   disposeCharts()
   try {
@@ -1331,6 +1295,7 @@ async function finishBenchmarkRun(runId: string, runSetId: string): Promise<void
       selectedRunId.value = data.runId
       expandedCategories.value = []
       candidateModalOpen.value = false
+      sourceModalOpen.value = false
       message.success(
         isGroupSummary(data.summary)
           ? `评测完成：cover@5 ${groupRateText(summaryCover5(data.summary))} · hit@5 ${groupCountRateText(data.summary.hit5, data.summary.total)}`
@@ -1454,19 +1419,19 @@ async function resumeRunningBenchmark(): Promise<void> {
 const historyColumns = computed(() =>
   isGroup.value
     ? [
-        { key: 'summary', title: '摘要' },
-        { key: 'time', title: '时间', width: 210 },
-        { key: 'elapsed', title: '耗时', width: 100, align: 'center' },
-        { key: 'actions', title: '操作', width: 90, align: 'center' },
-      ]
+      { key: 'summary', title: '摘要' },
+      { key: 'time', title: '时间', width: 210 },
+      { key: 'elapsed', title: '耗时', width: 100, align: 'center' },
+      { key: 'actions', title: '操作', width: 90, align: 'center' },
+    ]
     : [
-        { key: 'summary', title: '摘要' },
-        { key: 'rerank', title: '重排', width: 120, align: 'center' },
-        { key: 'rerankWindow', title: '重排窗口', width: 100, align: 'center' },
-        { key: 'time', title: '时间', width: 210 },
-        { key: 'elapsed', title: '耗时', width: 100, align: 'center' },
-        { key: 'actions', title: '操作', width: 90, align: 'center' },
-      ],
+      { key: 'summary', title: '摘要' },
+      { key: 'rerank', title: '重排', width: 120, align: 'center' },
+      { key: 'rerankWindow', title: '重排窗口', width: 100, align: 'center' },
+      { key: 'time', title: '时间', width: 210 },
+      { key: 'elapsed', title: '耗时', width: 100, align: 'center' },
+      { key: 'actions', title: '操作', width: 90, align: 'center' },
+    ],
 )
 
 /** 「重排窗口」列：on 显示该条快照实际窗口值；off / 老快照无字段显示「—」 */
@@ -1517,6 +1482,7 @@ async function onHistoryClick(item: BenchmarkHistoryItem): Promise<void> {
     selectedRunId.value = item.runId
     expandedCategories.value = []
     candidateModalOpen.value = false
+    sourceModalOpen.value = false
   } catch (err) {
     message.error(getErrorMessage(err))
   } finally {
@@ -1542,6 +1508,12 @@ function openReader(candidate: { id: string; title?: string }): void {
 /** 组集原文入口：只带 chunkId（组内段 / top10 候选），回号解析与锚集同一口径 */
 function openChapterChunk(chunkId: string): void {
   openReader({ id: chunkId })
+}
+
+/** 原文弹框：表格原文列只放「查看」，组内段 / top10 候选清单在弹框内展开 */
+function openSourceModal(item: BenchmarkResultItem): void {
+  sourceModalItem.value = item
+  sourceModalOpen.value = true
 }
 
 // ── 生命周期 ──
@@ -1710,6 +1682,15 @@ onBeforeUnmount(() => {
 
 .bench-tabs :deep(.ant-tabs-nav) {
   margin-bottom: 0;
+}
+
+/* 二级 tab（分类汇总 / 题目明细 / 未进池清单）贴在卡片上方，缓存不留空档 */
+.bench-subtabs :deep(.ant-tabs-nav) {
+  margin-bottom: 0;
+}
+
+.card-head-end {
+  justify-content: flex-end;
 }
 
 .cat-table :deep(.ant-table-thead > tr > th) {
@@ -1897,7 +1878,7 @@ onBeforeUnmount(() => {
   font-size: 14px;
 }
 
-.miss-group + .miss-group {
+.miss-group+.miss-group {
   margin-top: 16px;
 }
 
@@ -1910,5 +1891,4 @@ onBeforeUnmount(() => {
 .miss-table :deep(.ant-table-thead > tr > th) {
   background: #f2f6f1;
 }
-
 </style>

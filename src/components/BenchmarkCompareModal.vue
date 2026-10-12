@@ -87,6 +87,9 @@
                 :row-class-name="rowClassName"
                 class="compare-row-table"
               >
+                <template #emptyText>
+                  <span class="compare-empty">{{ emptyHint }}</span>
+                </template>
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'question'">
                     <a-tooltip placement="topLeft">
@@ -164,6 +167,9 @@
               :row-class-name="rowClassName"
               class="compare-row-table"
             >
+              <template #emptyText>
+                <span class="compare-empty">{{ emptyHint }}</span>
+              </template>
               <template #bodyCell="{ column, record }">
                 <template v-if="column.key === 'question'">
                   <a-tooltip placement="topLeft">
@@ -253,7 +259,8 @@ const comparing = ref(false)
 const comparison = ref<BenchmarkComparison | null>(null)
 /** 组判分集比较结果（与锚集比较分开持有，避免两套字段混用） */
 const groupComparison = ref<GroupComparison | null>(null)
-const onlyChanged = ref(true)
+/** 只看变化：默认不勾——「全部」即全量逐项，避免两次快照无变化时该 tab 观感为空 */
+const onlyChanged = ref(false)
 const resultTab = ref<'category' | 'rows'>('category')
 type ChangeFilter = 'all' | 'up' | 'down'
 const changeFilter = ref<ChangeFilter>('all')
@@ -302,6 +309,14 @@ const visibleRows = computed<CompareRow[]>(() => {
   return onlyChanged.value ? filtered.filter((r) => r.change !== 'flat') : filtered
 })
 
+/** 逐项表空态文案：区分「筛选无变化」与「两次快照完全一致」（避免只剩一句 No data 的空表） */
+const emptyHint = computed(() => {
+  const total = activeRows.value.length
+  if (changeFilter.value !== 'all') return '该筛选下无变化'
+  if (onlyChanged.value) return `两次快照 ${total} 题在该口径下完全一致（档位 / 名次无变化）；取消「只看变化」可列出全部`
+  return '暂无可比较的逐项数据'
+})
+
 watch(
   () => [props.open, props.baseRunId, props.setId],
   () => {
@@ -309,7 +324,7 @@ watch(
     targetRunId.value = candidates.value[0]?.runId ?? null
     comparison.value = null
     groupComparison.value = null
-    onlyChanged.value = true
+    onlyChanged.value = false
     changeFilter.value = 'all'
     resultTab.value = 'category'
   },

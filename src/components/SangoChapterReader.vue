@@ -3,6 +3,7 @@
     :open="open"
     title="三国演义 · 原文阅读"
     width="960px"
+    :z-index="1100"
     wrap-class-name="reader-modal-wrap"
     :footer="null"
     @update:open="onOpenChange"
