@@ -71,6 +71,7 @@
             <a-tag color="green">通过 {{ snapshotData.summary.top5 }}/{{ judgedOf(snapshotData.summary) }}</a-tag>
             <a-tag color="gold">兜底 {{ snapshotData.summary.tail }}</a-tag>
             <a-tag color="red">未命中 {{ snapshotData.summary.miss }}</a-tag>
+            <a-tag color="cyan">回级命中 {{ chapterTop5Of(snapshotData.summary) }}</a-tag>
           </template>
         </div>
 
@@ -239,6 +240,7 @@
                     <span :class="record.noAnchor > 0 ? 'no-anchor-num' : ''">{{ record.noAnchor }}</span>
                   </template>
                   <template v-else-if="column.key === 'top5'">{{ record.top5 }}</template>
+                  <template v-else-if="column.key === 'chapterTop5'">{{ record.chapterTop5 }}</template>
                   <template v-else-if="column.key === 'fail'">{{ record.tail + record.miss }}</template>
                   <template v-else-if="column.key === 'passRate'">
                     <span :class="rateClass(record.passRate)">{{ formatRatio(record.top5, record.judged) }}</span>
@@ -255,13 +257,15 @@
                         }}</a-table-summary-cell>
                       <a-table-summary-cell :index="3" align="center" class="sum-cell">{{ summaryTotal?.top5 ?? 0
                         }}</a-table-summary-cell>
-                      <a-table-summary-cell :index="4" align="center" class="sum-cell">{{ summaryTotal?.fail ?? 0
+                      <a-table-summary-cell :index="4" align="center" class="sum-cell">{{ summaryTotal?.chapterTop5 ?? 0
                         }}</a-table-summary-cell>
-                      <a-table-summary-cell :index="5" align="center" class="sum-cell">{{ summaryTotal?.top5 ?? 0
+                      <a-table-summary-cell :index="5" align="center" class="sum-cell">{{ summaryTotal?.fail ?? 0
                         }}</a-table-summary-cell>
-                      <a-table-summary-cell :index="6" align="center" class="sum-cell no-anchor-num">{{
+                      <a-table-summary-cell :index="6" align="center" class="sum-cell">{{ summaryTotal?.top5 ?? 0
+                        }}</a-table-summary-cell>
+                      <a-table-summary-cell :index="7" align="center" class="sum-cell no-anchor-num">{{
                         summaryTotal?.noAnchor ?? 0 }}</a-table-summary-cell>
-                      <a-table-summary-cell :index="7" align="center" class="sum-cell">
+                      <a-table-summary-cell :index="8" align="center" class="sum-cell">
                         {{ formatRatio(summaryTotal?.top5 ?? 0, summaryTotal?.judged ?? 0) }}
                       </a-table-summary-cell>
                     </a-table-summary-row>
@@ -305,6 +309,10 @@
                         <template v-else-if="column.key === 'rank'">
                           <span v-if="isNoAnchor(q)" class="no-anchor-rank">—</span>
                           <span v-else :class="{ 'rank-zero': q.rank === 0 }">{{ q.rank === 0 ? '未召回' : q.rank }}</span>
+                        </template>
+                        <template v-else-if="column.key === 'chapterRank'">
+                          <span v-if="isNoAnchor(q)" class="no-anchor-rank">—</span>
+                          <span v-else :class="{ 'rank-zero': chapterRankOf(q) === 0 }">{{ chapterRankOf(q) === 0 ? '未进池' : chapterRankOf(q) }}</span>
                         </template>
                         <template v-else-if="column.key === 'status'">
                           <a-tag v-if="isNoAnchor(q)" class="no-anchor-tag">未参与评分</a-tag>
@@ -406,7 +414,7 @@ import BenchmarkCompareModal from '../components/BenchmarkCompareModal.vue'
 import CandidateListModal from '../components/CandidateListModal.vue'
 import GroupSourceModal from '../components/GroupSourceModal.vue'
 import SangoChapterReader from '../components/SangoChapterReader.vue'
-import { isNoAnchor, judgedOf, noAnchorCountOf } from '../utils/benchmarkJudged'
+import { chapterRankOf, chapterTop5Of, isNoAnchor, judgedOf, noAnchorCountOf } from '../utils/benchmarkJudged'
 import {
   DEFAULT_BENCHMARK_SET_ID,
   abortBenchmarkRun,
@@ -659,6 +667,7 @@ interface CategoryRow {
   noAnchor: number
   judged: number
   top5: number
+  chapterTop5: number
   tail: number
   miss: number
   passRate: number | null
@@ -668,6 +677,7 @@ const categoryColumns = [
   { key: 'name', title: '类别' },
   { key: 'total', title: '总题数', align: 'center', width: 90 },
   { key: 'top5', title: '通过数', align: 'center', width: 90 },
+  { key: 'chapterTop5', title: '回级命中', align: 'center', width: 90 },
   { key: 'fail', title: '失败数', align: 'center', width: 90 },
   { key: 'hit5', title: 'Top5命中数', align: 'center', width: 110 },
   { key: 'noAnchor', title: '未参与评分', align: 'center', width: 100 },
@@ -697,6 +707,7 @@ const fullCategoryRows = computed<CategoryRow[]>(() => {
       noAnchor,
       judged,
       top5: cat.top5,
+      chapterTop5: chapterTop5Of(cat),
       tail: cat.tail,
       miss: cat.miss,
       passRate: judged > 0 ? cat.top5 / judged : null,
@@ -712,6 +723,7 @@ const summaryTotal = computed(() => {
     noAnchor: noAnchorCountOf(summary),
     judged: judgedOf(summary),
     top5: summary.top5,
+    chapterTop5: chapterTop5Of(summary),
     fail: summary.tail + summary.miss,
   }
 })
@@ -855,6 +867,7 @@ const questionColumns = [
   { key: 'answer', title: '参考答案', width: 150 },
   { key: 'evidence', title: '期望命中', width: 220 },
   { key: 'rank', title: '排名', width: 80, align: 'center' },
+  { key: 'chapterRank', title: '回名次', width: 90, align: 'center' },
   { key: 'status', title: '状态', width: 90, align: 'center' },
   { key: 'candidates', title: '召回列表', width: 90, align: 'center' },
 ]

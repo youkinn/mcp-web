@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert'
 import { describe, it } from 'node:test'
 import type { BenchmarkResultItem, BenchmarkSummary } from '../api/client'
-import { isNoAnchor, judgedOf, noAnchorCountOf } from './benchmarkJudged.ts'
+import { chapterRankOf, chapterTop5Of, isNoAnchor, judgedOf, noAnchorCountOf } from './benchmarkJudged.ts'
 
 // ── 零锚题口径单测（bug-00052）：可判题数 / 未参与评分数的兜底规则 ──
 
@@ -56,5 +56,29 @@ describe('isNoAnchor', () => {
     assert.equal(isNoAnchor(item), true)
     assert.equal(isNoAnchor({ ...item, noAnchor: false }), false)
     assert.equal(isNoAnchor({ ...item, noAnchor: undefined }), false)
+  })
+})
+
+// ── 回级命中口径（bug-00063）：分类 / 顶层回级命中数、单题回目池内名次的兜底规则 ──
+
+describe('chapterTop5Of', () => {
+  it('有值时透传', () => {
+    assert.equal(chapterTop5Of({ chapterTop5: 7 }), 7)
+  })
+
+  it('老快照缺字段按 0 兜底', () => {
+    assert.equal(chapterTop5Of({}), 0)
+    assert.equal(chapterTop5Of({ chapterTop5: undefined }), 0)
+  })
+})
+
+describe('chapterRankOf', () => {
+  it('有值时透传（未进池的 0 原样返回）', () => {
+    assert.equal(chapterRankOf({ chapterRank: 3 } as BenchmarkResultItem), 3)
+    assert.equal(chapterRankOf({ chapterRank: 0 } as BenchmarkResultItem), 0)
+  })
+
+  it('老快照缺字段按 0 兜底', () => {
+    assert.equal(chapterRankOf({} as BenchmarkResultItem), 0)
   })
 })

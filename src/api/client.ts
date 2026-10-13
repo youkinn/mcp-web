@@ -955,6 +955,8 @@ export interface BenchmarkCategorySummary {
   top5: number
   tail: number
   miss: number
+  /** 回级命中题数（期望回目进候选 top5）；老快照无此字段，读取侧需容错 */
+  chapterTop5?: number
 }
 
 /** 组判分分类 / 分段桶计数（feat-A018）：summary.byCategory / summary.byBucket 的元素 */
@@ -994,6 +996,8 @@ export interface BenchmarkSummary {
   top3: number
   top10: number
   inPool50: number
+  /** 回级命中题数（期望回目进候选 top5，与段级 top5 并列维度）；老快照无此字段，读取侧需容错 */
+  chapterTop5?: number
   /** 可判题数 = total - noAnchorCount（bug-00052：零锚题不参与判定，通过率分母用它）；老快照无此字段，读取侧需容错 */
   judged?: number
   /** 零锚（未参与评分）题数；老快照无此字段，读取侧需容错 */
@@ -1091,6 +1095,8 @@ export interface BenchmarkResultItem {
   candidates: BenchmarkCandidate[]
   /** 零锚题（无回目锚，未参与评分）；老快照无此字段，缺省视为 false */
   noAnchor?: boolean
+  /** 期望回目在候选池中的最早名次（1 起）；0 = 未进池；老快照无此字段，读取侧需容错 */
+  chapterRank?: number
   /** ── 组判分字段（feat-A018，锚集缺省）── */
   /** 题目分类：L1 / L2 / 典故 */
   category?: string

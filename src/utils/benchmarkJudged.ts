@@ -26,3 +26,13 @@ export function noAnchorCountOf(summary: BenchmarkSummary): number {
 export function isNoAnchor(item: BenchmarkResultItem): boolean {
   return item.noAnchor === true
 }
+
+/** 回级命中题数（期望回目进候选 top5）：取分类 / 顶层 summary 的 chapterTop5；老快照缺字段按 0 兜底 */
+export function chapterTop5Of(source: { chapterTop5?: number }): number {
+  return isFiniteNumber(source.chapterTop5) ? source.chapterTop5 : 0
+}
+
+/** 单题期望回目的池内最早名次（1 起）：0 = 未进池；老快照缺字段 / 非法值按 0 兜底 */
+export function chapterRankOf(item: BenchmarkResultItem): number {
+  return isFiniteNumber(item.chapterRank) ? item.chapterRank : 0
+}
