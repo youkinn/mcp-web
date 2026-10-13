@@ -11,12 +11,12 @@ import { firstRankOf, groupBucketOf, summaryCover5, type GroupStatusBucket } fro
  * 历史快照逐项比较（feat-A015）：复用两个快照的 results 与 summary.category，
  * 仅支持题量一致的快照（题量不一致返回 null，前端不做比较）。
  *
- * 变化口径（rank 0 = 未召回）：
- * - up：两边都在召回池，B 名次更靠前（rankB < rankA）
- * - down：两边都在召回池，B 名次更靠后（rankB > rankA）
+ * 变化口径（bug-00060 以当前快照(A)为观察主体；rank 0 = 未召回）：
+ * - up：两边都在召回池，当前名次比目标更靠前（rankA < rankB）
+ * - down：两边都在召回池，当前名次比目标更靠后（rankA > rankB）
  * - flat：名次一致（含两边都未召回）
- * - enter：A 未召回 → B 入榜（0 → >0）
- * - leave：A 在榜 → B 跌出（>0 → 0）
+ * - enter：当前在榜 → 目标未召回（>0 → 0）
+ * - leave：当前未召回 → 目标在榜（0 → >0）
  */
 
 export type RankChange = 'up' | 'down' | 'flat' | 'enter' | 'leave'
@@ -44,6 +44,8 @@ export interface CategoryCompare {
   name: string
   a: BenchmarkCategorySummary
   b: BenchmarkCategorySummary
+  /** 计数差值口径（bug-00060）：以当前快照(A)为观察主体，delta = 当前 − 目标
+   *  （并排的「当前值 → 目标值」只表示两侧取值，不代表差值方向） */
   totalDelta: number
   top5Delta: number
   tailDelta: number
@@ -74,11 +76,11 @@ export function categoryOfItem(id: string): string {
 }
 
 function changeOfRanks(rankA: number, rankB: number): RankChange {
-  if (rankA === 0 && rankB > 0) return 'enter'
-  if (rankA > 0 && rankB === 0) return 'leave'
+  if (rankA === 0 && rankB > 0) return 'leave'
+  if (rankA > 0 && rankB === 0) return 'enter'
   if (rankA > 0 && rankB > 0) {
-    if (rankB < rankA) return 'up'
-    if (rankB > rankA) return 'down'
+    if (rankA < rankB) return 'up'
+    if (rankA > rankB) return 'down'
   }
   return 'flat'
 }
@@ -130,7 +132,7 @@ export function compareSnapshots(a: BenchmarkData, b: BenchmarkData): BenchmarkC
         statusB: null,
         bucketA: null,
         bucketB: null,
-        change: 'leave',
+        change: 'enter',
         itemA: ra,
         itemB: null,
       })
@@ -163,7 +165,7 @@ export function compareSnapshots(a: BenchmarkData, b: BenchmarkData): BenchmarkC
       statusB: rb.status,
       bucketA: null,
       bucketB: null,
-      change: 'enter',
+      change: 'leave',
       itemA: null,
       itemB: rb,
     })
@@ -176,10 +178,10 @@ export function compareSnapshots(a: BenchmarkData, b: BenchmarkData): BenchmarkC
       name,
       a: ca,
       b: cb,
-      totalDelta: cb.total - ca.total,
-      top5Delta: cb.top5 - ca.top5,
-      tailDelta: cb.tail - ca.tail,
-      missDelta: cb.miss - ca.miss,
+      totalDelta: ca.total - cb.total,
+      top5Delta: ca.top5 - cb.top5,
+      tailDelta: ca.tail - cb.tail,
+      missDelta: ca.miss - cb.miss,
     }
   })
   return {
@@ -199,7 +201,7 @@ export function compareSnapshots(a: BenchmarkData, b: BenchmarkData): BenchmarkC
   }
 }
 
-/** 筛选口径（负责人 2026-09-29 定）：入榜按上升处理，不另立第三类 */
+/** 筛选口径（负责人 2026-09-29 定）：入榜按上升处理，不另立第三类；up/enter 指当前快照相对目标（bug-00060） */
 export function isRankUp(change: RankChange): boolean {
   return change === 'up' || change === 'enter'
 }
@@ -207,6 +209,17 @@ export function isRankUp(change: RankChange): boolean {
 /** 筛选口径（负责人 2026-09-29 定）：出榜按下降处理，不另立第三类 */
 export function isRankDown(change: RankChange): boolean {
   return change === 'down' || change === 'leave'
+}
+
+/**
+ * delta 配色口径（负责人 2026-10-13 定）：按符号着色（> 0 绿 / < 0 红），
+ * 不再按字段「通过 / 未命中」的好坏语义着色；0 不着色。
+ * 方向恒为「目标 − 当前」（见 compareSnapshots 的 A=当前、B=目标 口径），返回样式类名。
+ */
+export function deltaClass(delta: number): string {
+  if (delta > 0) return 'compare-delta-pos'
+  if (delta < 0) return 'compare-delta-neg'
+  return ''
 }
 
 // ── 组判分快照比较（feat-A018 story-03）──
@@ -287,7 +300,7 @@ export function compareGroupSnapshots(a: BenchmarkData, b: BenchmarkData): Group
       statusB: itemB ? itemB.status : null,
       bucketA: groupBucketOf(itemA),
       bucketB: itemB ? groupBucketOf(itemB) : null,
-      change: itemB ? changeOfRanks(rankA, rankB) : 'leave',
+      change: itemB ? changeOfRanks(rankA, rankB) : 'enter',
       itemA,
       itemB: itemB ?? null,
     })
@@ -304,7 +317,7 @@ export function compareGroupSnapshots(a: BenchmarkData, b: BenchmarkData): Group
       statusB: itemB.status,
       bucketA: null,
       bucketB: groupBucketOf(itemB),
-      change: 'enter',
+      change: 'leave',
       itemA: null,
       itemB,
     })
@@ -320,10 +333,10 @@ export function compareGroupSnapshots(a: BenchmarkData, b: BenchmarkData): Group
       name,
       a: groupA,
       b: groupB,
-      totalDelta: groupB.total - groupA.total,
-      hit5Delta: groupB.hit5 - groupA.hit5,
-      missDelta: groupB.miss - groupA.miss,
-      cover5Delta: groupB.cover5 - groupA.cover5,
+      totalDelta: groupA.total - groupB.total,
+      hit5Delta: groupA.hit5 - groupB.hit5,
+      missDelta: groupA.miss - groupB.miss,
+      cover5Delta: groupA.cover5 - groupB.cover5,
     }
   })
 

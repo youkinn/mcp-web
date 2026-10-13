@@ -386,8 +386,8 @@
 
     <SangoChapterReader v-model:open="readerOpen" :chapter="readerChapter" :chapter-title="readerChapterTitle"
       :chunk-id="readerChunkId" />
-    <BenchmarkCompareModal v-model:open="compareOpen" :history-items="historyItems" :base-run-id="compareBaseRunId"
-      :set-id="setId" @open-chapter="openReader" />
+    <BenchmarkCompareModal v-model:open="compareOpen" :history-items="historyItems" :current-run-id="selectedRunId"
+      :default-target-run-id="compareTargetRunId" :set-id="setId" @open-chapter="openReader" />
     <CandidateListModal v-model:open="candidateModalOpen" :result="candidateModalResult"
       :highlight-id="candidateModalHighlightId" @open-chapter="openReader" />
     <GroupSourceModal v-model:open="sourceModalOpen" :item="sourceModalItem" @open-chapter="openChapterChunk" />
@@ -506,7 +506,8 @@ const runLoading = ref(false)
 /** 停止请求在途：防重复点击（此时仍属执行中，runLoading 未清） */
 const runAborting = ref(false)
 const compareOpen = ref(false)
-const compareBaseRunId = ref<string | null>(null)
+/** 点「比较」的行 → 弹框目标默认项（弹框左=当前快照 selectedRunId，右=目标） */
+const compareTargetRunId = ref<string | null>(null)
 const filter = ref<BenchmarkFilter>('all')
 const expandedCategories = ref<string[]>([])
 
@@ -1471,7 +1472,7 @@ function historyRowHandlers(record: BenchmarkHistoryItem): { onClick?: () => voi
 }
 
 function openCompare(item: BenchmarkHistoryItem): void {
-  compareBaseRunId.value = item.runId
+  compareTargetRunId.value = item.runId
   compareOpen.value = true
 }
 

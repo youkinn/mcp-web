@@ -8,24 +8,24 @@
     :body-style="{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }"
   >
     <div class="compare-bar">
-      <span class="compare-base">{{ formatBenchmarkTime(baseItem?.time ?? '') }}</span>
-      <span class="compare-vs">vs</span>
+      <span class="compare-base">当前快照 {{ formatBenchmarkTime(currentItem?.time ?? '') }}<span v-if="currentItem" class="compare-run">（{{ currentItem.runId }}）</span></span>
+      <span class="compare-vs">→</span>
+      <span class="compare-base">目标</span>
       <a-select
         v-model:value="targetRunId"
         :options="candidateOptions"
-        placeholder="选择比较对象"
+        placeholder="选择目标快照"
         class="compare-select"
         :disabled="noCandidate || comparing"
       />
       <a-button type="primary" :loading="comparing" :disabled="!targetRunId" @click="runCompare">开始比较</a-button>
     </div>
 
-    <div v-if="noCandidate" class="compare-empty">暂无题量一致（{{ baseTotal }} 题）的历史快照可比</div>
+    <div v-if="noCandidate" class="compare-empty">暂无题量一致（{{ currentTotal }} 题）的历史快照可比</div>
 
       <template v-else-if="groupComparison">
         <p class="compare-meta">
-          基准 {{ formatBenchmarkTime(groupComparison.timeA) }}
-          vs {{ formatBenchmarkTime(groupComparison.timeB) }}
+          当前快照 {{ formatBenchmarkTime(groupComparison.timeA) }} → 目标 {{ formatBenchmarkTime(groupComparison.timeB) }}
         </p>
 
         <a-tabs v-model:activeKey="resultTab" size="small" class="compare-tabs">
@@ -45,11 +45,11 @@
                   </template>
                   <template v-else-if="column.key === 'hit5' || column.key === 'miss'">
                     <span>{{ record.a[column.key] }} → {{ record.b[column.key] }}</span>
-                    <span :class="deltaClass(record[`${column.key}Delta`], column.key)">{{ deltaText(record[`${column.key}Delta`]) }}</span>
+                    <span :class="deltaClass(record[`${column.key}Delta`])">{{ deltaText(record[`${column.key}Delta`]) }}</span>
                   </template>
                   <template v-else-if="column.key === 'cover5'">
                     <span>{{ groupRateText(record.a.cover5) }} → {{ groupRateText(record.b.cover5) }}</span>
-                    <span :class="deltaClass(record.cover5Delta, 'cover5')">{{ groupPointText(record.cover5Delta) }}</span>
+                    <span :class="deltaClass(record.cover5Delta)">{{ groupPointText(record.cover5Delta) }}</span>
                   </template>
                   <template v-else>{{ record[column.key] }}</template>
                 </template>
@@ -116,8 +116,7 @@
 
     <template v-else-if="comparison">
       <p class="compare-meta">
-        基准 {{ formatBenchmarkTime(comparison.timeA) }}
-        vs {{ formatBenchmarkTime(comparison.timeB) }}
+        当前快照 {{ formatBenchmarkTime(comparison.timeA) }} → 目标 {{ formatBenchmarkTime(comparison.timeB) }}
       </p>
 
       <a-tabs v-model:activeKey="resultTab" size="small" class="compare-tabs">
@@ -136,8 +135,8 @@
                   <component :is="CategoryCell" :label="record.name" />
                 </template>
                 <template v-else-if="column.key === 'top5' || column.key === 'tail' || column.key === 'miss'">
-                  <span>{{ record.a[column.key] }} → {{ record.b[column.key] }}</span>
-                  <span :class="deltaClass(record[`${column.key}Delta`], column.key)">{{ deltaText(record[`${column.key}Delta`]) }}</span>
+                  <span><span class="compare-current-value">{{ record.a[column.key] }}</span> → {{ record.b[column.key] }}</span>
+                  <span :class="deltaClass(record[`${column.key}Delta`])">{{ deltaText(record[`${column.key}Delta`]) }}</span>
                 </template>
                 <template v-else>{{ record[column.key] }}</template>
               </template>
@@ -186,10 +185,10 @@
                   <component :is="CategoryCell" :label="record.category" />
                 </template>
                 <template v-else-if="column.key === 'actions'">
-                  <a-tooltip title="基准快照该题召回列表">
+                  <a-tooltip title="当前快照该题召回列表">
                     <a-button type="link" size="small" :disabled="record.rankA <= 0" @click="openCandidates(record, 'A')">A</a-button>
                   </a-tooltip>
-                  <a-tooltip title="对比快照该题召回列表">
+                  <a-tooltip title="目标快照该题召回列表">
                     <a-button type="link" size="small" :disabled="record.rankB <= 0" @click="openCandidates(record, 'B')">B</a-button>
                   </a-tooltip>
                 </template>
@@ -209,7 +208,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, h, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   getBenchmarkSnapshot,
@@ -223,6 +222,7 @@ import CandidateListModal from './CandidateListModal.vue'
 import {
   compareGroupSnapshots,
   compareSnapshots,
+  deltaClass,
   isRankDown,
   isRankUp,
   type BenchmarkComparison,
@@ -243,7 +243,10 @@ import {
 const props = defineProps<{
   open: boolean
   historyItems: BenchmarkHistoryItem[]
-  baseRunId: string | null
+  /** 左侧「当前快照」= 评测台当前展示的那一次（页顶「当前快照」对应的 runId） */
+  currentRunId: string | null
+  /** 右侧「目标」默认项：点「比较」的那一行；不在候选内（如等于当前快照）时回退候选首条 */
+  defaultTargetRunId: string | null
   /** 当前评测集 Id（组判分集快照按集隔离取数；缺省 = standard） */
   setId?: string
 }>()
@@ -268,13 +271,21 @@ const candidateModalOpen = ref(false)
 const candidateModalResult = ref<BenchmarkResultItem | null>(null)
 const candidateModalHighlightId = ref<string | null>(null)
 
-const baseItem = computed(() => props.historyItems.find((i) => i.runId === props.baseRunId) ?? null)
-const baseTotal = computed(() => baseItem.value?.summary.total ?? 0)
+const currentItem = computed(() => props.historyItems.find((i) => i.runId === props.currentRunId) ?? null)
+const currentTotal = computed(() => currentItem.value?.summary.total ?? 0)
 /** 只比题量一致的快照（负责人口径：跨版本不做兼容） */
 const candidates = computed(() =>
-  props.historyItems.filter((i) => i.runId !== props.baseRunId && i.summary.total === baseItem.value?.summary.total),
+  props.historyItems.filter(
+    (i) => i.runId !== props.currentRunId && i.summary.total === currentItem.value?.summary.total,
+  ),
 )
-const noCandidate = computed(() => props.open && !!props.baseRunId && candidates.value.length === 0)
+const noCandidate = computed(() => props.open && !!props.currentRunId && candidates.value.length === 0)
+/** 目标默认项：点「比较」的行若在候选内则用它，否则（该行 == 当前快照 / 题量不一致）取候选首条 */
+const defaultTarget = computed(() => {
+  const preferred = props.defaultTargetRunId
+  if (preferred && candidates.value.some((i) => i.runId === preferred)) return preferred
+  return candidates.value[0]?.runId ?? null
+})
 /** 重排展示口径（负责人 16:22 定）：off → 「重排关闭」不显示窗口数字；on+wired=false → 附「（未接入）」；
  *  老快照无 rerank 字段 → 不追加该段；窗口一律取该条快照记录的实际值 */
 function rerankSuffix(rerank: BenchmarkRerankConfig | undefined): string {
@@ -318,10 +329,10 @@ const emptyHint = computed(() => {
 })
 
 watch(
-  () => [props.open, props.baseRunId, props.setId],
+  () => [props.open, props.currentRunId, props.defaultTargetRunId, props.setId],
   () => {
     if (!props.open) return
-    targetRunId.value = candidates.value[0]?.runId ?? null
+    targetRunId.value = defaultTarget.value
     comparison.value = null
     groupComparison.value = null
     onlyChanged.value = false
@@ -330,29 +341,15 @@ watch(
   },
 )
 
-// 弹框打开时锁背景滚动，防止滚轮穿透到下层页面（bug-00047 反馈 5）
-const previousBodyOverflow = ref('')
-watch(
-  () => props.open,
-  (opened) => {
-    if (opened) {
-      previousBodyOverflow.value = document.body.style.overflow
-      document.body.style.overflow = 'hidden'
-    } else {
-      document.body.style.overflow = previousBodyOverflow.value
-    }
-  },
-)
-onBeforeUnmount(() => {
-  if (props.open) document.body.style.overflow = previousBodyOverflow.value
-})
+// 背景滚动锁由 antd Modal 自带（html body { overflow-y: hidden; width: calc(100% - 滚动条宽) }）：
+// 自己再改一次 body.style.overflow 会覆盖它的宽度补偿，开合弹框时页面横向位移（bug-00060 抖动根因），故不再自行加锁。
 
 async function runCompare(): Promise<void> {
-  if (!props.baseRunId || !targetRunId.value || comparing.value) return
+  if (!props.currentRunId || !targetRunId.value || comparing.value) return
   comparing.value = true
   try {
     const [a, b] = await Promise.all([
-      getBenchmarkSnapshot(props.baseRunId, props.setId),
+      getBenchmarkSnapshot(props.currentRunId, props.setId),
       getBenchmarkSnapshot(targetRunId.value, props.setId),
     ])
     if (!a || !b) {
@@ -435,14 +432,6 @@ function deltaText(delta: number): string {
   return delta > 0 ? `+${delta}` : `${delta}`
 }
 
-/** 通过/未命中按好坏着色，兜底仅中性展示（兜底增多不直接等于变好或变坏） */
-function deltaClass(delta: number, key: string): string {
-  if (delta === 0) return ''
-  if (key === 'top5' || key === 'hit5' || key === 'cover5') return delta > 0 ? 'compare-delta-pos' : 'compare-delta-neg'
-  if (key === 'miss') return delta > 0 ? 'compare-delta-neg' : 'compare-delta-pos'
-  return 'compare-delta-neutral'
-}
-
 /** cover@5 差值按百分点展示（0.05 → +5.0pp） */
 function groupPointText(delta: number): string {
   if (delta === 0) return ''
@@ -467,8 +456,8 @@ const categoryColumns = [
 const rowColumns = [
   { key: 'category', title: '分类', width: 100 },
   { key: 'question', title: '问题' },
-  { key: 'rankA', title: 'A 名次', width: 90, align: 'center' },
-  { key: 'rankB', title: 'B 名次', width: 90, align: 'center' },
+  { key: 'rankA', title: '当前快照 名次', width: 112, align: 'center' },
+  { key: 'rankB', title: '目标 名次', width: 112, align: 'center' },
   { key: 'change', title: '变化', width: 120, align: 'center' },
   { key: 'actions', title: '操作', width: 130, align: 'center' },
 ]
@@ -485,10 +474,10 @@ const groupCategoryColumns = [
 const groupRowColumns = [
   { key: 'category', title: '分类', width: 90 },
   { key: 'question', title: '问题' },
-  { key: 'bucketA', title: 'A 分档', width: 100, align: 'center' },
-  { key: 'bucketB', title: 'B 分档', width: 100, align: 'center' },
-  { key: 'rankA', title: 'A 首段名次', width: 110, align: 'center' },
-  { key: 'rankB', title: 'B 首段名次', width: 110, align: 'center' },
+  { key: 'bucketA', title: '当前快照 分档', width: 112, align: 'center' },
+  { key: 'bucketB', title: '目标 分档', width: 112, align: 'center' },
+  { key: 'rankA', title: '当前快照 首段名次', width: 132, align: 'center' },
+  { key: 'rankB', title: '目标 首段名次', width: 132, align: 'center' },
   { key: 'change', title: '变化', width: 120, align: 'center' },
 ]
 </script>
@@ -562,6 +551,22 @@ const groupRowColumns = [
   vertical-align: middle;
 }
 
+.compare-run {
+  color: #718078;
+  font-size: 12px;
+}
+
+/* 「当前值 → 目标值」并排展示：当前值加粗，便于一眼分清左右 */
+.compare-current-value {
+  font-weight: 600;
+  color: #1d2924;
+}
+
+/* 逐项表表头不换行（「当前快照 名次」等长表头） */
+.compare-row-table :deep(.ant-table-thead > tr > th) {
+  white-space: nowrap;
+}
+
 .compare-delta-pos {
   margin-left: 6px;
   color: #2e6d56;
@@ -571,12 +576,6 @@ const groupRowColumns = [
 .compare-delta-neg {
   margin-left: 6px;
   color: #c25b4e;
-  font-weight: 600;
-}
-
-.compare-delta-neutral {
-  margin-left: 6px;
-  color: #4a7ba6;
   font-weight: 600;
 }
 

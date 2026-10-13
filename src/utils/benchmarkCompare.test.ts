@@ -1,7 +1,14 @@
 import { strict as assert } from 'node:assert'
 import { describe, it } from 'node:test'
 import type { BenchmarkCategorySummary, BenchmarkData, BenchmarkResultItem } from '../api/client'
-import { categoryOfItem, compareGroupSnapshots, compareSnapshots, isRankDown, isRankUp } from './benchmarkCompare.ts'
+import {
+  categoryOfItem,
+  compareGroupSnapshots,
+  compareSnapshots,
+  deltaClass,
+  isRankDown,
+  isRankUp,
+} from './benchmarkCompare.ts'
 import type { BenchmarkGroupBucketSummary } from '../api/client'
 
 function item(id: string, question: string, rank: number, status: BenchmarkResultItem['status']): BenchmarkResultItem {
@@ -60,15 +67,15 @@ describe('历史快照比较（benchmarkCompare，bug-00047）', () => {
     assert.equal(compareSnapshots(a, b), null)
   })
 
-  it('名次上升 / 下降 / 持平判定（up/down/flat）', () => {
+  it('名次上升 / 下降 / 持平判定（up/down/flat，按当前快照主体）', () => {
     const a = snapshot('A', [
-      item('up', '名次升', 5, 'tail'),
-      item('down', '名次降', 1, 'top5'),
+      item('up', '名次升', 2, 'top5'),
+      item('down', '名次降', 7, 'tail'),
       item('flat', '名次平', 3, 'top5'),
     ])
     const b = snapshot('B', [
-      item('up', '名次升', 2, 'top5'),
-      item('down', '名次降', 7, 'tail'),
+      item('up', '名次升', 5, 'tail'),
+      item('down', '名次降', 1, 'top5'),
       item('flat', '名次平', 3, 'top5'),
     ])
     const c = compareSnapshots(a, b)
@@ -78,27 +85,27 @@ describe('历史快照比较（benchmarkCompare，bug-00047）', () => {
     assert.equal(c.rows.find((r) => r.id === 'flat')?.change, 'flat')
   })
 
-  it('入榜 / 出榜判定（0 与 >0 互转）', () => {
-    const a = snapshot('A', [item('enter', '新入', 0, 'miss'), item('leave', '跌出', 8, 'tail')])
-    const b = snapshot('B', [item('enter', '新入', 4, 'top5'), item('leave', '跌出', 0, 'miss')])
+  it('入榜 / 出榜判定（0 与 >0 互转，按当前快照主体）', () => {
+    const a = snapshot('A', [item('enter', '新入', 4, 'top5'), item('leave', '跌出', 0, 'miss')])
+    const b = snapshot('B', [item('enter', '新入', 0, 'miss'), item('leave', '跌出', 8, 'tail')])
     const c = compareSnapshots(a, b)
     assert.ok(c)
     assert.equal(c.rows.find((r) => r.id === 'enter')?.change, 'enter')
     assert.equal(c.rows.find((r) => r.id === 'leave')?.change, 'leave')
   })
 
-  it('单侧缺失：只在 A 视为出榜，只在 B 视为入榜', () => {
+  it('单侧缺失（题集不一致防御分支）：只在当前快照视为入榜、只在目标视为出榜', () => {
     const a = snapshot('A', [item('onlyA', '仅在A', 3, 'top5')])
     const b = snapshot('B', [item('onlyB', '仅在B', 2, 'top5')])
     const c = compareSnapshots(a, b)
     assert.ok(c)
-    assert.equal(c.rows.find((r) => r.id === 'onlyA')?.change, 'leave')
+    assert.equal(c.rows.find((r) => r.id === 'onlyA')?.change, 'enter')
     assert.equal(c.rows.find((r) => r.id === 'onlyA')?.rankB, 0)
-    assert.equal(c.rows.find((r) => r.id === 'onlyB')?.change, 'enter')
+    assert.equal(c.rows.find((r) => r.id === 'onlyB')?.change, 'leave')
     assert.equal(c.rows.find((r) => r.id === 'onlyB')?.rankA, 0)
   })
 
-  it('类别计数变化：名称并集 + 各指标 A→B 差值', () => {
+  it('类别计数变化：名称并集 + 各指标 当前−目标 差值（bug-00060）', () => {
     const a = snapshot(
       'A',
       [item('a1', 'q1', 1, 'top5'), item('b1', 'q2', 0, 'miss')],
@@ -120,26 +127,26 @@ describe('历史快照比较（benchmarkCompare，bug-00047）', () => {
     assert.deepEqual(c.categories.map((x) => x.name).sort(), ['丙', '乙', '甲'])
     const jia = c.categories.find((x) => x.name === '甲')
     assert.ok(jia)
-    assert.equal(jia.top5Delta, -1)
-    assert.equal(jia.tailDelta, 1)
+    assert.equal(jia.top5Delta, 1)
+    assert.equal(jia.tailDelta, -1)
     const yi = c.categories.find((x) => x.name === '乙')
     assert.ok(yi)
-    assert.equal(yi.missDelta, -1)
+    assert.equal(yi.missDelta, 1)
     const bing = c.categories.find((x) => x.name === '丙')
     assert.ok(bing)
-    assert.equal(bing.missDelta, 1)
+    assert.equal(bing.missDelta, -1)
   })
 
   it('排序：入榜/出榜 > 升降 > 持平，未召回殿后', () => {
     const a = snapshot('A', [
       item('flat', '平', 2, 'top5'),
-      item('up', '升', 9, 'tail'),
+      item('up', '升', 1, 'top5'),
       item('z', '未召回', 0, 'miss'),
       item('enter', '入榜', 0, 'miss'),
     ])
     const b = snapshot('B', [
       item('flat', '平', 2, 'top5'),
-      item('up', '升', 1, 'top5'),
+      item('up', '升', 9, 'tail'),
       item('z', '未召回', 0, 'miss'),
       item('enter', '入榜', 5, 'tail'),
     ])
@@ -238,7 +245,7 @@ function groupSnapshot(runId: string, items: BenchmarkResultItem[]): BenchmarkDa
 }
 
 describe('组判分快照比较（compareGroupSnapshots，feat-A018 story-03）', () => {
-  it('比较字段为 status @ firstRank：前移 up / 后移 down / 入池 enter / 均未进池 flat', () => {
+  it('比较字段为 status @ firstRank：当前前移 up / 当前后移 down / 当前未进池 leave / 均未进池 flat', () => {
     const a = groupSnapshot('A', [
       groupItem('g1', 8, 'hit10', true),
       groupItem('g2', 3, 'hit5', true),
@@ -254,9 +261,9 @@ describe('组判分快照比较（compareGroupSnapshots，feat-A018 story-03）'
     const comparison = compareGroupSnapshots(a, b)
     assert.ok(comparison)
     const changeOfId = (id: string): string | undefined => comparison.rows.find((r) => r.id === id)?.change
-    assert.equal(changeOfId('g1'), 'up')
-    assert.equal(changeOfId('g2'), 'down')
-    assert.equal(changeOfId('g3'), 'enter')
+    assert.equal(changeOfId('g1'), 'down')
+    assert.equal(changeOfId('g2'), 'up')
+    assert.equal(changeOfId('g3'), 'leave')
     assert.equal(changeOfId('g4'), 'flat')
     assert.equal(comparison.rows.find((r) => r.id === 'g1')?.bucketB, 'hit5')
   })
@@ -293,5 +300,59 @@ describe('组判分快照比较（compareGroupSnapshots，feat-A018 story-03）'
     assert.equal(comparison.droppedB, 1)
     assert.equal(comparison.buckets[0]?.name, 'L1')
     assert.equal(comparison.buckets[0]?.cover5Delta, 0)
+  })
+})
+
+// ── 比较方向与配色（bug-00060）：A=当前快照、B=目标快照 ──
+
+describe('比较方向（A=当前、B=目标，bug-00060）', () => {
+  it('delta = 当前 − 目标；行内 rankA=当前名次、rankB=目标名次', () => {
+    const current = snapshot(
+      'current',
+      [item('q1', 'q1', 2, 'top5'), item('q2', 'q2', 3, 'top5')],
+      { 甲: { total: 2, top5: 2, tail: 0, miss: 0 } },
+    )
+    const target = snapshot(
+      'target',
+      [item('q1', 'q1', 7, 'tail'), item('q2', 'q2', 0, 'miss')],
+      { 甲: { total: 2, top5: 0, tail: 1, miss: 1 } },
+    )
+    const c = compareSnapshots(current, target)
+    assert.ok(c)
+    assert.equal(c.runIdA, 'current')
+    assert.equal(c.runIdB, 'target')
+    assert.equal(c.top5A, 2)
+    assert.equal(c.top5B, 0)
+    const q1 = c.rows.find((r) => r.id === 'q1')
+    assert.equal(q1?.rankA, 2)
+    assert.equal(q1?.rankB, 7)
+    assert.equal(q1?.change, 'up')
+    assert.equal(c.rows.find((r) => r.id === 'q2')?.change, 'enter')
+    const jia = c.categories.find((x) => x.name === '甲')
+    assert.equal(jia?.top5Delta, 2)
+    assert.equal(jia?.missDelta, -1)
+  })
+})
+
+describe('行级变化按当前快照主体（bug-00060，典故#12 同类）', () => {
+  it('当前名次 3 → 目标名次 1：当前退后，判 down', () => {
+    const current = snapshot('c', [item('d1', 'd1', 3, 'top5')], { 甲: { total: 1, top5: 1, tail: 0, miss: 0 } })
+    const target = snapshot('t', [item('d1', 'd1', 1, 'top5')], { 甲: { total: 1, top5: 1, tail: 0, miss: 0 } })
+    const c = compareSnapshots(current, target)
+    assert.ok(c)
+    assert.equal(c.rows[0]?.rankA, 3)
+    assert.equal(c.rows[0]?.rankB, 1)
+    assert.equal(c.rows[0]?.change, 'down')
+    assert.equal(c.categories[0]?.top5Delta, 0)
+  })
+})
+
+describe('delta 配色（deltaClass，bug-00060）', () => {
+  it('正数绿、负数红、0 不着色（按符号，不按好坏语义）', () => {
+    assert.equal(deltaClass(1), 'compare-delta-pos')
+    assert.equal(deltaClass(3), 'compare-delta-pos')
+    assert.equal(deltaClass(-1), 'compare-delta-neg')
+    assert.equal(deltaClass(-5), 'compare-delta-neg')
+    assert.equal(deltaClass(0), '')
   })
 })
