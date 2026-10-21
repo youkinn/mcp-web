@@ -235,7 +235,15 @@ function installFakeGet(): { calls: { url: string; params?: Record<string, unkno
             prev: chapter > 1 ? { chapter: chapter - 1, title: '上一回' } : null,
             next: chapter < 120 ? { chapter: chapter + 1, title: '下一回' } : null,
             chunks: [
-              { chunkId: `sanguo-yanyi:${String(chapter).padStart(4, '0')}:c0001`, text: '原文', type: 'narration', segFrom: 1, segTo: 1 },
+              {
+                chunk_id: `sanguo-yanyi:${String(chapter).padStart(4, '0')}:p0001:c01`,
+                parent_id: `sanguo-yanyi:${String(chapter).padStart(4, '0')}:p0001`,
+                seq_in_parent: 1,
+                type: 'prose',
+                role: 'body',
+                text: '原文',
+                char_count: 2,
+              },
             ],
           },
           message: '',

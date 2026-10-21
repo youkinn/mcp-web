@@ -593,8 +593,10 @@ export interface DraftbenchCandidate {
   rank: number
   chapter: number
   title: string
-  segFrom: number
-  segTo: number
+  /** 段号（服务端由语料 parent_id 反解；章节通道失败时 null） */
+  segNo: number | null
+  /** 同段内块序（语料 seq_in_parent；章节通道失败时 null） */
+  seqInParent: number | null
   preview: string
   injected: boolean
   cited: boolean
@@ -732,12 +734,16 @@ export async function deleteDraftbenchRecord(traceId: string): Promise<void> {
 
 // ── 三国演义原文（feat-A010）──
 
+/** 整回原文 chunk：字段与语料 schema v2 逐字一致（章节接口为器坊出参直通） */
 export interface SangoChapterChunk {
-  chunkId: string
-  text: string
+  chunk_id: string
+  parent_id: string
+  seq_in_parent: number
   type: string
-  segFrom: number
-  segTo: number
+  role: string
+  text: string
+  char_count: number
+  group_id?: string
 }
 
 export interface SangoChapterNav {
