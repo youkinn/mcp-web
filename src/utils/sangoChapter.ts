@@ -6,10 +6,23 @@ import type { SangoChapterChunk, SangoChapterData } from '../api/client'
 export const SANGO_CHAPTER_MIN = 1
 export const SANGO_CHAPTER_MAX = 120
 
-/** 片段短号：取 chunkId 尾段（如 sanguo-yanyi:0073:c0021 → c0021），与候选分数表一一对应 */
+/** 片段短号：取 chunk_id 的回内位置两段（如 sanguo-yanyi:0015:p0003:c02 → p0003·c02），与候选分数表一一对应 */
 export function shortChunkId(chunkId: string): string {
-  const tail = chunkId.split(':').pop()
-  return tail && tail.length > 0 ? tail : chunkId
+  const parts = chunkId.split(':')
+  if (parts.length >= 3) return `${parts[parts.length - 2]}·${parts[parts.length - 1]}`
+  return parts[parts.length - 1] || chunkId
+}
+
+/** 带回号的片段号：去掉源前缀（sanguo-yanyi:0077:p0018:c01 → 0077:p0018:c01），阅读器块标签用 */
+export function chapterChunkId(chunkId: string): string {
+  const separator = chunkId.indexOf(':')
+  return separator >= 0 ? chunkId.slice(separator + 1) : chunkId
+}
+
+/** 片段位置短标（段号·块序）：段号取自 parent_id（{source}:{回号4位}:p{段号4位}），块序取 seq_in_parent */
+export function chunkPositionLabel(parentId: string, seqInParent: number): string {
+  const match = /:p(\d+)$/.exec(parentId)
+  return match ? `段${Number(match[1])}·块${seqInParent}` : `块${seqInParent}`
 }
 
 /** 回号合法性（底部跳转输入用）：1~120 的整数 */
@@ -52,10 +65,10 @@ export function buildCitationReaderTarget(
   data: SangoChapterData,
 ): ChapterReaderTarget {
   const chunk = findChunkByText(data.chunks, text)
-  return { chapter, chapterTitle: title, chunkId: chunk?.chunkId }
+  return { chapter, chapterTitle: title, chunkId: chunk?.chunk_id }
 }
 
-/** 候选 chunkId → 回号：`sango-yanyi:0085:c0011` → 85；格式不符返回 NaN（feat-A015 评测页点候选看原文） */
+/** 候选 chunkId → 回号：`sanguo-yanyi:0085:p0011:c01` → 85；格式不符返回 NaN（feat-A015 评测页点候选看原文） */
 export function chapterFromChunkId(chunkId: string): number {
   const parts = chunkId.split(':')
   if (parts.length < 2) return NaN
