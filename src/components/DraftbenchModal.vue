@@ -74,7 +74,7 @@
                 <a-tag v-else color="default" size="small">未注入</a-tag>
                 <a-tag v-if="candidate.cited" color="gold" size="small">引用</a-tag>
               </div>
-              <div class="candidate-meta">回 {{ candidate.chapter }} · 段 {{ candidate.segFrom }}~{{ candidate.segTo }} · 得分 {{ candidate.finalScore }}</div>
+              <div class="candidate-meta">回 {{ candidate.chapter }} · 段 {{ candidate.segNo ?? '?' }}·块 {{ candidate.seqInParent ?? '?' }} · 得分 {{ candidate.finalScore }}</div>
               <p class="candidate-preview" :title="candidate.preview">{{ candidate.preview }}</p>
               <div class="candidate-actions">
                 <a-button
@@ -351,7 +351,7 @@
             <div class="picker-candidate-head">
               <span class="picker-candidate-rank">#{{ candidate.rank }}</span>
               <span class="picker-candidate-title" :title="candidate.title">{{ truncate(candidate.title, 30) }}</span>
-              <span class="picker-candidate-meta">{{ shortChunkId(candidate.chunkId) }} · 回 {{ candidate.chapter }} · 段 {{ candidate.segFrom }}~{{ candidate.segTo }}</span>
+              <span class="picker-candidate-meta">{{ shortChunkId(candidate.chunkId) }} · 回 {{ candidate.chapter }} · 段 {{ candidate.segNo ?? '?' }}·块 {{ candidate.seqInParent ?? '?' }}</span>
             </div>
             <p class="picker-candidate-preview">{{ candidate.preview }}</p>
             <div v-if="expandedCandidateId === candidate.chunkId" class="picker-candidate-detail">
@@ -371,11 +371,11 @@
                 </div>
                 <div
                   v-for="chunk in candidateExpandedData.chunks"
-                  :key="chunk.chunkId"
+                  :key="chunk.chunk_id"
                   class="picker-chunk-row"
-                  :class="{ 'is-target': chunk.chunkId === candidate.chunkId }"
+                  :class="{ 'is-target': chunk.chunk_id === candidate.chunkId }"
                 >
-                  <span class="picker-chunk-no">{{ shortChunkId(chunk.chunkId) }}</span>
+                  <span class="picker-chunk-no">{{ shortChunkId(chunk.chunk_id) }}</span>
                   <p class="picker-chunk-text">{{ chunk.text }}</p>
                 </div>
               </div>
@@ -411,13 +411,13 @@
           <div class="picker-snippet-list">
             <div
               v-for="chunk in pickerChapterData.chunks"
-              :key="chunk.chunkId"
+              :key="chunk.chunk_id"
               class="picker-snippet"
-              :class="{ 'is-in-list': containsChunkId(chunk.chunkId) }"
+              :class="{ 'is-in-list': containsChunkId(chunk.chunk_id) }"
               @click="fillBackFromChapterChunk(chunk)"
             >
-              <span class="picker-snippet-no">{{ shortChunkId(chunk.chunkId) }}</span>
-              <span class="picker-snippet-seg">段 {{ chunk.segFrom }}~{{ chunk.segTo }}</span>
+              <span class="picker-snippet-no">{{ shortChunkId(chunk.chunk_id) }}</span>
+              <span class="picker-snippet-seg">{{ chunkPositionLabel(chunk.parent_id, chunk.seq_in_parent) }}</span>
               <p class="picker-snippet-text">{{ chunk.text }}</p>
             </div>
           </div>
@@ -483,7 +483,7 @@ import {
 } from '../api/client'
 import SangoChapterReader from './SangoChapterReader.vue'
 import { FullscreenExitOutlined, FullscreenOutlined, SearchOutlined } from '@ant-design/icons-vue'
-import { isValidChapter, SANGO_CHAPTER_MAX, SANGO_CHAPTER_MIN, shortChunkId } from '../utils/sangoChapter'
+import { chunkPositionLabel, isValidChapter, SANGO_CHAPTER_MAX, SANGO_CHAPTER_MIN, shortChunkId } from '../utils/sangoChapter'
 import { SANGO_CHAPTER_TITLES, type SangoChapterTitle } from '../utils/sangoContents'
 
 const props = defineProps<{
@@ -1151,10 +1151,10 @@ function fillBackFromCandidate(candidate: DraftbenchCandidate) {
 
 function fillBackFromChapterChunk(chunk: SangoChapterChunk) {
   if (!pickerChapterData.value) return
-  manualChunkId.value = chunk.chunkId
+  manualChunkId.value = chunk.chunk_id
   manualText.value = chunk.text
   manualSource.value = {
-    chunkId: chunk.chunkId,
+    chunkId: chunk.chunk_id,
     chapter: pickerChapterData.value.chapter,
     title: pickerChapterData.value.title,
   }
