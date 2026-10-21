@@ -35,12 +35,12 @@
           <p class="source-hint">{{ offPoolHint }}</p>
           <div class="pool-list">
             <div
-              v-for="id in offPoolIds"
+              v-for="(id, index) in offPoolIds"
               :key="id"
               class="pool-row"
               @click="emit('open-chapter', id)"
             >
-              <span class="pool-rank">—</span>
+              <span class="pool-rank">{{ index + 1 }}</span>
               <span class="pool-chapter">{{ chapterLabel(id) }}</span>
               <span class="pool-id">{{ shortChunkId(id) }}</span>
               <span class="pool-flag">
@@ -120,7 +120,7 @@ const poolHint = computed(() =>
     ? '数字 = 池内名次，绿色 = 组内段'
     : `老快照无完整池序，仅列前 ${poolIds.value.length} 候选`,
 )
-const offPoolHint = computed(() => (hasFullPool.value ? '未进 50 路池' : '不在候选列表（老快照仅存前 10）'))
+const offPoolHint = computed(() => (hasFullPool.value ? '未进 50 路池；数字 = 组内段序号' : '不在候选列表（老快照仅存前 10）'))
 
 function countText(value: number | undefined): string {
   return typeof value === 'number' && Number.isFinite(value) ? String(value) : '—'
@@ -214,12 +214,14 @@ function chapterLabel(chunkId: string): string {
 
 .pool-id {
   flex: none;
-  width: 56px;
+  width: 70px;
   margin-left: 10px;
+  white-space: nowrap;
   text-align: right;
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
   color: #1d2924;
 }
+
 
 .pool-flag {
   flex: none;

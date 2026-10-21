@@ -1919,11 +1919,12 @@ onBeforeUnmount(() => {
 }
 
 .picker-chunk-no {
-  flex: 0 0 52px;
+  flex: 0 0 62px;
   padding-top: 2px;
   color: #a0885a;
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 11px;
+  white-space: nowrap;
   text-align: right;
 }
 
@@ -2077,11 +2078,12 @@ onBeforeUnmount(() => {
 }
 
 .picker-snippet-no {
-  flex: 0 0 52px;
+  flex: 0 0 62px;
   padding-top: 1px;
   color: #a0885a;
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 11px;
+  white-space: nowrap;
   text-align: right;
 }
 
