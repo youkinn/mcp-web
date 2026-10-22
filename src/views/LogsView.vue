@@ -1074,10 +1074,10 @@ function onReset() {
   void loadList()
 }
 
-// 草稿台结果 traceId 跳日志详情（feat-A017 §5）：来源筛到草稿台，命中行自动展开明细（复用既有分析视图）
-async function openTraceInLogs(traceId: string) {
+// traceId 深链：按调用方来源精确定位（缺省生产，草稿台深链显式传 draftbench），命中行自动展开明细。
+async function openTraceInLogs(traceId: string, source: LogSource = 'production') {
   query.traceId = traceId
-  query.source = 'draftbench'
+  query.source = source
   pageNo.value = 1
   resetExpansion()
   await loadList()
@@ -1088,7 +1088,7 @@ async function openTraceInLogs(traceId: string) {
     await nextTick()
     document.querySelector(`[data-row-key="${traceId}"]`)?.scrollIntoView({ block: 'center' })
   } else {
-    message.warning('未在草稿台日志中找到该 traceId，可能已按保留期轮转')
+    message.warning('未找到该 traceId，可能已按保留期轮转')
   }
 }
 
@@ -1397,7 +1397,7 @@ onMounted(async () => {
   // 灰色区清单行内跳转（feat-A013 §4.2）：/logs?traceId=xxx → 精确过滤并自动展开该行明细
   const entryTraceId = typeof route.query.traceId === 'string' ? route.query.traceId.trim() : ''
   if (entryTraceId) {
-    await openTraceInLogs(entryTraceId)
+    await openTraceInLogs(entryTraceId, routeSource === 'draftbench' ? 'draftbench' : 'production')
   } else {
     void loadList()
   }
