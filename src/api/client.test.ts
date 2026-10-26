@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert'
 import { afterEach, describe, it, mock } from 'node:test'
 import {
+  abortBenchmarkRun,
   apiClient,
   benchmarkClient,
   clearCache,
@@ -11,16 +12,18 @@ import {
   fetchGrayzone,
   getBenchmarkHistory,
   getBenchmarkLatest,
+  getBenchmarkRunStatus,
   getBenchmarkSnapshot,
   fetchLogDetail,
   fetchLogList,
+  getErrorMessage,
   fetchMisjudge,
   fetchSangoChapter,
   fetchSimilarityDistribution,
   markMisjudge,
-  postBenchmarkRun,
   sendChatMessage,
   sendSangoRandom,
+  startBenchmarkRun,
   unmarkMisjudge,
   updateCacheMaxEntries,
   updateCacheStatus,
@@ -232,7 +235,15 @@ function installFakeGet(): { calls: { url: string; params?: Record<string, unkno
             prev: chapter > 1 ? { chapter: chapter - 1, title: '上一回' } : null,
             next: chapter < 120 ? { chapter: chapter + 1, title: '下一回' } : null,
             chunks: [
-              { chunkId: `sanguo-yanyi:${String(chapter).padStart(4, '0')}:c0001`, text: '原文', type: 'narration', segFrom: 1, segTo: 1 },
+              {
+                chunk_id: `sanguo-yanyi:${String(chapter).padStart(4, '0')}:p0001:c01`,
+                parent_id: `sanguo-yanyi:${String(chapter).padStart(4, '0')}:p0001`,
+                seq_in_parent: 1,
+                type: 'prose',
+                role: 'body',
+                text: '原文',
+                char_count: 2,
+              },
             ],
           },
           message: '',
@@ -525,28 +536,120 @@ describe('缓存控制台接口（feat-A013）', () => {
 // ── 评测执行（feat-A015）──
 
 describe('评测执行接口（feat-A015）', () => {
-  it('benchmark 客户端基址为 /sango-bench（不挂 /api 前缀，超时放宽供完整回归）', () => {
+  it('benchmark 客户端基址为 /sango-bench（不挂 /api 前缀，异步 job 后超时回落常规值，bug-00049 B 案）', () => {
     assert.equal(benchmarkClient.defaults.baseURL, '/sango-bench')
-    assert.equal(benchmarkClient.defaults.timeout, 120_000)
+    assert.equal(benchmarkClient.defaults.timeout, 30_000)
   })
 
-  it('postBenchmarkRun POST /sango-bench/dev/benchmark/run 并解包完整快照', async () => {
+  it('startBenchmarkRun POST /dev/benchmark/run 解包 202 立即返回 runId（异步 job，不再同步等结果）', async () => {
     mock.method(benchmarkClient, 'post', async (url: string) => {
       assert.equal(url, '/dev/benchmark/run')
-      return okEnvelope({ runId: 'feat-A015-2026-09-25-1451', time: 't', summary: { total: 10, top5: 6 }, results: [] })
+      return {
+        data: { code: 202, data: { runId: 'feat-A015-2026-09-29-1500', state: 'running' }, message: '' },
+        headers: {},
+      }
     })
-    const result = await postBenchmarkRun()
-    assert.equal(result.runId, 'feat-A015-2026-09-25-1451')
-    assert.equal(result.summary.top5, 6)
+    const result = await startBenchmarkRun()
+    assert.equal(result.runId, 'feat-A015-2026-09-29-1500')
+    assert.equal(result.state, 'running')
+    assert.equal(result.alreadyRunning, false)
   })
 
-  it('getBenchmarkHistory GET /sango-bench/dev/benchmark/history 并解包列表', async () => {
+  it('startBenchmarkRun 409 视为接管在跑的那次（不抛错给页面）', async () => {
+    mock.method(benchmarkClient, 'post', async () => {
+      throw Object.assign(new Error('benchmark already running'), {
+        isAxiosError: true,
+        response: {
+          status: 409,
+          data: { code: 409, message: 'benchmark already running', data: { runId: 'feat-A015-2026-09-29-1459' } },
+        },
+      })
+    })
+    const result = await startBenchmarkRun()
+    assert.equal(result.runId, 'feat-A015-2026-09-29-1459')
+    assert.equal(result.alreadyRunning, true)
+  })
+
+  it('getBenchmarkRunStatus GET /dev/benchmark/run-status 解包 state/runId/elapsedMs', async () => {
+    mock.method(benchmarkClient, 'get', async (url: string) => {
+      assert.equal(url, '/dev/benchmark/run-status')
+      return okEnvelope({ state: 'running', runId: 'feat-A015-2026-09-29-1500', elapsedMs: 4200 })
+    })
+    const result = await getBenchmarkRunStatus()
+    assert.equal(result.state, 'running')
+    assert.equal(result.runId, 'feat-A015-2026-09-29-1500')
+    assert.equal(result.elapsedMs, 4200)
+  })
+
+  it('getBenchmarkRunStatus 透传停止终态 state=aborted（bug-00049 追加）', async () => {
+    mock.method(benchmarkClient, 'get', async () => okEnvelope({ state: 'aborted', runId: 'feat-A015-2026-09-29-1500' }))
+    const result = await getBenchmarkRunStatus()
+    assert.equal(result.state, 'aborted')
+  })
+
+  it('abortBenchmarkRun POST /dev/benchmark/run-abort 200 受理返回 accepted=true', async () => {
+    mock.method(benchmarkClient, 'post', async (url: string) => {
+      assert.equal(url, '/dev/benchmark/run-abort')
+      return okEnvelope({ state: 'aborted' })
+    })
+    const result = await abortBenchmarkRun()
+    assert.equal(result.accepted, true)
+  })
+
+  it('abortBenchmarkRun 409 no running benchmark 视为已结束（accepted=false 不抛错）', async () => {
+    mock.method(benchmarkClient, 'post', async () => {
+      throw Object.assign(new Error('no running benchmark'), {
+        isAxiosError: true,
+        response: { status: 409, data: { code: 409, message: 'no running benchmark', data: { runId: null } } },
+      })
+    })
+    const result = await abortBenchmarkRun()
+    assert.equal(result.accepted, false)
+  })
+
+  it('abortBenchmarkRun 其它错误照常抛出（不假装停成功，页面取服务端 message）', async () => {
+    mock.method(benchmarkClient, 'post', async () => {
+      throw Object.assign(new Error('boom'), {
+        isAxiosError: true,
+        response: { status: 500, data: { code: 500, message: 'abort failed', data: null } },
+      })
+    })
+    await assert.rejects(
+      () => abortBenchmarkRun(),
+      (err: unknown) => {
+        assert.equal(getErrorMessage(err), 'abort failed')
+        return true
+      },
+    )
+  })
+
+  it('getBenchmarkHistory GET /sango-bench/dev/benchmark/history 并解包列表（含新追加 elapsedMs / rerank）', async () => {
     mock.method(benchmarkClient, 'get', async (url: string) => {
       assert.equal(url, '/dev/benchmark/history')
-      return okEnvelope([{ runId: 'feat-A015-2026-09-25-1451', time: 't', summary: { total: 10, top5: 6 } }])
+      return okEnvelope([
+        {
+          runId: 'feat-A015-2026-09-29-1500',
+          time: 't',
+          summary: {
+            total: 10,
+            top5: 6,
+            elapsedMs: 61_500,
+            rerank: { mode: 'on', wired: true, window: 20, maxTokens: 128, batch: 16, intraThreads: 8 },
+          },
+        },
+      ])
     })
     const result = await getBenchmarkHistory()
-    assert.equal(result[0]?.runId, 'feat-A015-2026-09-25-1451')
+    assert.equal(result[0]?.runId, 'feat-A015-2026-09-29-1500')
+    assert.equal(result[0]?.summary.elapsedMs, 61_500)
+    assert.deepEqual(result[0]?.summary.rerank, {
+      mode: 'on',
+      wired: true,
+      window: 20,
+      maxTokens: 128,
+      batch: 16,
+      intraThreads: 8,
+    })
   })
 
   it('getBenchmarkSnapshot 携带 runId 查询参数', async () => {

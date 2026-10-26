@@ -12,10 +12,40 @@ const SOURCE_META: Record<string, SourceTag> = {
   lexical: { text: '词法', color: 'blue' },
   vector: { text: '向量', color: 'purple' },
   label: { text: '标签', color: 'gold' },
+  event: { text: '事件', color: 'geekblue' },
+  allusion: { text: '典故', color: 'orange' },
 }
 
 export function sourceMeta(source: string): SourceTag {
   return SOURCE_META[source] ?? { text: source, color: 'default' }
+}
+
+// 事件命中 tooltip（bug-00055）：sources 含 event = 候选属某命中事件组。事件名不在候选行上，
+// 由顶层 eventHit.groups 组装——进窗候选按 placedChunkIds 精确匹配所属组；池内未进窗候选
+// 无法从诊断数据定位到具体组，退化为列出全部命中组名（单组命中时为精确值，多组时给出事件上下文）。
+export function hitEventsOf(
+  candidate: { chunkId: string; sources: string[] },
+  eventHit: RetrievalDiagnostics['eventHit'],
+): string[] {
+  if (!candidate.sources.includes('event')) return []
+  const groups = eventHit?.groups ?? []
+  const matched = groups.filter((g) => g.placedChunkIds.includes(candidate.chunkId)).map((g) => g.eventName)
+  if (matched.length > 0) return [...new Set(matched)]
+  return [...new Set(groups.map((g) => g.eventName))]
+}
+
+// 典故命中 tooltip（feat-A018）：sources 含 allusion = 候选属某命中典故组。典故名不在候选行上，
+// 由顶层 allusionHit.groups 组装——进窗候选按 placedChunkIds 精确匹配所属组；池内未进窗候选
+// 无法从诊断数据定位到具体组，退化为列出全部命中组名（单组命中时为精确值，多组时给出典故上下文）。
+export function hitAllusionsOf(
+  candidate: { chunkId: string; sources: string[] },
+  allusionHit: RetrievalDiagnostics['allusionHit'],
+): string[] {
+  if (!candidate.sources.includes('allusion')) return []
+  const groups = allusionHit?.groups ?? []
+  const matched = groups.filter((g) => g.placedChunkIds.includes(candidate.chunkId)).map((g) => g.allusionName)
+  if (matched.length > 0) return [...new Set(matched)]
+  return [...new Set(groups.map((g) => g.allusionName))]
 }
 
 // 被引用标记：被引用列在表格最右（横向滚动看不到），故在 rank 列重复标记一次
@@ -28,8 +58,15 @@ export function citedTag(cited: boolean | null): SourceTag | null {
 // 口径说明文案：收敛于此，组件只渲染（验收打回 B / C）
 export const MERGED_CANDIDATES_HINT = '合并候选 = 词法 / 向量 / 标签三路候选并集去重，非相加'
 
-// 「归一化改写」环节 tooltip（feat-A016 验收 8 二轮）：直白表述改写先于检索，不使用 embed 术语
+// 「归一化改写」环节 tooltip（feat-A016 验收 8 二轮）：直白表述改写先于检索，不使用 embed 术语；仅历史 trace（rewrites 非空且 normalized != raw）使用
 export const REWRITE_STAGE_HINT = '改写发生在检索之前，检索与缓存均用改写后的文本'
+
+// 「索引双写扩展」环节 tooltip（bug-00046）：检索侧不改写问句，等价写法由索引侧双写覆盖
+export const EXPANSION_STAGE_HINT = '等价写法在索引侧双写覆盖，问句未被改写'
+
+// 重排阶段口径说明（feat-A018 验收）：直白表述重排发生的位置、保证区排除规则与事件路归属
+export const RERANK_STAGE_HINT =
+  '重排阶段：规则序并池之后、取窗之前；保证区（死亡意图 ∪ L3 锚点）不参与重排；事件路增强查询重排计入「多路召回合并耗时」'
 
 export const SCORING_FORMULA_NOTE =
   '最终得分计分口径：finalScore = round3( 0.3 × bm25归一化 + 0.6 × 向量映射((cosine+1)/2) + 0.1 × 标签命中 )；三路分量均在 [0,1]，cosine 为 null 时向量映射按 0'
@@ -95,7 +132,7 @@ export interface FunnelStage {
 }
 
 export interface FunnelView {
-  /** 归一化改写预置环节（feat-A016 验收 8 二轮）：位于语料 chunk 前，value = rewrites 命中数；hint 为环节 tooltip（改写先于检索），不进漏斗下方提示行 */
+  /** 预置环节（feat-A016 验收 8 + bug-00046）：位于语料 chunk 前，value = 改写 / 扩展命中数；hint 为环节 tooltip，不进漏斗下方提示行；新老 trace 按各自口径命名 */
   pre: FunnelStage
   lead: FunnelStage
   branch: FunnelStage[]
@@ -103,11 +140,31 @@ export interface FunnelView {
   hints: string[]
 }
 
+export interface QueryRenderInput {
+  raw: string
+  normalized: string
+  rewrites?: { from: string; to: string }[]
+  expansionHits?: { from: string; to: string }[]
+}
+
+export type QueryRenderMode = 'legacy' | 'new'
+
+/** 渲染口径判定（bug-00046）：新 trace 带 expansionHits 字段（检索侧不改写，无命中为 []）；旧 trace 只有 rewrites 且 normalized != raw；更老 trace 无两字段，兜底按新口径（无扩展） */
+export function resolveQueryMode(query: QueryRenderInput): QueryRenderMode {
+  if (Array.isArray(query.expansionHits)) return 'new'
+  if ((query.rewrites?.length ?? 0) > 0 && query.normalized !== query.raw) return 'legacy'
+  return 'new'
+}
+
 export function buildFunnel(
   funnel: RetrievalDiagnostics['funnel'],
-  rewriteCount = 0,
+  query: QueryRenderInput = { raw: '', normalized: '' },
 ): FunnelView {
-  const pre: FunnelStage = { key: 'rewrite', label: '归一化改写', value: rewriteCount, hint: REWRITE_STAGE_HINT }
+  const mode = resolveQueryMode(query)
+  const pre: FunnelStage =
+    mode === 'legacy'
+      ? { key: 'rewrite', label: '归一化改写', value: query.rewrites?.length ?? 0, hint: REWRITE_STAGE_HINT }
+      : { key: 'expansion', label: '索引双写扩展', value: query.expansionHits?.length ?? 0, hint: EXPANSION_STAGE_HINT }
   const lead: FunnelStage = { key: 'corpus', label: '语料 chunk', value: funnel.corpusChunks }
   const branch: FunnelStage[] = [
     { key: 'lexical', label: '词法命中', value: funnel.lexicalHits },
@@ -143,6 +200,10 @@ export interface ScoreRowView {
   labelHit: boolean
   /** 标签命中列的 tooltip 文本：命中标签逐行拼接，无标签为空串 */
   hitLabelsTitle: string
+  /** 事件来源标签的 tooltip 文本：命中事件名逐行拼接，非事件候选 / 无事件名为空串（bug-00055） */
+  hitEventsTitle: string
+  /** 典故来源标签的 tooltip 文本：命中典故名逐行拼接，非典故候选 / 无典故名为空串（feat-A018） */
+  hitAllusionsTitle: string
   finalScoreText: string
   /** 最终分列的 tooltip 文本：finalScore 算式代入过程（finalScoreFormula），逐行拼接 */
   finalScoreTitle: string
@@ -156,7 +217,12 @@ export interface ScoreRowView {
   citedTag: SourceTag | null
 }
 
-export function buildScoreRow(candidate: RetrievalCandidate, topN: number): ScoreRowView {
+export function buildScoreRow(
+  candidate: RetrievalCandidate,
+  topN: number,
+  eventHit?: RetrievalDiagnostics['eventHit'],
+  allusionHit?: RetrievalDiagnostics['allusionHit'],
+): ScoreRowView {
   return {
     key: candidate.chunkId,
     rank: candidate.rank,
@@ -166,6 +232,8 @@ export function buildScoreRow(candidate: RetrievalCandidate, topN: number): Scor
     title: candidate.title,
     chapterText: `第 ${candidate.chapter} 回 ${candidate.title}`,
     hitLabelsTitle: (candidate.hitLabels ?? []).join('\n'),
+    hitEventsTitle: hitEventsOf(candidate, eventHit).join('\n'),
+    hitAllusionsTitle: hitAllusionsOf(candidate, allusionHit).join('\n'),
     bm25NormText: formatScore(candidate.bm25Norm),
     vectorMapText: formatScore(vectorMap(candidate.cosine)),
     labelHit: candidate.labelHit,
@@ -182,8 +250,13 @@ export function buildScoreRow(candidate: RetrievalCandidate, topN: number): Scor
   }
 }
 
-export function buildScoreRows(candidates: RetrievalCandidate[], topN: number): ScoreRowView[] {
-  return candidates.map((candidate) => buildScoreRow(candidate, topN))
+export function buildScoreRows(
+  candidates: RetrievalCandidate[],
+  topN: number,
+  eventHit?: RetrievalDiagnostics['eventHit'],
+  allusionHit?: RetrievalDiagnostics['allusionHit'],
+): ScoreRowView[] {
+  return candidates.map((candidate) => buildScoreRow(candidate, topN, eventHit, allusionHit))
 }
 
 // 行高亮：进 top-N（绿）与被引用（青）可叠加，组件 row-class-name 直接消费
@@ -206,13 +279,21 @@ export interface NextRankView {
   finalScoreText: string
   /** 最终分处的 tooltip 文本：finalScore 算式代入过程（finalScoreFormula），逐行拼接 */
   finalScoreTitle: string
+  /** 事件来源标签的 tooltip 文本：命中事件名逐行拼接（bug-00055） */
+  hitEventsTitle: string
+  /** 典故来源标签的 tooltip 文本：命中典故名逐行拼接（feat-A018） */
+  hitAllusionsTitle: string
   bm25RawText: string
   cosineRawText: string
   sources: SourceTag[]
   gapToTopNText: string
 }
 
-export function buildNextRankView(nextRank: NonNullable<RetrievalDiagnostics['nextRank']>): NextRankView {
+export function buildNextRankView(
+  nextRank: NonNullable<RetrievalDiagnostics['nextRank']>,
+  eventHit?: RetrievalDiagnostics['eventHit'],
+  allusionHit?: RetrievalDiagnostics['allusionHit'],
+): NextRankView {
   return {
     rank: nextRank.rank,
     chunkId: nextRank.chunkId,
@@ -222,6 +303,8 @@ export function buildNextRankView(nextRank: NonNullable<RetrievalDiagnostics['ne
     labelHit: nextRank.labelHit,
     finalScoreText: formatScore(nextRank.finalScore),
     finalScoreTitle: finalScoreFormula(nextRank),
+    hitEventsTitle: hitEventsOf(nextRank, eventHit).join('\n'),
+    hitAllusionsTitle: hitAllusionsOf(nextRank, allusionHit).join('\n'),
     bm25RawText: formatScore(nextRank.bm25),
     cosineRawText: formatScore(nextRank.cosine),
     sources: nextRank.sources.map(sourceMeta),
@@ -240,12 +323,27 @@ export interface QueryChainView {
   raw: string
   normalized: string
   tokens: string[]
-  /** 归一化改写明细（feat-A016 验收 8）：原文片段 → 规范形；历史 trace 缺省 [] */
+  /** 渲染口径（bug-00046）：legacy = 旧 trace 按「归一化改写」渲染；new = 新 trace 按「索引双写扩展」渲染 */
+  mode: QueryRenderMode
+  /** 归一化改写明细（旧口径，feat-A016 验收 8）：原文片段 → 规范形；新 trace 恒 [] */
   rewrites: RewriteItem[]
+  /** 索引双写扩展明细（新口径，bug-00046）：原文命中可双写键 → 规范形，问句未被改写；无命中 [] */
+  expansionHits: RewriteItem[]
+  /** 是否展示「检索用文本」行：normalized != raw 时展示；normalized == raw 隐藏（与原文同一串） */
+  showNormalized: boolean
 }
 
 export function buildQueryChain(query: RetrievalDiagnostics['query']): QueryChainView {
-  return { raw: query.raw, normalized: query.normalized, tokens: query.tokens, rewrites: query.rewrites ?? [] }
+  const mode = resolveQueryMode(query)
+  return {
+    raw: query.raw,
+    normalized: query.normalized,
+    tokens: query.tokens,
+    mode,
+    rewrites: query.rewrites ?? [],
+    expansionHits: Array.isArray(query.expansionHits) ? query.expansionHits : [],
+    showNormalized: query.normalized !== query.raw,
+  }
 }
 
 export interface EnvView {
@@ -270,6 +368,7 @@ export function buildEnvView(env: RetrievalDiagnostics['env']): EnvView {
 }
 
 // ── 各阶段耗时（feat-A013 验收）：检索侧数据；timing 缺失返回 null（前端不展示），值缺失显示「—」 ──
+// feat-A018：新增重排段耗时 timing.rerank（未接入 / 未参与时为 null，老诊断无该字段）
 
 export function timingLines(
   timing: RetrievalDiagnostics['timing'],
@@ -283,6 +382,24 @@ export function timingLines(
     `向量库查询耗时 ${ms(timing.vector)}`,
     `标签匹配耗时 ${ms(timing.label)}`,
     `多路召回合并耗时 ${ms(timing.merge)}`,
+    `重排耗时 ${ms(timing.rerank)}`,
+  ]
+}
+
+// ── 重排阶段（feat-A018 验收）：契约类型为 RetrievalDiagnostics['rerank']；老诊断无该字段，容错 undefined ──
+
+export function rerankLines(rerank: RetrievalDiagnostics['rerank'] | null): string[] | null {
+  if (rerank === null || rerank === undefined) return null
+  if (rerank.applied) {
+    return [
+      `重排窗口 ${rerank.window}：参与重排 ${rerank.considered} 条，保证区跳过 ${rerank.skippedPinned} 条 → 已按重排分改写池序`,
+    ]
+  }
+  if (!rerank.enabled) {
+    return ['重排未接入（原因：未接入重排打分器）']
+  }
+  return [
+    `重排窗口 ${rerank.window}：参与重排 ${rerank.considered} 条，保证区跳过 ${rerank.skippedPinned} 条 → 跳过（原因：${rerank.reason ?? '窗口内无参与候选'}）`,
   ]
 }
 
@@ -329,7 +446,14 @@ export interface DiagnosticsView {
   query: QueryChainView
   env: EnvView
   timingLines: string[] | null
+  rerankLines: string[] | null
+  rerankStageHint: string
   deathIntent: {
+    detected: boolean
+    pinned: boolean
+    chunkIds: string[]
+  }
+  birthIntent: {
     detected: boolean
     pinned: boolean
     chunkIds: string[]
@@ -344,17 +468,32 @@ export function buildDiagnosticsView(
   if (diagnostics === null) return null
   return {
     truncatedText: truncatedText(diagnostics),
-    funnel: buildFunnel(diagnostics.funnel, diagnostics.query.rewrites?.length ?? 0),
+    funnel: buildFunnel(diagnostics.funnel, diagnostics.query),
     scoringNote: SCORING_FORMULA_NOTE,
-    scoreRows: buildScoreRows(diagnostics.candidates, diagnostics.funnel.topN),
-    nextRank: diagnostics.nextRank === null ? null : buildNextRankView(diagnostics.nextRank),
+    scoreRows: buildScoreRows(
+      diagnostics.candidates,
+      diagnostics.funnel.topN,
+      diagnostics.eventHit,
+      diagnostics.allusionHit,
+    ),
+    nextRank:
+      diagnostics.nextRank === null
+        ? null
+        : buildNextRankView(diagnostics.nextRank, diagnostics.eventHit, diagnostics.allusionHit),
     query: buildQueryChain(diagnostics.query),
     env: buildEnvView(diagnostics.env),
     timingLines: timingLines(diagnostics.timing),
+    rerankLines: rerankLines(diagnostics.rerank),
+    rerankStageHint: RERANK_STAGE_HINT,
     deathIntent: {
       detected: diagnostics.deathIntent.detected,
       pinned: diagnostics.deathIntent.pinned,
       chunkIds: diagnostics.deathIntent.chunkIds,
+    },
+    birthIntent: {
+      detected: diagnostics.birthIntent?.detected ?? false,
+      pinned: diagnostics.birthIntent?.pinned ?? false,
+      chunkIds: diagnostics.birthIntent?.chunkIds ?? [],
     },
     selfConsistency: buildSelfConsistency(diagnostics.funnel, diagnostics.candidates, citationCount),
   }

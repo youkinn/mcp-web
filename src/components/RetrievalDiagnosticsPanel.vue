@@ -63,11 +63,13 @@
             <div class="chain-label">原始 query</div>
             <div class="chain-value">{{ view.query.raw }}</div>
           </div>
-          <span class="funnel-arrow">→</span>
-          <div class="chain-step">
-            <div class="chain-label">alias 归一化</div>
-            <div class="chain-value">{{ view.query.normalized }}</div>
-          </div>
+          <template v-if="view.query.showNormalized">
+            <span class="funnel-arrow">→</span>
+            <div class="chain-step">
+              <div class="chain-label">检索用文本</div>
+              <div class="chain-value">{{ view.query.normalized }}</div>
+            </div>
+          </template>
           <span class="funnel-arrow">→</span>
           <div class="chain-step">
             <div class="chain-label">分词 tokens</div>
@@ -85,7 +87,8 @@
             </div>
           </div>
         </div>
-        <div class="rewrite-detail">
+        <!-- 旧口径（历史 trace）：归一化改写明细 -->
+        <div v-if="view.query.mode === 'legacy'" class="rewrite-detail">
           <span class="rewrite-label">改写明细</span>
           <div v-if="view.query.rewrites.length > 0" class="rewrite-items">
             <div
@@ -99,6 +102,68 @@
             </div>
           </div>
           <span v-else class="diag-muted">无改写</span>
+        </div>
+        <!-- 新口径（bug-00046）：索引双写扩展明细 -->
+        <div v-else class="rewrite-detail">
+          <span class="rewrite-label">扩展明细</span>
+          <span class="diag-note">未改写问句、仅索引侧等价覆盖</span>
+          <div v-if="view.query.expansionHits.length > 0" class="rewrite-items">
+            <div
+              v-for="(hit, index) in view.query.expansionHits"
+              :key="`${hit.from}-${hit.to}-${index}`"
+              class="rewrite-item"
+            >
+              <span class="rewrite-from">{{ hit.from }}</span>
+              <span class="funnel-arrow">→</span>
+              <span class="rewrite-to">{{ hit.to }}</span>
+            </div>
+          </div>
+          <span v-else class="diag-muted">无扩展</span>
+        </div>
+      </section>
+
+      <!-- 各阶段耗时（feat-A013 验收）：timing 缺失不展示 -->
+      <section v-if="view.timingLines" class="detail-section">
+        <h4 class="detail-section-title">各阶段耗时</h4>
+        <div class="diag-block">
+          <div class="diag-timing-lines">
+            <div v-for="line in view.timingLines" :key="line" class="diag-timing-line">{{ line }}</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 重排阶段（feat-A018 验收）：rerank 字段缺失（老诊断）不展示；明细行与阶段提示复用既有样式 -->
+      <section v-if="view.rerankLines" class="detail-section">
+        <h4 class="detail-section-title">重排阶段</h4>
+        <div class="diag-block">
+          <div class="diag-timing-lines">
+            <div v-for="line in view.rerankLines" :key="line" class="diag-timing-line">{{ line }}</div>
+          </div>
+          <div class="diag-note">{{ view.rerankStageHint }}</div>
+        </div>
+      </section>
+
+      <!-- 死亡意图（意图置顶模块，展示在候选分数之上） -->
+      <section v-if="view.deathIntent.detected && view.deathIntent.pinned" class="detail-section">
+        <h4 class="detail-section-title">死亡意图</h4>
+        <div class="death-intent">
+          <a-tag color="error">已判定死亡意图并置顶</a-tag>
+          <span class="diag-hint">被置顶候选：</span>
+          <a-tag v-for="chunkId in view.deathIntent.chunkIds" :key="chunkId" color="orange" size="small">
+            {{ chunkId }}
+          </a-tag>
+        </div>
+      </section>
+
+      <!-- 登场意图（人物首次登场类查询意图，与死亡意图同款展示；历史 trace 无 birthIntent 不展示） -->
+      <section v-if="view.birthIntent.detected && view.birthIntent.pinned" class="detail-section">
+        <h4 class="detail-section-title">登场意图</h4>
+        <div class="birth-intent">
+          <a-tag color="blue">已判定登场意图并置顶</a-tag>
+          <span class="diag-hint birth-hint">被置顶候选：</span>
+          <a-tag v-for="chunkId in view.birthIntent.chunkIds" :key="chunkId" color="cyan" size="small">
+            {{ chunkId }}
+          </a-tag>
         </div>
       </section>
 
@@ -157,6 +222,20 @@
                   </template>
                   <a-tag :color="source.color" size="small" class="diag-source-tag">{{ source.text }}</a-tag>
                 </a-tooltip>
+                <!-- 事件来源标签 tooltip：悬停展示命中的具体事件名（bug-00055） -->
+                <a-tooltip v-else-if="source.text === '事件' && record.hitEventsTitle" placement="topLeft">
+                  <template #title>
+                    <div class="diag-tooltip-lines">{{ record.hitEventsTitle }}</div>
+                  </template>
+                  <a-tag :color="source.color" size="small" class="diag-source-tag">{{ source.text }}</a-tag>
+                </a-tooltip>
+                <!-- 典故来源标签 tooltip：悬停展示命中的具体典故名（feat-A018），与事件标签同机制 -->
+                <a-tooltip v-else-if="source.text === '典故' && record.hitAllusionsTitle" placement="topLeft">
+                  <template #title>
+                    <div class="diag-tooltip-lines">{{ record.hitAllusionsTitle }}</div>
+                  </template>
+                  <a-tag :color="source.color" size="small" class="diag-source-tag">{{ source.text }}</a-tag>
+                </a-tooltip>
                 <a-tag v-else :color="source.color" size="small" class="diag-source-tag">{{ source.text }}</a-tag>
               </template>
             </template>
@@ -209,14 +288,21 @@
             <div class="meta-row">
               <span class="meta-label">来源</span>
               <span class="meta-value">
-                <a-tag
-                  v-for="source in view.nextRank.sources"
-                  :key="source.text"
-                  :color="source.color"
-                  size="small"
-                >
-                  {{ source.text }}
-                </a-tag>
+                <template v-for="source in view.nextRank.sources" :key="source.text">
+                  <a-tooltip v-if="source.text === '事件' && view.nextRank.hitEventsTitle" placement="topLeft">
+                    <template #title>
+                      <div class="diag-tooltip-lines">{{ view.nextRank.hitEventsTitle }}</div>
+                    </template>
+                    <a-tag :color="source.color" size="small">{{ source.text }}</a-tag>
+                  </a-tooltip>
+                  <a-tooltip v-else-if="source.text === '典故' && view.nextRank.hitAllusionsTitle" placement="topLeft">
+                    <template #title>
+                      <div class="diag-tooltip-lines">{{ view.nextRank.hitAllusionsTitle }}</div>
+                    </template>
+                    <a-tag :color="source.color" size="small">{{ source.text }}</a-tag>
+                  </a-tooltip>
+                  <a-tag v-else :color="source.color" size="small">{{ source.text }}</a-tag>
+                </template>
                 <span v-if="view.nextRank.sources.length === 0">—</span>
               </span>
             </div>
@@ -248,26 +334,6 @@
             <span class="env-label">向量维度</span>
             <span class="env-value">{{ view.env.vectorDimText }}</span>
           </div>
-        </div>
-      </section>
-
-      <!-- 各阶段耗时（feat-A013 验收）：timing 缺失不展示 -->
-      <section v-if="view.timingLines" class="detail-section">
-        <h4 class="detail-section-title">各阶段耗时</h4>
-        <div class="diag-timing-lines">
-          <div v-for="line in view.timingLines" :key="line" class="diag-timing-line">{{ line }}</div>
-        </div>
-      </section>
-
-      <!-- 死亡意图 -->
-      <section v-if="view.deathIntent.detected && view.deathIntent.pinned" class="detail-section">
-        <h4 class="detail-section-title">死亡意图</h4>
-        <div class="death-intent">
-          <a-tag color="error">已判定死亡意图并置顶</a-tag>
-          <span class="diag-hint">被置顶候选：</span>
-          <a-tag v-for="chunkId in view.deathIntent.chunkIds" :key="chunkId" color="orange" size="small">
-            {{ chunkId }}
-          </a-tag>
         </div>
       </section>
 
@@ -627,6 +693,13 @@ function onCopyChunkId(record: ScoreRowView) {
 }
 
 /* 各阶段耗时（feat-A013 验收） */
+.diag-block {
+  padding: 10px 12px;
+  background: #fafbf9;
+  border: 1px solid #e3e9e2;
+  border-radius: 10px;
+}
+
 .diag-timing-lines {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -653,6 +726,22 @@ function onCopyChunkId(record: ScoreRowView) {
 .diag-hint {
   color: #cf1322;
   font-size: 12px;
+}
+
+/* 登场意图（与死亡意图同款展示，蓝系区分） */
+.birth-intent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  background: #e6f4ff;
+  border: 1px solid #91caff;
+  border-radius: 10px;
+}
+
+.birth-hint {
+  color: #0958d9;
 }
 </style>
 

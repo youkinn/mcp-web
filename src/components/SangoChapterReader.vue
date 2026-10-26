@@ -3,6 +3,7 @@
     :open="open"
     title="三国演义 · 原文阅读"
     width="960px"
+    :z-index="1100"
     wrap-class-name="reader-modal-wrap"
     :footer="null"
     @update:open="onOpenChange"
@@ -22,12 +23,13 @@
           <div v-if="data" class="chunk-list">
             <div
               v-for="chunk in data?.chunks ?? []"
-              :key="chunk.chunkId"
+              :key="chunk.chunk_id"
               class="chunk-row"
-              :class="{ 'is-target': chunk.chunkId === targetChunkId }"
-              :data-chunk-id="chunk.chunkId"
+              :class="{ 'is-target': chunk.chunk_id === targetChunkId }"
+              :data-chunk-id="chunk.chunk_id"
             >
-              <span class="chunk-no">{{ shortChunkId(chunk.chunkId) }}</span>
+              <button type="button" class="chunk-no" title="点击复制 chunkId"
+                @click="copyChunkId(chunk.chunk_id)">{{ chapterChunkId(chunk.chunk_id) }}</button>
               <p class="chunk-text">{{ chunk.text }}</p>
             </div>
           </div>
@@ -61,11 +63,12 @@
 import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { fetchSangoChapter, getErrorMessage, type SangoChapterData } from '../api/client'
+import { copyText } from '../utils/clipboard'
 import {
+  chapterChunkId,
   isValidChapter,
   SANGO_CHAPTER_MAX,
   SANGO_CHAPTER_MIN,
-  shortChunkId,
   targetScrollTop,
 } from '../utils/sangoChapter'
 
@@ -176,6 +179,14 @@ function onJump() {
   goTo(next)
 }
 
+// 块号点击复制：与检索诊断页同口径，复制完整 chunkId（展示值仅去掉源前缀）
+function copyChunkId(chunkId: string) {
+  void copyText(`chunkId: ${chunkId}`).then((ok) => {
+    if (ok) message.success('已复制 chunkId')
+    else message.error('复制失败，请手动选择复制')
+  })
+}
+
 function onOpenChange(next: boolean) {
   emit('update:open', next)
 }
@@ -234,8 +245,8 @@ function onOpenChange(next: boolean) {
 
 .chunk-row {
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
+  flex-direction: column;
+  gap: 2px;
   padding: 8px 10px;
   border-radius: 8px;
 }
@@ -246,16 +257,31 @@ function onOpenChange(next: boolean) {
 }
 
 .chunk-no {
-  flex: 0 0 56px;
-  padding-top: 2px;
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
   color: #a0885a;
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 12px;
-  text-align: right;
+  line-height: 1.5;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chunk-no:hover {
+  color: #7b6338;
+  text-decoration: underline;
+}
+
+.chunk-no:focus-visible {
+  outline: 1px dashed #a0885a;
+  outline-offset: 2px;
 }
 
 .chunk-text {
-  flex: 1;
+  width: 100%;
   margin: 0;
   font-size: 16px;
   line-height: 1.9;

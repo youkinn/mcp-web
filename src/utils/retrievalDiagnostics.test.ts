@@ -13,13 +13,16 @@ import {
   buildSelfConsistency,
   citedTag,
   displayChunkId,
+  EXPANSION_STAGE_HINT,
   finalScoreFormula,
   formatScore,
   MERGED_CANDIDATES_HINT,
+  RERANK_STAGE_HINT,
   REWRITE_STAGE_HINT,
   SCORING_FORMULA_NOTE,
   scoreRowClass,
   sourceMeta,
+  rerankLines,
   timingLines,
   truncatedText,
   vectorMap,
@@ -105,7 +108,27 @@ const fullDiagnostics: RetrievalDiagnostics = {
     pinned: true,
     chunkIds: ['sanguo-yanyi:0001:c0001'],
   },
+  birthIntent: {
+    detected: true,
+    pinned: true,
+    chunkIds: ['sanguo-yanyi:0001:c0007'],
+  },
 }
+
+// 新 trace（bug-00046）：检索侧不改写问句，normalized == raw、rewrites 恒 []，扩展命中走 expansionHits
+const newTraceDiagnostics: RetrievalDiagnostics = {
+  ...fullDiagnostics,
+  query: {
+    raw: '云长千里走单骑的经过',
+    normalized: '云长千里走单骑的经过',
+    tokens: ['云长', '千里', '走单骑', '经过'],
+    rewrites: [],
+    expansionHits: [{ from: '云长', to: '关羽' }],
+  },
+}
+
+// 更老 trace（feat-A016 增补前）：无 rewrites 亦无 expansionHits
+const bareTraceQuery = { raw: 'x', normalized: 'y', tokens: [] }
 
 describe('buildDiagnosticsView 汇总视图', () => {
   it('diagnostics 有值时返回完整视图（漏斗 / 分数表 / query 链 / 环境 / nextRank / 死亡意图）', () => {
@@ -138,6 +161,19 @@ describe('buildDiagnosticsView 汇总视图', () => {
     assert.equal(view.funnel.pre.hint, REWRITE_STAGE_HINT)
     assert.equal(view.deathIntent.detected, true)
     assert.equal(view.deathIntent.chunkIds[0], 'sanguo-yanyi:0001:c0001')
+    assert.equal(view.birthIntent.detected, true)
+    assert.equal(view.birthIntent.pinned, true)
+    assert.equal(view.birthIntent.chunkIds[0], 'sanguo-yanyi:0001:c0007')
+  })
+
+  it('历史 trace 无 birthIntent 时默认不判定登场意图（面板不展示模块）', () => {
+    const legacy = { ...fullDiagnostics } as RetrievalDiagnostics
+    delete legacy.birthIntent
+    const view = buildDiagnosticsView(legacy, null)
+    assert.ok(view)
+    assert.equal(view.birthIntent.detected, false)
+    assert.equal(view.birthIntent.pinned, false)
+    assert.deepEqual(view.birthIntent.chunkIds, [])
   })
 
   it('diagnostics 为 null 时返回 null（老数据 / 未产出，前端不渲染面板）', () => {
@@ -160,7 +196,7 @@ describe('buildDiagnosticsView 汇总视图', () => {
   })
 
   it('sango 产出阶段 funnel 的 injected / cited 为 null，漏斗不含对应阶段', () => {
-    const funnel = buildFunnel({ ...fullDiagnostics.funnel, injected: null, cited: null })
+    const funnel = buildFunnel({ ...fullDiagnostics.funnel, injected: null, cited: null }, fullDiagnostics.query)
     assert.equal(funnel.tail.length, 2)
     assert.deepEqual(
       funnel.tail.map((stage) => stage.key),
@@ -174,7 +210,15 @@ describe('buildDiagnosticsView 汇总视图', () => {
 
 describe('feat-A016 验收 8：归一化改写可观测（rewrites / normVersion / 漏斗预置环节）', () => {
   it('漏斗 pre 预置环节：value=rewrites 命中数 / hint=环节 tooltip（改写先于检索，无 embed 术语），位于语料 chunk 之前', () => {
-    const funnel = buildFunnel(fullDiagnostics.funnel, 3)
+    const funnel = buildFunnel(fullDiagnostics.funnel, {
+      raw: 'x',
+      normalized: 'y',
+      rewrites: [
+        { from: 'a', to: 'b' },
+        { from: 'c', to: 'd' },
+        { from: 'e', to: 'f' },
+      ],
+    })
     assert.equal(funnel.pre.key, 'rewrite')
     assert.equal(funnel.pre.label, '归一化改写')
     assert.equal(funnel.pre.value, 3)
@@ -186,13 +230,14 @@ describe('feat-A016 验收 8：归一化改写可观测（rewrites / normVersion
     assert.deepEqual(funnel.hints, [MERGED_CANDIDATES_HINT])
   })
 
-  it('rewriteCount 缺省按 0（老用例 / 无改写），不产生残留环节', () => {
+  it('buildFunnel 缺省 query：按新口径 value=0（更老 trace 兜底），不产生残留环节', () => {
     const funnel = buildFunnel(fullDiagnostics.funnel)
     assert.equal(funnel.pre.value, 0)
+    assert.equal(funnel.pre.label, '索引双写扩展')
   })
 
   it('漏斗不出现「无改写」文案：pre 环节仅承载数字命中数（无改写 = 0），「无改写」只在 Query 区改写明细', () => {
-    const funnel = buildFunnel(fullDiagnostics.funnel)
+    const funnel = buildFunnel(fullDiagnostics.funnel, { raw: 'x', normalized: 'x', rewrites: [], expansionHits: [] })
     assert.equal(funnel.pre.value, 0)
     const funnelText = [funnel.pre.label, funnel.pre.hint, ...funnel.hints].join('')
     assert.ok(!funnelText.includes('无改写'))
@@ -200,8 +245,8 @@ describe('feat-A016 验收 8：归一化改写可观测（rewrites / normVersion
 
   it('query 链透传改写明细（原文片段 → 规范形），历史 trace 无字段缺省 []', () => {
     assert.deepEqual(buildQueryChain(fullDiagnostics.query).rewrites, [{ from: '云长', to: '关羽' }])
-    const legacy = buildQueryChain({ raw: 'x', normalized: 'y', tokens: [] })
-    assert.deepEqual(legacy.rewrites, [])
+    const bare = buildQueryChain(bareTraceQuery)
+    assert.deepEqual(bare.rewrites, [])
   })
 
   it('env 透传 normVersion，历史 trace 无字段缺省空串', () => {
@@ -214,18 +259,86 @@ describe('feat-A016 验收 8：归一化改写可观测（rewrites / normVersion
     const view = buildDiagnosticsView(fullDiagnostics, null)
     assert.ok(view)
     assert.equal(view.funnel.pre.value, fullDiagnostics.query.rewrites!.length)
-    const legacy = buildDiagnosticsView(
+    const bareView = buildDiagnosticsView(
       {
         ...fullDiagnostics,
-        query: { raw: 'x', normalized: 'y', tokens: [] },
+        query: bareTraceQuery,
         env: { vectorScheme: null, degradedBm25Only: false, corpusChunks: 2344, aliasCount: 87, vectorDim: null },
       },
       null,
     )
-    assert.ok(legacy)
-    assert.equal(legacy.funnel.pre.value, 0)
-    assert.deepEqual(legacy.query.rewrites, [])
-    assert.equal(legacy.env.normVersion, '')
+    assert.ok(bareView)
+    assert.equal(bareView.funnel.pre.value, 0)
+    assert.equal(bareView.funnel.pre.label, '索引双写扩展')
+    assert.deepEqual(bareView.query.rewrites, [])
+    assert.equal(bareView.env.normVersion, '')
+  })
+})
+
+describe('bug-00046：索引双写扩展口径（expansionHits / 漏斗更名 / 新老 trace 渲染分支）', () => {
+  it('新 trace 有命中：漏斗环节为「索引双写扩展」，value = expansionHits 命中数，tooltip 为新口径文案', () => {
+    const funnel = buildFunnel(newTraceDiagnostics.funnel, newTraceDiagnostics.query)
+    assert.equal(funnel.pre.key, 'expansion')
+    assert.equal(funnel.pre.label, '索引双写扩展')
+    assert.equal(funnel.pre.value, 1)
+    assert.equal(funnel.pre.hint, EXPANSION_STAGE_HINT)
+    assert.equal(funnel.pre.hint, '等价写法在索引侧双写覆盖，问句未被改写')
+    assert.deepEqual(funnel.hints, [MERGED_CANDIDATES_HINT])
+  })
+
+  it('新 trace 无命中（expansionHits=[]）：漏斗 value=0，Query 区 mode=new 且 expansionHits=[]（「无扩展」文案在组件层）', () => {
+    const noHit = { ...newTraceDiagnostics, query: { ...newTraceDiagnostics.query, expansionHits: [] } }
+    const funnel = buildFunnel(noHit.funnel, noHit.query)
+    assert.equal(funnel.pre.key, 'expansion')
+    assert.equal(funnel.pre.label, '索引双写扩展')
+    assert.equal(funnel.pre.value, 0)
+    const view = buildDiagnosticsView(noHit, null)
+    assert.ok(view)
+    assert.equal(view.query.mode, 'new')
+    assert.deepEqual(view.query.expansionHits, [])
+    assert.equal(view.query.showNormalized, false)
+  })
+
+  it('旧 trace（rewrites 非空且 normalized != raw）：保持「归一化改写」口径，不出现「索引双写扩展」标签', () => {
+    const funnel = buildFunnel(fullDiagnostics.funnel, fullDiagnostics.query)
+    assert.equal(funnel.pre.key, 'rewrite')
+    assert.equal(funnel.pre.label, '归一化改写')
+    assert.equal(funnel.pre.value, 1)
+    assert.equal(funnel.pre.hint, REWRITE_STAGE_HINT)
+    const view = buildDiagnosticsView(fullDiagnostics, null)
+    assert.ok(view)
+    assert.equal(view.query.mode, 'legacy')
+    assert.equal(view.query.showNormalized, true)
+    assert.deepEqual(view.query.rewrites, [{ from: '云长', to: '关羽' }])
+    assert.deepEqual(view.query.expansionHits, [])
+  })
+
+  it('新 trace 汇总视图：normalized == raw 时 query 区不展示「检索用文本」（showNormalized=false），expansionHits 透传', () => {
+    const view = buildDiagnosticsView(newTraceDiagnostics, null)
+    assert.ok(view)
+    assert.equal(view.query.mode, 'new')
+    assert.equal(view.query.showNormalized, false)
+    assert.equal(view.query.normalized, view.query.raw)
+    assert.deepEqual(view.query.expansionHits, [{ from: '云长', to: '关羽' }])
+    assert.equal(view.funnel.pre.label, '索引双写扩展')
+    assert.equal(view.funnel.pre.value, 1)
+  })
+
+  it('更老 trace（无 rewrites 亦无 expansionHits）：兜底按新口径渲染（无扩展），normalized != raw 时仍展示「检索用文本」', () => {
+    const view = buildDiagnosticsView(
+      {
+        ...fullDiagnostics,
+        query: bareTraceQuery,
+        env: { vectorScheme: null, degradedBm25Only: false, corpusChunks: 2344, aliasCount: 87, vectorDim: null },
+      },
+      null,
+    )
+    assert.ok(view)
+    assert.equal(view.query.mode, 'new')
+    assert.deepEqual(view.query.expansionHits, [])
+    assert.equal(view.query.showNormalized, true)
+    assert.equal(view.funnel.pre.label, '索引双写扩展')
+    assert.equal(view.funnel.pre.value, 0)
   })
 })
 
@@ -244,10 +357,12 @@ describe('分数整形（buildScoreRow / formatScore / boolText / sourceMeta）'
     assert.equal(boolText(null), '—')
   })
 
-  it('来源映射：lexical / vector / label 中文文案，未知来源回退原值', () => {
+  it('来源映射：lexical / vector / label / event / allusion 中文文案，未知来源回退原值', () => {
     assert.deepEqual(sourceMeta('lexical'), { text: '词法', color: 'blue' })
     assert.deepEqual(sourceMeta('vector'), { text: '向量', color: 'purple' })
     assert.deepEqual(sourceMeta('label'), { text: '标签', color: 'gold' })
+    assert.deepEqual(sourceMeta('event'), { text: '事件', color: 'geekblue' })
+    assert.deepEqual(sourceMeta('allusion'), { text: '典故', color: 'orange' })
     assert.deepEqual(sourceMeta('unknown'), { text: 'unknown', color: 'default' })
   })
 
@@ -288,6 +403,115 @@ describe('分数整形（buildScoreRow / formatScore / boolText / sourceMeta）'
     const miss = buildScoreRow(fullDiagnostics.candidates[1], fullDiagnostics.funnel.topN)
     assert.equal(miss.labelHit, false)
     assert.equal(miss.hitLabelsTitle, '')
+  })
+
+  it('事件来源标签 tooltip：进窗候选按 placedChunkIds 展示命中事件名，未进窗候选兜底列出全部命中组，非事件候选 / 历史 trace 为空串', () => {
+    const eventHit: NonNullable<RetrievalDiagnostics['eventHit']> = {
+      degraded: false,
+      normVersion: '2e5f4f9d',
+      groupCount: 1,
+      groups: [
+        {
+          eventId: 'E05001',
+          eventName: '华容道义释曹操',
+          matchedAlias: '华容道义释曹操',
+          type: 'L1',
+          groupSize: 13,
+          placedCount: 2,
+          placedChunkIds: ['sanguo-yanyi:0050:c0007', 'sanguo-yanyi:0050:c0008'],
+        },
+      ],
+    }
+    const base: RetrievalCandidate = {
+      rank: 2,
+      chunkId: 'sanguo-yanyi:0050:c0007',
+      chapter: 50,
+      title: '诸葛亮智算华容 关云长义释曹操',
+      bm25: 5.7,
+      bm25Norm: 0.14,
+      cosine: 0.42,
+      labelHit: false,
+      finalScore: 0.57,
+      sources: ['event'],
+      injected: false,
+      cited: false,
+    }
+    // 进窗候选：eventHit.groups.placedChunkIds 精确匹配 → 该组事件名
+    const placed = buildScoreRow(base, 10, eventHit)
+    assert.equal(placed.hitEventsTitle, '华容道义释曹操')
+    // 池内未进窗候选：无法定位到具体组，兜底列出全部命中组名（单组命中即精确）
+    const pooled = buildScoreRow({ ...base, chunkId: 'sanguo-yanyi:0050:c0010', rank: 14 }, 10, eventHit)
+    assert.equal(pooled.hitEventsTitle, '华容道义释曹操')
+    // 非事件候选：即使有 eventHit 诊断也不展示事件名
+    const plain = buildScoreRow({ ...base, sources: ['lexical'] }, 10, eventHit)
+    assert.equal(plain.hitEventsTitle, '')
+    // 历史 trace 无 eventHit：不得出现 undefined 字样
+    const legacy = buildScoreRow(base, 10, undefined)
+    assert.equal(legacy.hitEventsTitle, '')
+    assert.doesNotMatch(legacy.hitEventsTitle, /undefined/)
+    // buildScoreRows / 第 N+1 名视图同样带事件名
+    const rows = buildScoreRows([base], 10, eventHit)
+    assert.equal(rows[0].hitEventsTitle, '华容道义释曹操')
+    const next = buildNextRankView({ ...base, rank: 11, gapToTopN: 0.19 }, eventHit)
+    assert.equal(next.hitEventsTitle, '华容道义释曹操')
+  })
+
+  it('典故来源标签 tooltip：进窗候选按 placedChunkIds 展示命中典故名，未进窗候选兜底列出全部命中组，非典故候选 / 历史 trace 为空串', () => {
+    const allusionHit: NonNullable<RetrievalDiagnostics['allusionHit']> = {
+      degraded: false,
+      normVersion: '3f7a2c9e',
+      groupCount: 2,
+      groups: [
+        {
+          allusionId: 'AL001',
+          allusionName: '桃园结义',
+          matchedAlias: '桃园结义',
+          groupSize: 5,
+          placedCount: 1,
+          placedChunkIds: ['sanguo-yanyi:0001:c0003'],
+        },
+        {
+          allusionId: 'AL002',
+          allusionName: '三顾茅庐',
+          matchedAlias: '三顾茅庐',
+          groupSize: 8,
+          placedCount: 2,
+          placedChunkIds: ['sanguo-yanyi:0037:c0002', 'sanguo-yanyi:0037:c0005'],
+        },
+      ],
+    }
+    const base: RetrievalCandidate = {
+      rank: 2,
+      chunkId: 'sanguo-yanyi:0001:c0003',
+      chapter: 1,
+      title: '宴桃园豪杰三结义 斩黄巾英雄首立功',
+      bm25: 5.7,
+      bm25Norm: 0.14,
+      cosine: 0.42,
+      labelHit: false,
+      finalScore: 0.57,
+      sources: ['allusion'],
+      injected: false,
+      cited: false,
+    }
+    // 进窗候选：allusionHit.groups.placedChunkIds 精确匹配 → 该组典故名
+    const placed = buildScoreRow(base, 10, undefined, allusionHit)
+    assert.equal(placed.hitAllusionsTitle, '桃园结义')
+    // 池内未进窗候选：无法定位到具体组，兜底列出全部命中组名（多组区分退化路径）
+    const pooled = buildScoreRow({ ...base, chunkId: 'sanguo-yanyi:0001:c0010', rank: 14 }, 10, undefined, allusionHit)
+    assert.equal(pooled.hitAllusionsTitle, '桃园结义\n三顾茅庐')
+    // 非典故候选：即使有 allusionHit 诊断也不展示典故名
+    const plain = buildScoreRow({ ...base, sources: ['lexical'] }, 10, undefined, allusionHit)
+    assert.equal(plain.hitAllusionsTitle, '')
+    // 历史 trace 无 allusionHit：不得出现 undefined 字样
+    const legacy = buildScoreRow(base, 10)
+    assert.equal(legacy.hitAllusionsTitle, '')
+    assert.doesNotMatch(legacy.hitAllusionsTitle, /undefined/)
+    // buildScoreRows / 第 N+1 名视图同样带典故名
+    const rows = buildScoreRows([base], 10, undefined, allusionHit)
+    assert.equal(rows[0].hitAllusionsTitle, '桃园结义')
+    const next = buildNextRankView({ ...base, rank: 11, gapToTopN: 0.19 }, undefined, allusionHit)
+    assert.equal(next.hitAllusionsTitle, '桃园结义')
   })
 })
 
@@ -389,7 +613,7 @@ describe('验收修复：被引用标记与口径说明（feat-A009 / story-A009
   })
 
   it('漏斗给出合并候选口径说明：三路并集去重、非相加', () => {
-    const funnel = buildFunnel(fullDiagnostics.funnel)
+    const funnel = buildFunnel(fullDiagnostics.funnel, fullDiagnostics.query)
     assert.equal(funnel.hints.length, 1)
     assert.equal(funnel.hints[0], MERGED_CANDIDATES_HINT)
     assert.match(funnel.hints[0], /并集去重/)
@@ -401,7 +625,7 @@ describe('验收修复：被引用标记与口径说明（feat-A009 / story-A009
       funnel.tail.find((stage) => stage.key === 'merged')?.hint,
       MERGED_CANDIDATES_HINT,
     )
-    const partial = buildFunnel({ ...fullDiagnostics.funnel, injected: null, cited: null })
+    const partial = buildFunnel({ ...fullDiagnostics.funnel, injected: null, cited: null }, fullDiagnostics.query)
     assert.equal(partial.hints.length, 1)
   })
 
@@ -555,6 +779,7 @@ describe('feat-A013 验收：各阶段耗时（timingLines）', () => {
       '向量库查询耗时 —',
       '标签匹配耗时 0ms',
       '多路召回合并耗时 1.5ms',
+      '重排耗时 —',
     ])
   })
 
@@ -565,6 +790,7 @@ describe('feat-A013 验收：各阶段耗时（timingLines）', () => {
       '向量库查询耗时 3.1ms',
       '标签匹配耗时 5ms',
       '多路召回合并耗时 0ms',
+      '重排耗时 —',
     ])
   })
 
@@ -574,9 +800,99 @@ describe('feat-A013 验收：各阶段耗时（timingLines）', () => {
       null,
     )
     assert.ok(view)
-    assert.deepEqual(view.timingLines, ['BM25 耗时 3ms', '向量库查询耗时 5ms', '标签匹配耗时 2ms', '多路召回合并耗时 1ms'])
+    assert.deepEqual(view.timingLines, ['BM25 耗时 3ms', '向量库查询耗时 5ms', '标签匹配耗时 2ms', '多路召回合并耗时 1ms', '重排耗时 —'])
     const legacy = buildDiagnosticsView(fullDiagnostics, null)
     assert.ok(legacy)
     assert.equal(legacy.timingLines, null)
+  })
+})
+
+describe('feat-A018 验收：重排可观测（timing.rerank / rerankLines / 阶段提示）', () => {
+  it('已重排（applied=true）：窗口 / 参与 / 保证区跳过 → 已按重排分改写池序', () => {
+    const lines = rerankLines({
+      enabled: true,
+      window: 20,
+      considered: 18,
+      skippedPinned: 2,
+      applied: true,
+      reason: null,
+    })
+    assert.deepEqual(lines, ['重排窗口 20：参与重排 18 条，保证区跳过 2 条 → 已按重排分改写池序'])
+  })
+
+  it('未接入（enabled=false）：重排未接入（原因：未接入重排打分器）', () => {
+    const lines = rerankLines({
+      enabled: false,
+      window: 20,
+      considered: 0,
+      skippedPinned: 0,
+      applied: false,
+      reason: '未接入重排打分器',
+    })
+    assert.deepEqual(lines, ['重排未接入（原因：未接入重排打分器）'])
+  })
+
+  it('其余（已接入未改写）：跳过（原因透传，缺省窗口内无参与候选）', () => {
+    const lines = rerankLines({
+      enabled: true,
+      window: 20,
+      considered: 0,
+      skippedPinned: 0,
+      applied: false,
+      reason: '窗口内无参与候选',
+    })
+    assert.deepEqual(lines, ['重排窗口 20：参与重排 0 条，保证区跳过 0 条 → 跳过（原因：窗口内无参与候选）'])
+    const fallback = rerankLines({
+      enabled: true,
+      window: 20,
+      considered: 0,
+      skippedPinned: 0,
+      applied: false,
+      reason: null,
+    })
+    assert.deepEqual(fallback, ['重排窗口 20：参与重排 0 条，保证区跳过 0 条 → 跳过（原因：窗口内无参与候选）'])
+  })
+
+  it('字段缺失（老诊断）：rerank / timing.rerank 容错 undefined，前端不报错', () => {
+    assert.equal(rerankLines(undefined), null)
+    assert.equal(rerankLines(null), null)
+    const legacy = buildDiagnosticsView(fullDiagnostics, null)
+    assert.ok(legacy)
+    assert.equal(legacy.rerankLines, null)
+    assert.equal(legacy.rerankStageHint, RERANK_STAGE_HINT)
+    assert.deepEqual(legacy.timingLines, null)
+  })
+
+  it('timing.rerank 值完整时输出 重排耗时 Xms（放多路召回合并耗时之后）', () => {
+    const lines = timingLines({ bm25: 1, vector: 2, label: 3, merge: 4, rerank: 7.5 })
+    assert.deepEqual(lines, [
+      'BM25 耗时 1ms',
+      '向量库查询耗时 2ms',
+      '标签匹配耗时 3ms',
+      '多路召回合并耗时 4ms',
+      '重排耗时 7.5ms',
+    ])
+  })
+
+  it('buildDiagnosticsView 暴露 rerankLines 与阶段提示（已重排诊断）', () => {
+    const view = buildDiagnosticsView(
+      {
+        ...fullDiagnostics,
+        timing: { bm25: 3, vector: 5, label: 2, merge: 1, rerank: 9 },
+        rerank: {
+          enabled: true,
+          window: 20,
+          considered: 18,
+          skippedPinned: 2,
+          applied: true,
+          reason: null,
+        },
+      },
+      null,
+    )
+    assert.ok(view)
+    assert.deepEqual(view.rerankLines, ['重排窗口 20：参与重排 18 条，保证区跳过 2 条 → 已按重排分改写池序'])
+    assert.equal(view.rerankStageHint, RERANK_STAGE_HINT)
+    assert.deepEqual(view.timingLines, ['BM25 耗时 3ms', '向量库查询耗时 5ms', '标签匹配耗时 2ms', '多路召回合并耗时 1ms', '重排耗时 9ms'])
   })
 })
